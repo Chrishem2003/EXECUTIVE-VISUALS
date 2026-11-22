@@ -203,7 +203,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           minimumCredits: 52,
           inputVideoCreditsPerSecondByResolution: { "480p": 7, "720p": 10 },
           outputCreditsPerSecondByResolution: { "480p": 13, "720p": 20 },
-          maxCombinedInputVideoSeconds: 30,
+          maxCombinedInputVideoSeconds: 30, outputFormats: ["mp4"],
           videoToVideoReservesSourceVideoSlot: true,
           videoEditRequiresAutoDuration: true,
           pricingSnapshotDate: "2026-11-16", creditUsdValue: 0.01,
