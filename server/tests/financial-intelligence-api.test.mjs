@@ -402,7 +402,7 @@ test("credit balance endpoint returns server-computed owner balance only",async(
   const result=await service.handle({method:"GET",path:"/api/billing/credits",ownerId:owner});
   assert.equal(result.status,200);
   assert.deepEqual(result.body.credits,{ledgerBalance:1200,reserved:200,available:1000});
-  assert.ok(requestUrl.endsWith("/rpc/get_credit_balance"));
+  assert.ok(requestUrl.endsWith("/rpc/get_generation_credit_balance"));
   assert.deepEqual(rpcBody,{p_owner_id:owner});
 });
 
