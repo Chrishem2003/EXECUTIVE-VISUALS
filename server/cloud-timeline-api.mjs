@@ -624,9 +624,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      }
      const prepared=quoteAdapter?await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}}):workflowRequest.input;
      if(!prepared||typeof prepared!=="object"||Array.isArray(prepared))return response(503,{error:{code:"VIDEO_INPUT_ASSET_RESOLUTION_FAILED",message:"Private workflow inputs could not be revalidated for approval."}});
-     const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId,approvedMaxAmount};
-     if(typeof workflowNodeDispatch!=="function"||workflowNodeDispatchEnabled()!==true)
-      return response(503,{error:{code:"VIDEO_WORKFLOW_CREDIT_CEILING_DISPATCH_REQUIRED",message:"Workflow generation is held until the staging Neon dispatch enforces the customer-approved credit ceiling atomically. No provider request was submitted."}});
+     const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId,approvedMaxAmount,
+      customerCreditBudgetCredits,requiredCustomerCredits};
      if(typeof workflowNodeDispatch==="function"&&workflowNodeDispatchEnabled()===true){
       const storedQuotes=await request("video_workflow_quotes?select=id,owner_id,project_id,request_id,request_hash,provider,model,operation,routed_provider,routed_model,estimated_credits,estimated_customer_credits,estimated_amount,currency,config_id,pricing_source,state,expires_at&id=eq."+encodeURIComponent(quoteId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&limit=1");
       const storedQuote=Array.isArray(storedQuotes)?storedQuotes[0]:null;
@@ -666,7 +665,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      const rows=await request("rpc/approve_and_enqueue_video_workflow",{method:"POST",body:{
       p_quote_id:quoteId,p_approval_id:randomUUID(),p_owner_id:ownerId,p_project_id:projectId,
       p_request_hash:workflowRequest.requestHash,p_config_id:configId,p_idempotency_key:requestId,
-      p_input:input,p_approved_max_amount:approvedMaxAmount,p_approval_note:approvalNote
+      p_input:input,p_approved_max_amount:approvedMaxAmount,p_approval_note:approvalNote,
+      p_customer_credit_budget_credits:customerCreditBudgetCredits,p_required_customer_credits:requiredCustomerCredits
      }});
      if(!Array.isArray(rows)||rows.length!==1||!safeId(rows[0]?.job_id)||!safeId(rows[0]?.budget_reservation_id)||!safeId(rows[0]?.approval_id)){
       throw Object.assign(new Error("The durable workflow approval RPC returned an invalid job and reservation receipt."),{code:"VIDEO_WORKFLOW_APPROVAL_RECEIPT_INVALID"});
