@@ -105,18 +105,19 @@ begin
  if v_role not in('owner','billing_admin','platform_admin') then
   raise exception using errcode='42501',message='subscription_allowance_proposal_admin_required';
  end if;
- if p_proposal->>'currency'<>'USD'
+ if p_proposal->>'currency' is distinct from 'USD'
   or coalesce((p_proposal->>'planVersion')::integer,0)<1
   or coalesce((p_proposal->>'monthlyPriceMinor')::bigint,0)<1
   or coalesce((p_proposal->>'includedCredits')::bigint,0)<1
   or coalesce((p_proposal->>'providerCostPerCustomerCreditMinor')::bigint,0)<1
-  or p_proposal->'costEvidence'->>'status'<>'verified_measured'
+  or p_proposal->'costEvidence'->>'status' is distinct from 'verified_measured'
   or coalesce((p_proposal->'costEvidence'->>'sampleJobs')::integer,0)<5
-  or p_proposal->'costEvidence'->>'approved'<>'false'
+  or p_proposal->'costEvidence'->>'approved' is distinct from 'false'
   or nullif(p_proposal->'costEvidence'->>'source','') is null
   or nullif(p_proposal->'costEvidence'->>'rateCardVersion','') is null
   or nullif(p_proposal->'costEvidence'->>'periodStart','') is null
-  or nullif(p_proposal->'costEvidence'->>'periodEnd','') is null then
+  or nullif(p_proposal->'costEvidence'->>'periodEnd','') is null
+  or (p_proposal->'costEvidence'->>'periodEnd')::timestamptz <= (p_proposal->'costEvidence'->>'periodStart')::timestamptz then
   raise exception using errcode='22023',message='subscription_allowance_invoice_evidence_required';
  end if;
  select * into v_existing from executive_visuals.subscription_allowance_proposals
@@ -196,10 +197,6 @@ begin
   where proposal_id=p_proposal_id and decision='rejected') then
   raise exception using errcode='22023',message='subscription_allowance_proposal_already_rejected';
  end if;
- if exists(select 1 from executive_visuals.subscription_allowance_approvals
-  where proposal_id=p_proposal_id and stage=p_stage) then
-  raise exception using errcode='23505',message='subscription_allowance_stage_already_decided';
- end if;
  if p_event_envelope->>'eventType' is distinct from 'subscription_allowance.approval_recorded'
   or p_event_envelope->>'actorId' is distinct from p_actor_id::text
   or p_event_envelope->'payload'->>'proposalId' is distinct from p_proposal_id::text
@@ -213,6 +210,10 @@ begin
  );
  if coalesce((v_event->>'duplicate')::boolean,false) then
   return jsonb_build_object('duplicate',true,'audit',v_event);
+ end if;
+ if exists(select 1 from executive_visuals.subscription_allowance_approvals
+  where proposal_id=p_proposal_id and stage=p_stage) then
+  raise exception using errcode='23505',message='subscription_allowance_stage_already_decided';
  end if;
  insert into executive_visuals.subscription_allowance_approvals(
   proposal_id,stage,actor_id,actor_role,decision,decision_note,audit_event_id
