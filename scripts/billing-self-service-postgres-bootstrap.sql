@@ -127,6 +127,28 @@ create table executive_visuals.credit_ledger(
  unique(owner_id,idempotency_key)
 );
 
+-- Minimal authoritative generation-reservation tables used by the Batch 57
+-- read-only customer spend summary integration test.
+create table executive_visuals.billing_credit_accounts(
+ owner_id uuid primary key references auth.users(id),
+ status text not null default 'active' check(status in ('active','suspended')),
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now()
+);
+create table executive_visuals.billing_credit_reservations(
+ id uuid primary key default gen_random_uuid(),
+ owner_id uuid not null references executive_visuals.billing_credit_accounts(owner_id),
+ job_id uuid,
+ idempotency_key text not null unique,
+ reserved_credits bigint not null check(reserved_credits>0),
+ actual_credits bigint check(actual_credits is null or actual_credits>=0),
+ state text not null default 'reserved' check(state in ('reserved','settled','released')),
+ evidence jsonb not null default '{}'::jsonb,
+ created_at timestamptz not null default now(),
+ settled_at timestamptz,
+ unique(job_id)
+);
+
 
 alter table executive_visuals.payment_transactions add column if not exists provider_fee_minor bigint;
 alter table executive_visuals.payment_transactions add column if not exists flw_ref text;

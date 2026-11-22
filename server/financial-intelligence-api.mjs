@@ -320,7 +320,8 @@ export function createFinancialIntelligenceApi({
 
   async function handle({method,path,ownerId,body={},query={},idempotencyKey=""}={}){
     const customerSuccessRoute=String(path||"").startsWith("/api/customer-success/")||String(path||"").startsWith("/api/admin/customer-success/");
-    if(!billingEnabled&&!customerSuccessRoute)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
+    const customerReadOnlyUsageRoute=method==="GET"&&path==="/api/billing/credits/usage";
+    if(!billingEnabled&&!customerSuccessRoute&&!customerReadOnlyUsageRoute)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
     if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified Supabase account is required.");
     try{
       if(path==="/api/customer-success/me"&&method==="GET"){
@@ -426,6 +427,41 @@ export function createFinancialIntelligenceApi({
           ledgerBalance:Number(balance.ledger_balance),
           reserved:Number(balance.reserved_credits),
           available:Number(balance.available_credits)
+        }});
+      }
+      if(path==="/api/billing/credits/usage"&&method==="GET"){
+        const result=await rpc("get_customer_credit_spend_summary",{p_owner_id:ownerId});
+        const summary=Array.isArray(result)?result[0]:result;
+        const periodStart=String(summary?.periodStart||"");
+        const periodEnd=String(summary?.periodEnd||"");
+        const settled=Number(summary?.settledCredits);
+        const reserved=Number(summary?.reservedCredits);
+        const used=Number(summary?.usedCredits);
+        const allowance=summary?.allowance==null?null:Number(summary.allowance);
+        const validDate=value=>Number.isFinite(Date.parse(value));
+        if(!summary||!validDate(periodStart)||!validDate(periodEnd)||Date.parse(periodEnd)<=Date.parse(periodStart)||
+          !Number.isSafeInteger(settled)||settled<0||!Number.isSafeInteger(reserved)||reserved<0||
+          !Number.isSafeInteger(used)||used!==settled+reserved||
+          (allowance!==null&&(!Number.isSafeInteger(allowance)||allowance<1))||
+          typeof summary.allowancePublished!=="boolean"||
+          (summary.allowancePublished&&allowance===null)||
+          !Array.isArray(summary.alerts))
+          throw Object.assign(new Error("Customer credit usage summary returned invalid accounting data."),{code:"CUSTOMER_CREDIT_USAGE_INVALID"});
+        const alertsEnabled=summary.allowancePublished===true&&allowance!==null&&summary.alertsEnabled===true;
+        const alerts=alertsEnabled?summary.alerts.filter(item=>item&&[50,80,100].includes(Number(item.threshold))&&
+          ["notice","warning","critical"].includes(String(item.level))).map(item=>({
+            threshold:Number(item.threshold),level:String(item.level),
+            usedCredits:used,allowance,usagePercent:Math.min(100,Number.isSafeInteger(Number(item.usagePercent))?Number(item.usagePercent):Math.floor(used*100/allowance))
+          })):[];
+        return response(200,{usage:{
+          periodStart,periodEnd,
+          periodType:summary.periodType==="subscription_period"?"subscription_period":"calendar_month",
+          subscriptionAmbiguous:summary.subscriptionAmbiguous===true,
+          allowance,allowancePublished:summary.allowancePublished===true,
+          settledCredits:settled,reservedCredits:reserved,usedCredits:used,
+          usagePercent:allowance===null?null:Math.min(100,Math.floor(used*100/allowance)),
+          alertsEnabled,alerts,
+          accountingBasis:"settled_actual_plus_active_reservations"
         }});
       }
       if(path==="/api/billing/credits/history"&&method==="GET"){
