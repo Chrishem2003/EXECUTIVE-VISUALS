@@ -3,6 +3,7 @@ const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
 const safeInt=(value,min=0,max=Number.MAX_SAFE_INTEGER)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
 const bps=(value)=>safeInt(value,0,9500);
 const ceilDiv=(a,b)=>{if(b<=0n)throw new Error("Division denominator must be positive.");return (a+b-1n)/b;};
+const secureEvidenceReference=value=>{try{const url=new URL(value);return url.protocol==="https:"&&!url.username&&!url.password;}catch{return false;}};
 
 function normalizePolicy(policy){
  if(!policy||typeof policy!=="object"||Array.isArray(policy))return null;
@@ -57,7 +58,7 @@ export function parseVideoModelQualityEvidence(raw){
      typeof item.qualityScore!=="number"||!Number.isFinite(item.qualityScore)||item.qualityScore<0||item.qualityScore>1||
      typeof item.p95LatencyMs!=="number"||!safeInt(item.p95LatencyMs,1,86400000)||
      typeof item.evaluationVersion!=="string"||!/^[A-Za-z0-9._-]{1,100}$/.test(item.evaluationVersion)||
-     typeof item.evidenceReference!=="string"||item.evidenceReference.length>1000||
+     typeof item.evidenceReference!=="string"||item.evidenceReference.length>1000||!secureEvidenceReference(item.evidenceReference)||
      typeof item.evidenceSha256!=="string"||!/^[a-f0-9]{64}$/i.test(item.evidenceSha256)){
    rejectedCount++;continue;
   }
