@@ -1291,6 +1291,47 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("get_verified_job_cost_coverage",{p_actor_id:ownerId,p_period_month:periodMonth,p_limit:limit});
         return response(200,{coverage:result});
       }
+      if(path==="/api/admin/billing/credit-adjustments"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const targetOwnerId=String(query.ownerId||"").trim()||null;
+        if(targetOwnerId&&!UUID.test(targetOwnerId))
+          return error(400,"ADMIN_CREDIT_ADJUSTMENT_OWNER_INVALID","Provide a valid customer account ID.");
+        const limit=query.limit==null?50:Number(query.limit);
+        if(!Number.isSafeInteger(limit)||limit<1||limit>100)
+          return error(400,"ADMIN_CREDIT_ADJUSTMENT_LIMIT_INVALID","Adjustment history limit must be an integer between 1 and 100.");
+        const adjustments=await rpc("list_admin_credit_adjustments",{
+          p_actor_id:ownerId,p_owner_id:targetOwnerId,p_limit:limit
+        });
+        return response(200,{adjustments:Array.isArray(adjustments)?adjustments:[]});
+      }
+      if(path==="/api/admin/billing/credit-adjustments"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const targetOwnerId=String(body.targetOwnerId||"").trim();
+        const deltaCredits=Number(body.deltaCredits);
+        const reason=String(body.reason||"").trim();
+        const key=String(body.idempotencyKey||idempotencyKey||"").trim();
+        if(!UUID.test(targetOwnerId)||!Number.isSafeInteger(deltaCredits)||deltaCredits===0||
+          Math.abs(deltaCredits)>1000000000||reason.length<8||reason.length>500||
+          !/^[A-Za-z0-9._:-]{8,180}$/.test(key))
+          return error(400,"ADMIN_CREDIT_ADJUSTMENT_INPUT_INVALID","Provide a customer account ID, a non-zero whole-credit adjustment, an 8–500 character reason and an 8–180 character idempotency key.");
+        try{
+          const adjustment=await rpc("apply_admin_credit_adjustment",{
+            p_actor_id:ownerId,p_owner_id:targetOwnerId,p_delta_credits:deltaCredits,
+            p_idempotency_key:key,p_reason:reason,
+            p_evidence:{source:"admin_console",channel:"financial_admin_api"}
+          });
+          return response(200,{adjustment});
+        }catch(failure){
+          const message=String(failure?.message||"");
+          if(message.includes("ADMIN_CREDIT_ADJUSTMENT_EXCEEDS_AVAILABLE_BALANCE"))
+            return error(409,"ADMIN_CREDIT_ADJUSTMENT_EXCEEDS_AVAILABLE_BALANCE","The debit exceeds the customer's unreserved credit balance.");
+          if(message.includes("ADMIN_CREDIT_ADJUSTMENT_IDEMPOTENCY_CONFLICT"))
+            return error(409,"ADMIN_CREDIT_ADJUSTMENT_IDEMPOTENCY_CONFLICT","This idempotency key is already bound to a different adjustment.");
+          if(message.includes("BILLING_ACCOUNT_NOT_ACTIVE"))
+            return error(409,"BILLING_ACCOUNT_NOT_ACTIVE","Credits cannot be adjusted while the customer's billing account is suspended.");
+          throw failure;
+        }
+      }
       if(path==="/api/admin/finance/ai-invoices"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const limit=query.limit==null?50:Number(query.limit);
