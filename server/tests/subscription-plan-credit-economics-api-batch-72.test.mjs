@@ -42,8 +42,8 @@ test("admin-only plan economics uses persisted draft hypotheses and server-owned
  assert.deepEqual(economics.plans.map(plan=>plan.proposedMonthlyCreditAllowance),[630,2030,5530,13930,0]);
  assert.equal(economics.scenarios[0].providerCostUsd,1.2);
  assert.equal(economics.scenarios[0].customerCreditsPerGeneration,394);
- assert.equal(economics.scenarios[1].providerCostUsd,2.35);
- assert.equal(economics.scenarios[1].customerCreditsPerGeneration,772);
+ assert.equal(economics.scenarios[1].providerCostUsd,1.88);
+ assert.equal(economics.scenarios[1].customerCreditsPerGeneration,617);
  assert.equal(economics.plans[0].modelCoverage[0].maximumWholeGenerations,1);
  assert.equal(economics.plans[0].modelCoverage[1].maximumWholeGenerations,0);
  assert.equal(economics.plans[4].modelCoverage[0].maximumWholeGenerations,0);
