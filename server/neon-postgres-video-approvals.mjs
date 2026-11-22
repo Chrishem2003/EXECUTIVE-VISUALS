@@ -160,7 +160,7 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
   },
   async enqueueWorkflowNode(raw){
    if(!raw||typeof raw!=="object"||Array.isArray(raw))throw fail("Neon workflow dispatch requires a quote-bound approval object.","VIDEO_WORKFLOW_APPROVAL_INVALID");
-   const {quoteId,ownerId,projectId,requestId,requestHash,provider,model,operation,input,estimatedAmount,approvedMaxAmount,expiresAt,quoteState}=raw;
+   const {quoteId,ownerId,projectId,requestId,requestHash,provider,model,operation,input,estimatedAmount,approvedMaxAmount,customerCreditBudgetCredits,expiresAt,quoteState}=raw;
    if(!UUID.test(String(quoteId||""))||!UUID.test(String(ownerId||""))||!UUID.test(String(projectId||"")))throw fail("Neon workflow dispatch requires valid quote, owner and project IDs.","VIDEO_WORKFLOW_APPROVAL_INVALID");
    if(typeof requestId!=="string"||requestId.length<8||requestId.length>200||!/^[A-Za-z0-9._:-]+$/.test(requestId)||!HASH.test(String(requestHash||"")))throw fail("Neon workflow request identity is invalid.","VIDEO_WORKFLOW_APPROVAL_INVALID");
    if(provider!=="runway"||model!=="model-router"||!["text-to-video","image-to-video","video-to-video"].includes(operation))throw fail("This Neon workflow adapter only admits the explicitly registered Runway Model Router contract.","VIDEO_WORKFLOW_MODEL_UNSUPPORTED");
@@ -178,7 +178,13 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
    if(!Number.isSafeInteger(quotedAmountMicros)||quotedAmountMicros<1||Math.abs(quotedAmountMicros/1000000-Number(estimatedAmount))>0.0000001||
       !Number.isSafeInteger(budgetCeilingMicros)||budgetCeilingMicros<quotedAmountMicros||budgetCeilingMicros>1000000000000||
       Math.abs(budgetCeilingMicros/1000000-Number(approvedMaxAmount))>0.0000001)throw fail("The workflow quote and approved USD ceiling must use bounded six-decimal amounts.","VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID");
-   const shot={...input,provider,model,operation,estimatedCostMicros:quotedAmountMicros,
+   const requiredCustomerCredits=quoteCustomerCredits({ownerId,projectId,provider,model,currency:"USD",amountMicros:budgetCeilingMicros,shot:input,approvalId:quoteId,shotIndex:0});
+   if(requiredCustomerCredits&&typeof requiredCustomerCredits.then==="function")throw fail("Customer-credit quote policy must be synchronous and deterministic.","VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID");
+   if(!Number.isSafeInteger(requiredCustomerCredits)||requiredCustomerCredits<1||requiredCustomerCredits>100000000)
+    throw fail("The server could not calculate a safe customer-credit ceiling for this workflow.","VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID");
+   if(!Number.isSafeInteger(customerCreditBudgetCredits)||customerCreditBudgetCredits<requiredCustomerCredits||customerCreditBudgetCredits>100000000)
+    throw fail("The approved customer-credit ceiling must be an integer of at least "+requiredCustomerCredits+" credits for the approved USD spending ceiling.","VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED");
+   const shot={...input,id:quoteId,provider,model,operation,estimatedCostMicros:quotedAmountMicros,
     approvedMaxAmountMicros:budgetCeilingMicros,approvedMaxAmount:budgetCeilingMicros/1000000,
     workflowQuoteId:quoteId,workflowRequestId:requestId,
     workflowRequestHash:requestHash,quoteExpiresAt:Number.isFinite(expiry)?new Date(expiry).toISOString():null,
@@ -186,7 +192,11 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
     routedModel:typeof raw.routedModel==="string"?raw.routedModel.slice(0,160):"model-router",
     estimatedProviderCredits:Number.isSafeInteger(raw.estimatedCredits)&&raw.estimatedCredits>0?raw.estimatedCredits:null,
     approvalNote:typeof raw.approvalNote==="string"?raw.approvalNote.slice(0,1000):"Approved in Video Studio"};
-   const snapshotJson={shots:[shot],workflow:{kind:"video.generate",quoteId,requestId,requestHash,operation}};
+   const snapshotJson={shots:[shot],workflow:{kind:"video.generate",quoteId,requestId,requestHash,operation},
+    quote:{customerCreditQuote:{unit:"customer_credits",totalCredits:requiredCustomerCredits,
+     perShot:[{shotId:quoteId,credits:requiredCustomerCredits}],
+     pricingBasis:"server-side USD approval ceiling, target margin, payment fee and support reserve"}},
+    customerCreditBudgetCredits};
    const registered=await approvals.register({id:quoteId,ownerId,projectId,idempotencyKey:requestId+":"+quoteId,requestHash,
     snapshotJson,currency:"USD",quotedAmountMicros,budgetCeilingMicros});
    if(!registered||registered.id!==quoteId||registered.ownerId!==ownerId||registered.projectId!==projectId||
