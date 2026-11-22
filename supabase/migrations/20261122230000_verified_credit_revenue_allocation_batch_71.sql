@@ -6,18 +6,19 @@ create table if not exists executive_visuals.billing_credit_revenue_sources (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references executive_visuals.billing_credit_accounts(owner_id) on delete restrict,
   grant_ledger_id uuid not null unique references executive_visuals.billing_credit_ledger(id) on delete restrict,
-  source_type text not null check(source_type in('paid_credit_pack','subscription_allowance','promotional','admin_compensation')),
+  source_type text not null check(source_type in('paid_credit_pack','subscription_allowance','promotional','admin_compensation','unattributed')),
   source_reference_id uuid references executive_visuals.payment_transactions(id) on delete restrict,
   credits_granted bigint not null check(credits_granted>0),
   allocatable_revenue_minor bigint check(allocatable_revenue_minor is null or allocatable_revenue_minor>=0),
   currency text check(currency is null or currency ~ '^[A-Z]{3}$'),
-  revenue_status text not null check(revenue_status in('verified','pending_subscription_split','non_revenue')),
+  revenue_status text not null check(revenue_status in('verified','pending_subscription_split','non_revenue','unattributed')),
   evidence jsonb not null default '{}'::jsonb check(jsonb_typeof(evidence)='object'),
   created_at timestamptz not null default clock_timestamp(),
   check(
     (source_type='paid_credit_pack' and source_reference_id is not null and allocatable_revenue_minor is not null and allocatable_revenue_minor>0 and currency is not null and revenue_status='verified')
     or (source_type='subscription_allowance' and source_reference_id is not null and allocatable_revenue_minor is null and currency is not null and revenue_status='pending_subscription_split')
     or (source_type in('promotional','admin_compensation') and source_reference_id is null and allocatable_revenue_minor=0 and revenue_status='non_revenue')
+    or (source_type='unattributed' and source_reference_id is null and allocatable_revenue_minor is null and currency is null and revenue_status='unattributed')
   )
 );
 create index if not exists billing_credit_revenue_sources_fifo_idx
@@ -53,7 +54,7 @@ create table if not exists executive_visuals.billing_credit_revenue_allocations 
     (allocation_status='verified' and source_id is not null and revenue_minor is not null and currency is not null)
     or (allocation_status='pending_subscription_split' and source_id is not null and revenue_minor is null and currency is not null)
     or (allocation_status='non_revenue' and source_id is not null and revenue_minor=0)
-    or (allocation_status='unattributed' and source_id is null and revenue_minor is null and currency is null)
+    or (allocation_status='unattributed' and revenue_minor is null and currency is null)
   )
 );
 create index if not exists billing_credit_revenue_allocations_job_idx
@@ -107,7 +108,7 @@ declare
   v_currency text;
 begin
   if p_owner_id is null or p_grant_ledger_id is null or p_source_type is null
-     or p_source_type not in('paid_credit_pack','subscription_allowance','promotional','admin_compensation')
+     or p_source_type not in('paid_credit_pack','subscription_allowance','promotional','admin_compensation','unattributed')
      or p_evidence is null or jsonb_typeof(p_evidence)<>'object' then
     raise exception 'CREDIT_REVENUE_SOURCE_ARGUMENTS_INVALID' using errcode='22023';
   end if;
@@ -156,7 +157,7 @@ begin
       v_revenue:=null;
       v_status:='pending_subscription_split';
     end if;
-  else
+  elsif p_source_type in('promotional','admin_compensation') then
     if p_source_reference_id is not null or p_allocatable_revenue_minor is distinct from 0
        or p_currency is not null then
       raise exception 'CREDIT_REVENUE_NON_REVENUE_SOURCE_INVALID' using errcode='22023';
@@ -164,6 +165,14 @@ begin
     v_currency:=null;
     v_revenue:=0;
     v_status:='non_revenue';
+  else
+    if p_source_reference_id is not null or p_allocatable_revenue_minor is not null
+       or p_currency is not null then
+      raise exception 'CREDIT_REVENUE_UNATTRIBUTED_SOURCE_INVALID' using errcode='22023';
+    end if;
+    v_currency:=null;
+    v_revenue:=null;
+    v_status:='unattributed';
   end if;
 
   select * into existing from billing_credit_revenue_sources where grant_ledger_id=grant_row.id;
