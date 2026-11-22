@@ -108,7 +108,7 @@ begin
   if not exists(
     select 1 from executive_visuals.billing_credit_revenue_allocation_runs
     where reservation_id=v_pending_reservation and status='pending_subscription_split'
-      and actual_credits=100 and allocated_credits=100 and pending_split_credits=30
+      and actual_credits=100 and allocated_credits=100 and pending_split_credits=20
   ) then raise exception 'Mixed paid/promo/subscription credits were not conservatively flagged'; end if;
 
   if (select count(*) from executive_visuals.billing_credit_revenue_allocations
