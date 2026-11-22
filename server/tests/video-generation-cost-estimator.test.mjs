@@ -28,6 +28,28 @@ test("Kling 4.0 Flash estimates published 720p rates and its 29-credit minimum",
   assert.equal(edit.amount, 0.82);
 });
 
+test("shared preflight applies current Kling 4.0 list pricing, input-video billing and HDR",()=>{
+  const text=estimateVideoGenerationCost({
+    provider:"runway",model:"kling_4",durationSeconds:10,resolution:"1080p",pricingDate:"2026-11-22"
+  });
+  assert.equal(text.credits,235);
+  assert.equal(text.amount,2.35);
+  assert.equal(text.discount,null);
+  const edit=estimateVideoGenerationCost({
+    provider:"runway",model:"kling_4",durationSeconds:10,resolution:"1080p",
+    inputType:"video",inputVideoSeconds:6,pricingDate:"2026-11-22"
+  });
+  assert.equal(edit.credits,376);
+  assert.equal(edit.amount,3.76);
+  const hdr=estimateVideoGenerationCost({
+    provider:"runway",model:"kling_4",durationSeconds:10,resolution:"4k",hdr:true,pricingDate:"2026-11-22"
+  });
+  assert.equal(hdr.credits,627);
+  assert.equal(hdr.amount,6.27);
+  assert.equal(hdr.billable,false);
+  assert.equal(hdr.settlementEligible,false);
+});
+
 test("shared preflight supports Luma Ray 3.2 published generation and edit prices", () => {
   const generation = estimateVideoGenerationCost({
     provider: "luma", model: "ray-3.2", operation: "video", resolution: "720p", durationSeconds: 5
