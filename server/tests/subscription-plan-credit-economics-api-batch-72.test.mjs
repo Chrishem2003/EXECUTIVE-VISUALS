@@ -125,6 +125,39 @@ test("plan economics blocks actual-cost readiness when invoice sample is insuffi
  assert.equal(result.body.allowanceReadiness.publishable,false);
 });
 
+test("rejects browser-supplied invoice or actual-cost evidence before reading financial data",async()=>{
+ const service=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);
+  throw new Error("Untrusted cost evidence must be rejected before financial reads.");
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
+  body:{creditBudgetShareBps:7000,scenarios:[scenario],actualCostEvidence:{status:"verified_measured",providerCostPerCustomerCreditMinor:0}}});
+ assert.equal(result.status,400);
+ assert.equal(result.body.error.code,"SUBSCRIPTION_ECONOMICS_INPUT_INVALID");
+});
+
+test("treats a capped invoice usage query as incomplete and does not perform attribution joins",async()=>{
+ const uuid=n=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
+ const capped=Array.from({length:1000},(_,i)=>({id:uuid(2000+i),job_id:uuid(4000+i),status:"succeeded",period_month:"2026-11-01"}));
+ const calls=[];
+ const service=api(async(url)=>{
+  const target=String(url);calls.push(target);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.includes("/subscription_plans?"))return json(plans);
+  if(target.includes("ai_usage_cost_events?"))return json(capped);
+  throw new Error("A capped sample must not query invoice links or reservations.");
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
+  body:{creditBudgetShareBps:7000,periodMonth:"2026-11-01",scenarios:[scenario]}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.actualCostEvidence.status,"sample_incomplete");
+ assert.equal(result.body.actualCostEvidence.sampleComplete,false);
+ assert.equal(result.body.actualCostEvidence.providerCostPerCustomerCreditMinor,null);
+ assert.equal(result.body.allowanceReadiness.status,"blocked_waiting_for_sufficient_complete_invoice_evidence");
+ assert.equal(calls.some(url=>url.includes("financial_cost_attribution_links?")),false);
+ assert.equal(calls.some(url=>url.includes("billing_credit_reservations?")),false);
+});
+
 test("subscription economics rejects non-admin users before reading plan or provider data",async()=>{
  const service=api(async(url)=>{
   if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
