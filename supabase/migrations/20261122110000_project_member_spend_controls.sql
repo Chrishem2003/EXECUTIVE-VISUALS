@@ -42,7 +42,7 @@ declare policy project_credit_pool_member_policies;
 begin
  if p_owner_id is null or p_project_id is null or p_member_id is null
     or p_monthly_limit_credits is null or p_monthly_limit_credits<0 or p_monthly_limit_credits>1000000000
-    or p_status not in ('active','paused') then
+    or p_status is null or p_status not in ('active','paused') then
   raise exception 'PROJECT_CREDIT_POOL_MEMBER_POLICY_ARGUMENTS_INVALID' using errcode='22023';
  end if;
  if not exists(select 1 from projects where id=p_project_id and owner_id=p_owner_id) then
@@ -189,6 +189,7 @@ begin
   values(job_row.project_id,pool.owner_id,p_owner_id,-p_credits,'generation_reserve',p_job_id,
    'project-credit-reserve:'||md5(p_idempotency_key),'Project shared credit reservation');
   -- Existing billing readers expect the initiating user as reservation owner.
+  insert into billing_credit_accounts(owner_id) values(p_owner_id) on conflict(owner_id) do nothing;
   insert into billing_credit_reservations(id,owner_id,job_id,idempotency_key,reserved_credits)
   values(new_id,p_owner_id,p_job_id,p_idempotency_key,p_credits);
   return query select new_id,current_balance-p_credits,false; return;
