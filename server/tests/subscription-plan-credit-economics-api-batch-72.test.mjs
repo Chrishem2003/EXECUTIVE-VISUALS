@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createFinancialIntelligenceApi} from "../financial-intelligence-api.mjs";
+import {estimateVideoGenerationCost} from "../video-generation-cost-estimator.mjs";
+import {createCustomerCreditQuotePolicy} from "../customer-credit-quote-policy.mjs";
 
 const owner="11111111-1111-4111-8111-111111111111";
 const plans=[
@@ -16,6 +18,13 @@ const pricingEnv={
  CUSTOMER_FIXED_PAYMENT_FEE_MICROS:"0"
 };
 const scenario={provider:"runway",model:"gen4.5",durationSeconds:10,resolution:"1080p",audio:false,outputFormat:"mp4"};
+const quoteCustomerCredits=createCustomerCreditQuotePolicy({env:{
+ NEON_CUSTOMER_CREDITS_PER_USD:pricingEnv.CUSTOMER_CREDITS_PER_USD,
+ NEON_CUSTOMER_TARGET_MARGIN_BPS:pricingEnv.CUSTOMER_TARGET_MARGIN_BPS,
+ NEON_CUSTOMER_PAYMENT_FEE_BPS:pricingEnv.CUSTOMER_PAYMENT_FEE_BPS,
+ NEON_CUSTOMER_SUPPORT_RESERVE_BPS:pricingEnv.CUSTOMER_SUPPORT_RESERVE_BPS,
+ NEON_CUSTOMER_FIXED_PAYMENT_FEE_MICROS:pricingEnv.CUSTOMER_FIXED_PAYMENT_FEE_MICROS
+}});
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json"}});}
 function api(fetchImpl,env=pricingEnv){return createFinancialIntelligenceApi({
  supabaseUrl:"https://project.supabase.co",serviceRoleKey:"service-role-test",
