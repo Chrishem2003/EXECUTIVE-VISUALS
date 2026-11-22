@@ -5,10 +5,8 @@ declare
   v_admin constant uuid:='81818181-8181-4181-8181-818181818001';
   v_customer constant uuid:='81818181-8181-4181-8181-818181818002';
   v_regular constant uuid:='81818181-8181-4181-8181-818181818003';
-  v_grant jsonb;
-  v_result jsonb;
-  v_ledger_id uuid;
-  v_reservation uuid:='81818181-8181-4181-8181-818181818004';
+  v_job constant uuid:='81818181-8181-4181-8181-818181818005';
+  v_reservation uuid;
 begin
   insert into auth.users(id,email) values
     (v_admin,'batch81-admin@example.invalid'),
@@ -21,6 +19,8 @@ begin
 
   insert into executive_visuals.billing_credit_accounts(owner_id)
     values(v_customer) on conflict(owner_id) do nothing;
+  insert into executive_visuals.jobs(id,owner_id,job_type)
+    values(v_job,v_customer,'video.generate') on conflict(id) do nothing;
 end
 $batch81_seed$;
 
@@ -30,13 +30,14 @@ declare
   v_admin constant uuid:='81818181-8181-4181-8181-818181818001';
   v_customer constant uuid:='81818181-8181-4181-8181-818181818002';
   v_regular constant uuid:='81818181-8181-4181-8181-818181818003';
+  v_job constant uuid:='81818181-8181-4181-8181-818181818005';
   v_result jsonb;
   v_replay jsonb;
   v_ledger_id uuid;
   v_source_count bigint;
   v_audit_count bigint;
   v_balance bigint;
-  v_reservation uuid:='81818181-8181-4181-8181-818181818004';
+  v_reservation uuid;
 begin
   v_result:=executive_visuals.apply_admin_credit_adjustment(
     v_admin,v_customer,1000,'batch81-positive-0001',
@@ -57,10 +58,11 @@ begin
     raise exception 'Admin compensation must be classified as zero-revenue provenance';
   end if;
 
-  insert into executive_visuals.billing_credit_reservations(
-    id,owner_id,idempotency_key,reserved_credits,state,evidence
-  ) values(v_reservation,v_customer,'batch81-active-reservation',200,'reserved','{"batch":"81"}')
-  on conflict(id) do nothing;
+  select reservation_id into v_reservation
+    from executive_visuals.reserve_generation_credits(
+      v_customer,v_job,200,'batch81-active-reservation'
+    );
+  if v_reservation is null then raise exception 'Generation reservation was not created'; end if;
 
   begin
     perform executive_visuals.apply_admin_credit_adjustment(
@@ -76,7 +78,7 @@ begin
     v_admin,v_customer,-800,'batch81-negative-0001',
     'Approved correction after reservation review'
   );
-  if v_result->>'deltaCredits'<>'-800' or (v_result->>'balanceAfter')::bigint<>200 then
+  if v_result->>'deltaCredits'<>'-800' or (v_result->>'balanceAfter')::bigint<>0 then
     raise exception 'Administrator debit did not preserve the reserved balance: %',v_result;
   end if;
 
@@ -100,7 +102,7 @@ begin
 
   select coalesce(sum(amount),0)::bigint into v_balance
     from executive_visuals.billing_credit_ledger where owner_id=v_customer;
-  if v_balance<>200 then raise exception 'Unexpected final wallet balance: %',v_balance; end if;
+  if v_balance<>0 then raise exception 'Unexpected final wallet balance after fully spending only unreserved credits: %',v_balance; end if;
   select count(*) into v_audit_count
     from executive_visuals.billing_credit_admin_adjustments where owner_id=v_customer;
   if v_audit_count<>2 then raise exception 'Expected exactly two durable adjustment audit records, got %',v_audit_count; end if;
