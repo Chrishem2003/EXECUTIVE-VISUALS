@@ -85,6 +85,40 @@ test("submits Seedance 2.5 Flash image-to-video from an owner-scoped private fir
  assert.equal(payload.ratio,"480:854");
  assert.deepEqual(payload.promptImage,[{uri:"runway://ephemeral/flash-frame",position:"first"}]);
 });
+test("submits Seedance 2.5 Flash video edit using private source upload and fixed 720p mode",async()=>{
+ const calls=[];
+ const adapter=createRunwayCloudVideoAdapter({
+  ...base,model:"seedance2_5_flash",
+  prepareInput:async(input,context)=>{
+   assert.equal(input.sourceVideoAssetId,"flash-source");
+   assert.equal(context.job.owner_id,"owner-1");
+   return {
+    sourceVideo:{buffer:Buffer.alloc(512),filename:"source.mp4",mimeType:"video/mp4"},
+    sourceMetadata:{durationSeconds:8,width:1280,height:720,frameRate:24}
+   };
+  },
+  fetchImpl:async(url,options={})=>{
+   const target=String(url);calls.push({url:target,options});
+   if(target.endsWith("/uploads"))return new Response(JSON.stringify({
+    uploadUrl:"https://uploads.runway.example/flash-source",fields:{key:"flash-source"},runwayUri:"runway://ephemeral/flash-source"
+   }),{status:200});
+   if(target==="https://uploads.runway.example/flash-source")return new Response(null,{status:204});
+   if(target.endsWith("/video_to_video"))return new Response(JSON.stringify({id}),{status:200});
+   throw new Error("unexpected URL "+target);
+  }
+ });
+ const input={provider:"runway",model:"seedance2_5_flash",operation:"video-to-video",
+  prompt:"Change the scene to a snowy evening",sourceVideoAssetId:"flash-source",mode:"edit",duration:"auto"};
+ const prepared=await adapter.prepareInput(input,{job:{owner_id:"owner-1"}});
+ const result=await adapter.submit(prepared);
+ assert.equal(result.taskId,id);
+ const post=calls.find(call=>call.url.endsWith("/video_to_video"));
+ assert.ok(post);
+ assert.deepEqual(JSON.parse(post.options.body),{
+  model:"seedance2_5_flash",videoUri:"runway://ephemeral/flash-source",
+  promptText:"Change the scene to a snowy evening",mode:"edit",duration:"auto"
+ });
+});
 test("enhances a Seedance draft with the exact model and draftTaskId payload", async () => {
   let call;
   const adapter = createRunwayCloudVideoAdapter({
