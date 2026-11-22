@@ -421,16 +421,64 @@ export function createFinancialIntelligenceApi({
         return response(201,{subscription:{id:subscriptionId,status:"active",planCode},message:"Subscription entitlement granted and audited."});
       }
       if(path==="/api/billing/credits"&&method==="GET"){
-        const result=await rpc("get_generation_credit_balance",{p_owner_id:ownerId});
-        const balance=Array.isArray(result)?result[0]:result;
-        if(!balance||!Number.isSafeInteger(Number(balance.ledger_balance))||
-          !Number.isSafeInteger(Number(balance.reserved_credits))||
-          !Number.isSafeInteger(Number(balance.available_credits)))
-          throw Object.assign(new Error("Credit balance service returned an invalid result."),{code:"CREDIT_BALANCE_INVALID"});
+        // The wallet RPC performs due-expiry processing first. Keep the legacy
+        // balance read for ledger reconciliation and backwards compatibility.
+        const walletResult=await rpc("get_customer_credit_wallet",{p_owner_id:ownerId});
+        const wallet=Array.isArray(walletResult)?walletResult[0]:walletResult;
+        const balanceResult=await rpc("get_generation_credit_balance",{p_owner_id:ownerId});
+        const balance=Array.isArray(balanceResult)?balanceResult[0]:balanceResult;
+        const safeCount=value=>Number.isSafeInteger(Number(value))&&Number(value)>=0?Number(value):null;
+        if(!wallet||typeof wallet!=="object"||
+          !balance||safeCount(balance.ledger_balance)===null||
+          safeCount(balance.reserved_credits)===null||
+          safeCount(balance.available_credits)===null||
+          safeCount(wallet.reservedCredits)===null||
+          safeCount(wallet.consumedCredits)===null||
+          safeCount(wallet.expiringWithinSevenDays)===null||
+          safeCount(wallet.pendingExpiryCredits)===null||
+          typeof wallet.expiryDeferred!=="boolean"||
+          !Array.isArray(wallet.creditLots)||!Array.isArray(wallet.recentTransactions))
+          throw Object.assign(new Error("Customer credit wallet returned an invalid result."),{code:"CREDIT_WALLET_INVALID"});
+        const creditLots=wallet.creditLots.slice(0,200).map(lot=>{
+          if(!lot||typeof lot!=="object"||
+            typeof lot.sourceType!=="string"||
+            safeCount(lot.creditsGranted)===null||
+            safeCount(lot.creditsConsumed)===null||
+            safeCount(lot.creditsRemaining)===null||
+            (lot.expiresAt!==null&&lot.expiresAt!==undefined&&!Number.isFinite(Date.parse(lot.expiresAt))))
+            throw Object.assign(new Error("Customer credit lot data is invalid."),{code:"CREDIT_WALLET_INVALID"});
+          return{
+            sourceType:lot.sourceType,
+            creditsGranted:Number(lot.creditsGranted),
+            creditsConsumed:Number(lot.creditsConsumed),
+            creditsRemaining:Number(lot.creditsRemaining),
+            expiresAt:lot.expiresAt||null,
+            revenueStatus:typeof lot.revenueStatus==="string"?lot.revenueStatus:"unknown"
+          };
+        });
+        const recentTransactions=wallet.recentTransactions.slice(0,100).map(entry=>{
+          if(!entry||typeof entry!=="object"||
+            !Number.isSafeInteger(Number(entry.amount))||
+            typeof entry.eventType!=="string"||
+            typeof entry.createdAt!=="string"||!Number.isFinite(Date.parse(entry.createdAt)))
+            throw Object.assign(new Error("Customer credit transaction data is invalid."),{code:"CREDIT_WALLET_INVALID"});
+          return{
+            amount:Number(entry.amount),
+            eventType:entry.eventType,
+            description:typeof entry.description==="string"?entry.description.slice(0,240):"",
+            createdAt:new Date(entry.createdAt).toISOString()
+          };
+        });
         return response(200,{credits:{
           ledgerBalance:Number(balance.ledger_balance),
           reserved:Number(balance.reserved_credits),
-          available:Number(balance.available_credits)
+          available:Number(balance.available_credits),
+          consumed:Number(wallet.consumedCredits),
+          expiringWithinSevenDays:Number(wallet.expiringWithinSevenDays),
+          pendingExpiry:Number(wallet.pendingExpiryCredits),
+          expiryDeferred:wallet.expiryDeferred,
+          creditLots,
+          recentTransactions
         }});
       }
       if(path==="/api/billing/products"&&method==="GET"){

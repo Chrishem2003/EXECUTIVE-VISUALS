@@ -147,7 +147,8 @@
     "verify:subscription-plan-economics": "node --test server/tests/subscription-plan-credit-economics-batch-72.test.mjs server/tests/subscription-plan-credit-economics-api-batch-72.test.mjs server/tests/subscription-plan-credit-economics-ui-batch-72.test.mjs server/tests/subscription-credit-cost-evidence-batch-74.test.mjs server/tests/mixed-subscription-workload-economics.test.mjs server/tests/model-invoice-cost-evidence.test.mjs && npm run verify:subscription-credit-wallet-bridge",
     "verify:mixed-subscription-workload-economics": "node --test server/tests/mixed-subscription-workload-economics.test.mjs",
     "verify:subscription-credit-wallet-bridge": "node --test server/tests/subscription-credit-wallet-bridge-batch-77.test.mjs",
-    "verify:customer-credit-expiry-wallet": "node --test server/tests/customer-credit-expiry-wallet-batch-78.test.mjs"
+    "verify:customer-credit-expiry-wallet": "node --test server/tests/customer-credit-expiry-wallet-batch-78.test.mjs",
+    "verify:customer-credit-wallet-dashboard": "node --test server/tests/customer-credit-wallet-dashboard-batch-79.test.mjs server/tests/financial-intelligence-api.test.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

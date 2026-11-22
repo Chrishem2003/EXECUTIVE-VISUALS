@@ -392,25 +392,44 @@ test("payment webhook verifies Flutterwave charge and atomically fulfils once",a
 });
 
 
-test("credit balance endpoint returns server-computed owner balance only",async()=>{
-  let rpcBody=null,requestUrl="";
+test("credit wallet endpoint returns owner-scoped spendable balance, lots and safe transaction history",async()=>{
+  const calls=[];
   const service=api(async(url,options={})=>{
-    requestUrl=String(url);
-    rpcBody=JSON.parse(options.body||"{}");
-    return json({ledger_balance:1200,reserved_credits:200,available_credits:1000});
+    const path=String(url);
+    const body=JSON.parse(options.body||"{}");
+    calls.push({path,body});
+    if(path.endsWith("/rpc/get_customer_credit_wallet"))return json({
+      availableCredits:760,reservedCredits:40,consumedCredits:200,
+      expiringWithinSevenDays:100,pendingExpiryCredits:0,expiryDeferred:false,
+      creditLots:[{sourceId:"private-source-id",sourceType:"subscription_allowance",creditsGranted:1000,
+        creditsConsumed:200,creditsRemaining:800,expiresAt:"2026-12-01T00:00:00Z",revenueStatus:"recognized"}],
+      recentTransactions:[{id:"private-ledger-id",amount:1000,eventType:"grant",description:"Monthly allowance",
+        createdAt:"2026-11-01T00:00:00Z",evidence:{providerSecret:"must-not-leak"}}]
+    });
+    return json({ledger_balance:800,reserved_credits:40,available_credits:760});
   });
   const result=await service.handle({method:"GET",path:"/api/billing/credits",ownerId:owner});
   assert.equal(result.status,200);
-  assert.deepEqual(result.body.credits,{ledgerBalance:1200,reserved:200,available:1000});
-  assert.ok(requestUrl.endsWith("/rpc/get_generation_credit_balance"));
-  assert.deepEqual(rpcBody,{p_owner_id:owner});
+  assert.deepEqual(result.body.credits,{
+    ledgerBalance:800,reserved:40,available:760,consumed:200,expiringWithinSevenDays:100,
+    pendingExpiry:0,expiryDeferred:false,
+    creditLots:[{sourceType:"subscription_allowance",creditsGranted:1000,creditsConsumed:200,
+      creditsRemaining:800,expiresAt:"2026-12-01T00:00:00Z",revenueStatus:"recognized"}],
+    recentTransactions:[{amount:1000,eventType:"grant",description:"Monthly allowance",createdAt:"2026-11-01T00:00:00.000Z"}]
+  });
+  assert.deepEqual(calls.map(x=>x.path.split("/").at(-1)),["get_customer_credit_wallet","get_generation_credit_balance"]);
+  assert.deepEqual(calls.map(x=>x.body),[{p_owner_id:owner},{p_owner_id:owner}]);
+  assert.doesNotMatch(JSON.stringify(result.body),/private-source-id|private-ledger-id|providerSecret/);
 });
 
-test("credit balance endpoint fails closed on malformed database values",async()=>{
-  const service=api(async()=>json({ledger_balance:"not-a-number",reserved_credits:0,available_credits:0}));
+test("credit wallet endpoint fails closed on malformed wallet and balance values",async()=>{
+  const service=api(async(url)=>String(url).endsWith("/rpc/get_customer_credit_wallet")
+    ?json({availableCredits:0,reservedCredits:0,consumedCredits:"bad",expiringWithinSevenDays:0,
+      pendingExpiryCredits:0,expiryDeferred:false,creditLots:[],recentTransactions:[]})
+    :json({ledger_balance:0,reserved_credits:0,available_credits:0}));
   const result=await service.handle({method:"GET",path:"/api/billing/credits",ownerId:owner});
   assert.equal(result.status,502);
-  assert.equal(result.body.error.code,"CREDIT_BALANCE_INVALID");
+  assert.equal(result.body.error.code,"CREDIT_WALLET_INVALID");
 });
 
 
