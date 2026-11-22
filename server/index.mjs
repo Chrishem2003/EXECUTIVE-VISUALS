@@ -29,6 +29,7 @@ import { getProviderCatalog } from "./provider-registry.mjs";
 import { buildAdminProviderReadiness, buildAdminProviderReadinessSummary } from "./admin-operations.mjs";
 import { getProviderCapabilityAtlas } from "./provider-capability-atlas.mjs";
 import { estimateVideoGenerationCost, estimateVideoProductionCost, parseVideoPricingCatalog } from "./video-cost-estimator.mjs";
+import { quoteCustomerCredits, resolveCustomerCreditPolicy } from "./customer-credit-economics.mjs";
 import { preflightVideoProduction } from "./video-shot-preflight.mjs";
 import { buildVideoGenerationApproval } from "./video-generation-approval.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
@@ -1227,14 +1228,18 @@ export function createAppServer() {
         const body=await readJson(req,16*1024);
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const quote=estimateVideoGenerationCost(body,pricing);
-        send(res,200,quote,cors);return;
+        const configured=resolveCustomerCreditPolicy(process.env);
+        const customerCreditQuote=quoteCustomerCredits(quote,configured.configured?configured.policy:null);
+        send(res,200,{...quote,customerCreditQuote},cors);return;
       }
       if(path==="/api/video-production-quote"&&req.method==="POST"){
         if(!rateAllowed("video-production-quote:"+user.id,20,60000)){fail(res,429,"RATE_LIMITED","Too many production quote requests. Try again shortly.");return;}
         const body=await readJson(req,32*1024);
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const quote=estimateVideoProductionCost(body,pricing);
-        send(res,200,quote,cors);return;
+        const configured=resolveCustomerCreditPolicy(process.env);
+        const customerCreditQuote=quoteCustomerCredits(quote,configured.configured?configured.policy:null);
+        send(res,200,{...quote,customerCreditQuote},cors);return;
       }
       if(path==="/api/video-production-approvals"&&req.method==="POST"){
         if(!rateAllowed("video-production-approval:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many production approval requests. Try again shortly.");return;}
