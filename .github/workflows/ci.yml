@@ -306,7 +306,7 @@ jobs:
       - name: Verify member attribution, monthly limits, pause and role enforcement
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/project-member-spend-controls-postgres-integration.sql
       - name: Apply account-wide agency team seat entitlement enforcement
-        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122120000_project_team_seat_entitlements.sql
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122123000_project_team_seat_entitlements.sql
       - name: Verify agency seat limits across multiple workspaces
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/project-team-seat-entitlements-postgres-integration.sql
 
