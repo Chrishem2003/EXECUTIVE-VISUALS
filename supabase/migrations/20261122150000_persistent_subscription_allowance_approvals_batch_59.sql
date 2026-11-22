@@ -114,7 +114,11 @@ begin
   or coalesce((p_proposal->'costEvidence'->>'sampleJobs')::integer,0)<5
   or coalesce((p_proposal->'costEvidence'->>'sampleCredits')::bigint,0)<1
   or coalesce((p_proposal->'costEvidence'->>'totalProviderCostMinor')::bigint,0)<1
-  or coalesce(p_proposal->'costEvidence'->>'evidenceDigest','') !~ '^[a-f0-9]{64}  or nullif(p_proposal->'costEvidence'->>'periodStart','') is null
+  or coalesce(p_proposal->'costEvidence'->>'evidenceDigest','') !~ '^[a-f0-9]{64}$'
+  or (p_proposal->>'providerCostPerCustomerCreditMinor')::bigint <>
+     ((coalesce((p_proposal->'costEvidence'->>'totalProviderCostMinor')::bigint,0)
+       + coalesce((p_proposal->'costEvidence'->>'sampleCredits')::bigint,0)-1)
+       / greatest(coalesce((p_proposal->'costEvidence'->>'sampleCredits')::bigint,0),1))
   or nullif(p_proposal->'costEvidence'->>'periodEnd','') is null
   or (p_proposal->'costEvidence'->>'periodEnd')::timestamptz <= (p_proposal->'costEvidence'->>'periodStart')::timestamptz then
   raise exception using errcode='22023',message='subscription_allowance_invoice_evidence_required';
