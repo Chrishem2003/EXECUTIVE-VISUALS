@@ -9,7 +9,7 @@ test("Financial Command Centre renders the read-only subscription plan credit si
  assert.match(app,/finance-plan-credit-share/);
  assert.match(app,/finance-plan-credit-scenarios/);
  assert.match(app,/data-finance-subscription-plan-economics/);
- assert.match(app,/\\/api\\/admin\\/finance\\/subscription-plan-economics/);
+ assert.ok(app.includes("/api/admin/finance/subscription-plan-economics"));
 });
 
 test("plan simulator displays draft plan allowances, model coverage, provider costs and limitations",()=>{
