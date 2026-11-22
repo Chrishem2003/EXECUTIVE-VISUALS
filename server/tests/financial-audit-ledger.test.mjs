@@ -46,3 +46,11 @@ test("repeated idempotency keys are detected during verification",()=>{
  const rows=[first,duplicate].map(e=>({eventEnvelope:Object.fromEntries(Object.entries(e).filter(([k])=>!["eventHash","canonicalEvent"].includes(k))),eventHash:e.eventHash}));
  assert.equal(verifyFinancialAuditChain(rows,{ownerId:owner}).firstBroken.reason,"duplicate_idempotency_key");
 });
+
+test("subscription allowance publication is an accepted hash-chained audit event",()=>{
+ const event=createFinancialAuditEvent({ownerId:owner,actorId:actor,eventType:"subscription_allowance.published",
+  payload:{proposalId:"proposal-1",proposalHash:"a".repeat(64),planCode:"starter_creator",sourcePlanVersion:1},
+  idempotencyKey:"batch60-publication-01",occurredAt:at,sequence:1});
+ assert.equal(event.eventType,"subscription_allowance.published");
+ assert.match(event.eventHash,/^[a-f0-9]{64}$/);
+});
