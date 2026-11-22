@@ -109,3 +109,53 @@ test("proposal status endpoint returns persisted approval state without publishi
  assert.equal(result.body.approvalStatus.proposal.included_credits,120);
  assert.equal(result.body.approvalStatus.publishable,false);
 });
+
+test("proposal creation re-derives invoice evidence server-side and stores its exact source digest",async()=>{
+ const uuid=n=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
+ const events=[],attributions=[],reservations=[];
+ for(let i=1;i<=5;i++){
+  const jobId=uuid(100+i),usageId=uuid(200+i);
+  events.push({id:usageId,job_id:jobId,status:"succeeded",period_month:"2026-11-01"});
+  attributions.push({usage_event_id:usageId,amount_minor:100,currency:"USD",invoice_import_id:uuid(300+i),invoice_line_id:uuid(400+i)});
+  reservations.push({job_id:jobId,actual_credits:1000,state:"settled"});
+ }
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url),body=options.body?JSON.parse(options.body):null;calls.push({target,body});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.includes("ai_usage_cost_events?")&&target.includes("period_month=eq."))return json(events);
+  if(target.includes("ai_usage_cost_events?")&&target.includes("job_id=in."))return json(events);
+  if(target.includes("financial_cost_attribution_links?"))return json(attributions);
+  if(target.includes("billing_credit_reservations?"))return json(reservations);
+  if(target.endsWith("/rpc/get_financial_audit_head"))return json({sequence:0,headHash:"0".repeat(64)});
+  if(target.endsWith("/rpc/create_subscription_allowance_proposal"))return json({
+   duplicate:false,proposalId,proposalHash:body.p_proposal_hash,status:"awaiting_dual_approval",publishable:false
+  });
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-proposals",
+  ownerId:financeActor,idempotencyKey:"batch59-create-001",
+  body:{planCode:"starter_creator",periodMonth:"2026-11-01",targetGrossMarginBps:7000,
+   paymentFeeBps:350,refundReserveBps:200,fixedPaymentFeeMinor:30,supportReserveMinor:20,infrastructureReserveMinor:30}});
+ assert.equal(result.status,201,JSON.stringify(result.body));
+ const create=calls.find(x=>x.target.endsWith("/rpc/create_subscription_allowance_proposal"));
+ assert.ok(create);
+ assert.equal(create.body.p_proposal.costEvidence.sampleJobs,5);
+ assert.equal(create.body.p_proposal.costEvidence.sampleCredits,5000);
+ assert.equal(create.body.p_proposal.costEvidence.totalProviderCostMinor,500);
+ assert.match(create.body.p_proposal.costEvidence.evidenceDigest,/^[a-f0-9]{64}$/);
+ assert.equal(create.body.p_proposal_hash,result.body.proposalHash);
+ assert.equal(create.body.p_event_envelope.eventType,"subscription_allowance.proposal_created");
+ assert.equal(result.body.proposal.publishable,false);
+});
+
+test("proposal creation rejects browser-supplied provider cost evidence",async()=>{
+ let calls=0;
+ const service=api(async()=>{calls++;throw new Error("Untrusted evidence must not reach the database.");});
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-proposals",
+  ownerId:financeActor,idempotencyKey:"batch59-create-002",
+  body:{planCode:"starter_creator",providerCostPerCustomerCreditMinor:1,costEvidence:{status:"verified_measured"}}});
+ assert.equal(result.status,400);
+ assert.equal(result.body.error.code,"SUBSCRIPTION_ALLOWANCE_PROPOSAL_INPUT_INVALID");
+ assert.equal(calls,0);
+});
