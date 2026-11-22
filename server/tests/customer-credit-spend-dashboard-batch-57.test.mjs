@@ -79,3 +79,21 @@ test("customer spend summary rejects inconsistent ledger totals and malformed pe
   assert.notEqual(result.status,200);
  }
 });
+
+test("customer spend utilization is capped for progress rendering while retaining over-budget usage",async()=>{
+ const api=service(async url=>{
+  if(String(url).endsWith("/rpc/get_customer_credit_spend_summary"))return json({
+   periodStart:"2026-11-01T00:00:00.000Z",periodEnd:"2026-12-01T00:00:00.000Z",
+   periodType:"subscription_period",subscriptionAmbiguous:false,allowance:100,
+   allowancePublished:true,settledCredits:250,reservedCredits:0,usedCredits:250,
+   usagePercent:250,alertsEnabled:true,
+   alerts:[{threshold:50,level:"notice",usagePercent:250},{threshold:80,level:"warning",usagePercent:250},{threshold:100,level:"critical",usagePercent:250}]
+  });
+  throw new Error("Unexpected request: "+String(url));
+ });
+ const result=await api.handle({method:"GET",path:"/api/billing/credits/usage",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.usage.usedCredits,250);
+ assert.equal(result.body.usage.usagePercent,100);
+ assert.ok(result.body.usage.alerts.every(item=>item.usagePercent===100));
+});
