@@ -39,6 +39,7 @@ on:
       - feat/admin-credit-adjustments-batch-81-2026-11-23
       - feat/provider-cost-credit-price-floors-batch-82-2026-11-23
       - feat/rate-card-subscription-economics-batch-83-2026-11-23
+      - feat/governed-hdr-costing-batch-84-2026-11-23
   pull_request:
 
 permissions:
