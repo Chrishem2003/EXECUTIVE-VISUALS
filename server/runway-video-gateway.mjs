@@ -5,6 +5,7 @@ const MODEL_PROFILES=Object.freeze({
   "gen4.5":Object.freeze({label:"Runway Gen-4.5",minDurationSeconds:2,maxDurationSeconds:10,aspectRatios:["16:9","9:16"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
   "gemini_omni_flash_1.2":Object.freeze({label:"Gemini Omni Flash 1.2",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16"],resolutions:["provider_default","360p","720p","1080p","4k"],defaultResolution:"720p"}),
   "seedance2_5":Object.freeze({label:"Seedance 2.5",minDurationSeconds:4,maxDurationSeconds:30,aspectRatios:["21:9","16:9","4:3","1:1","3:4","9:16"],resolutions:["provider_default","480p","720p","1080p","4k"],defaultResolution:"720p"}),
+  "seedance2_5_flash":Object.freeze({label:"Seedance 2.5 Flash",minDurationSeconds:4,maxDurationSeconds:30,aspectRatios:["21:9","16:9","4:3","1:1","3:4","9:16"],resolutions:["provider_default","480p","720p"],defaultResolution:"720p"}),
   "kling_4":Object.freeze({label:"Kling 4.0",minDurationSeconds:3,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p","1080p"],defaultResolution:"720p"}),
   "kling_4_flash":Object.freeze({label:"Kling 4.0 Flash",minDurationSeconds:3,maxDurationSeconds:20,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p"],defaultResolution:"720p"}),
   "kling3.0_standard":Object.freeze({label:"Kling 3.0 Standard",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
@@ -19,6 +20,14 @@ const ratioFor=(model,ratio,resolution)=>{
     "gemini_omni_flash_1.2":{
       "16:9":resolution==="4k"?"3840:2160":resolution==="1080p"?"1920:1080":resolution==="360p"?"640:360":"1280:720",
       "9:16":resolution==="4k"?"2160:3840":resolution==="1080p"?"1080:1920":resolution==="360p"?"360:640":"720:1280"
+    },
+    "seedance2_5_flash":{
+      "16:9":resolution==="720p"?"1280:720":"854:480",
+      "9:16":resolution==="720p"?"720:1280":"480:854",
+      "1:1":resolution==="720p"?"960:960":"640:640",
+      "4:3":resolution==="720p"?"1112:834":"752:560",
+      "3:4":resolution==="720p"?"834:1112":"560:752",
+      "21:9":resolution==="720p"?"1470:630":"992:432"
     },
     "seedance2_5":{
       "16:9":resolution==="4k"?"3840:2160":resolution==="1080p"?"1920:1080":resolution==="720p"?"1280:720":"854:480",
@@ -55,12 +64,12 @@ export function getRunwayVideoCapabilities(model=process.env.RUNWAY_VIDEO_MODEL|
   return Object.freeze({
     negativePrompt:false,seed:false,startFrame:true,endFrame:false,motionReference:false,
     referenceImages:String(model||"").trim()!=="kling_4_flash",
-    referenceVideos:String(model||"").trim()==="seedance2_5",
-    referenceAudio:String(model||"").trim()==="seedance2_5",
-    maxReferenceImages:String(model||"").trim()==="seedance2_5"?30:0,
-    maxReferenceVideos:String(model||"").trim()==="seedance2_5"?10:0,
-    maxReferenceAudio:String(model||"").trim()==="seedance2_5"?10:0,
-    audioModes:Object.freeze(["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(String(model||"").trim())?["generated","none","reference"]:["kling_4","kling_4_flash"].includes(String(model||"").trim())?["generated"]:[]),
+    referenceVideos:["seedance2_5","seedance2_5_flash"].includes(String(model||"").trim()),
+    referenceAudio:["seedance2_5","seedance2_5_flash"].includes(String(model||"").trim()),
+    maxReferenceImages:String(model||"").trim()==="seedance2_5"?30:String(model||"").trim()==="seedance2_5_flash"?10:0,
+    maxReferenceVideos:String(model||"").trim()==="seedance2_5"?10:String(model||"").trim()==="seedance2_5_flash"?5:0,
+    maxReferenceAudio:String(model||"").trim()==="seedance2_5"?10:String(model||"").trim()==="seedance2_5_flash"?5:0,
+    audioModes:Object.freeze(["seedance2_5","seedance2_5_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(String(model||"").trim())?["generated","none","reference"]:["kling_4","kling_4_flash"].includes(String(model||"").trim())?["generated"]:[]),
     aspectRatios:Object.freeze([...profile.aspectRatios]),
     resolutions:Object.freeze([...profile.resolutions]),
     minDurationSeconds:profile.minDurationSeconds,maxDurationSeconds:profile.maxDurationSeconds
@@ -89,10 +98,11 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
   const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
   const validUri = value => typeof value === "string" && (/^https:\/\//i.test(value) || /^runway:\/\//i.test(value));
-  if (!Array.isArray(references) || references.length > 30 || references.some(item => !item || !validUri(item.uri))) throw fail("Seedance image references must contain at most 30 valid HTTPS or Runway URIs.","VIDEO_GATEWAY_INVALID_INPUT");
-  if (!Array.isArray(referenceVideos) || referenceVideos.length > 10 || referenceVideos.some(item => !item || !validUri(item.uri))) throw fail("Seedance video references must contain at most 10 valid HTTPS or Runway URIs.","VIDEO_GATEWAY_INVALID_INPUT");
-  if (!Array.isArray(referenceAudio) || referenceAudio.length > 10 || referenceAudio.some(item => !item || !validUri(item.uri))) throw fail("Seedance audio references must contain at most 10 valid HTTPS or Runway URIs.","VIDEO_GATEWAY_INVALID_INPUT");
-  if (id !== "seedance2_5" && (references.length || referenceVideos.length || referenceAudio.length)) throw fail("Native multimodal references are enabled only for Seedance 2.5 in this adapter.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  const imageLimit=id==="seedance2_5_flash"?10:30,videoLimit=id==="seedance2_5_flash"?5:10,audioLimit=id==="seedance2_5_flash"?5:10;
+  if (!Array.isArray(references) || references.length > imageLimit || references.some(item => !item || !validUri(item.uri))) throw fail("Seedance image references exceed the selected model limit.","VIDEO_GATEWAY_INVALID_INPUT");
+  if (!Array.isArray(referenceVideos) || referenceVideos.length > videoLimit || referenceVideos.some(item => !item || !validUri(item.uri))) throw fail("Seedance video references exceed the selected model limit.","VIDEO_GATEWAY_INVALID_INPUT");
+  if (!Array.isArray(referenceAudio) || referenceAudio.length > audioLimit || referenceAudio.some(item => !item || !validUri(item.uri))) throw fail("Seedance audio references exceed the selected model limit.","VIDEO_GATEWAY_INVALID_INPUT");
+  if (!["seedance2_5","seedance2_5_flash"].includes(id) && (references.length || referenceVideos.length || referenceAudio.length)) throw fail("Native multimodal references are enabled only for Seedance 2.5 in this adapter.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if((!text&&!segments&&!references.length&&!referenceVideos.length&&!referenceAudio.length)||text.length>maxPrompt)throw fail("Runway text-to-video prompt is empty or exceeds the selected model limit of "+maxPrompt+" characters.","VIDEO_GATEWAY_INVALID_INPUT");
   if(kling3&&text&&text.length<2)throw fail("Kling 3.0 prompts require at least two characters.","VIDEO_GATEWAY_INVALID_INPUT");
   if(!segments&&(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds))throw fail("Duration is outside the selected model documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
@@ -102,7 +112,7 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   const ratio=ratioFor(id,aspectRatio,draft?"720p":effectiveResolution);
   if(!ratio)throw fail("No verified output ratio mapping exists for this model and aspect ratio.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   const payload={model:id,ratio,...(text?{promptText:text}:{}),...(segments?{providerSettings:{multiPrompt:segments,shotType}}:{duration:durationSeconds}),...(references.length?{references:references.map(item=>({uri:item.uri}))}:{}),...(referenceVideos.length?{referenceVideos:referenceVideos.map(item=>({uri:item.uri}))}:{}),...(referenceAudio.length?{referenceAudio:referenceAudio.map(item=>({uri:item.uri}))}:{}),...(draft?{draft:true}:{})};
-  if(id==="seedance2_5"&&segments)throw fail("Seedance multi-shot requests require the dedicated recipe adapter and are not enabled in this worker.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  if(["seedance2_5","seedance2_5_flash"].includes(id)&&segments)throw fail("Seedance multi-shot requests require the dedicated recipe adapter and are not enabled in this worker.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   return Object.freeze(payload);
 }
 export function buildRunwayImageToVideoPayload({model,prompt,promptImage,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",multiPrompt,shotType="customize",draft=false,referenceAudio=[]}={}){
@@ -115,17 +125,17 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  const kling3=id.startsWith("kling3.0_");
  const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
  const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
- const seedanceImageList=id==="seedance2_5"&&Array.isArray(promptImage);
+ const seedanceImageList=["seedance2_5","seedance2_5_flash"].includes(id)&&Array.isArray(promptImage);
  const referenceMode=seedanceImageList&&promptImage.every(item=>item&&!("position" in item));
  const keyframeMode=seedanceImageList&&promptImage.length>=1&&promptImage.length<=2&&
   promptImage[0]?.position==="first"&&(promptImage.length===1||promptImage[1]?.position==="last");
  const validImageUri=value=>typeof value==="string"&&(/^(https:\/\/|runway:\/\/)/i.test(value));
- if(!Array.isArray(referenceAudio)||referenceAudio.length>10||referenceAudio.some(item=>!item||typeof item.uri!=="string"||!(/^(https:\/\/|runway:\/\/)/i.test(item.uri))))throw fail("Seedance image-to-video accepts at most 10 valid audio references.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(!Array.isArray(referenceAudio)||referenceAudio.length>(id==="seedance2_5_flash"?5:10)||referenceAudio.some(item=>!item||typeof item.uri!=="string"||!(/^(https:\/\/|runway:\/\/)/i.test(item.uri))))throw fail("Seedance image-to-video accepts at most 10 valid audio references.","VIDEO_GATEWAY_INVALID_INPUT");
  if((!text&&!segments&&!referenceMode&&!keyframeMode)||text.length>maxPrompt)throw fail("Runway image-to-video prompt is empty or exceeds the selected model limit of "+maxPrompt+" characters.","VIDEO_GATEWAY_INVALID_INPUT");
  if(referenceAudio.length&&(!text||!referenceMode))throw fail("Seedance reference audio requires promptText and reference-image mode.","VIDEO_GATEWAY_INVALID_INPUT");
  if(kling3&&text&&text.length<2)throw fail("Kling 3.0 prompts require at least two characters.","VIDEO_GATEWAY_INVALID_INPUT");
  if(referenceMode){
-  if(promptImage.length<1||promptImage.length>30||promptImage.some(item=>!item||!validImageUri(item.uri)||"position" in item))throw fail("Seedance reference mode accepts 1–30 image URIs without first/last keyframe positions.","VIDEO_GATEWAY_INVALID_INPUT");
+  if(promptImage.length<1||promptImage.length>(id==="seedance2_5_flash"?10:30)||promptImage.some(item=>!item||!validImageUri(item.uri)||"position" in item))throw fail("Seedance reference mode accepts 1–30 image URIs without first/last keyframe positions.","VIDEO_GATEWAY_INVALID_INPUT");
  }else if(keyframeMode){
   if(promptImage.some(item=>!item||!validImageUri(item.uri)||!["first","last"].includes(item.position))||
      promptImage[0].position!=="first"||promptImage.length===2&&promptImage[1].position!=="last")throw fail("Seedance keyframe mode requires a first frame and an optional last frame.","VIDEO_GATEWAY_INVALID_INPUT");
@@ -133,7 +143,7 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  if(!segments&&(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds))throw fail("Duration is outside the selected model documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  const payload={model:id,...(text?{promptText:text}:{}),promptImage,...(referenceAudio.length?{referenceAudio:referenceAudio.map(item=>({uri:item.uri}))}:{}),...(segments?{providerSettings:{multiPrompt:segments,shotType}}:{duration:durationSeconds}),...(draft?{draft:true}:{})};
- if(id==="seedance2_5"){
+ if(["seedance2_5","seedance2_5_flash"].includes(id)){
   const effectiveResolution=draft?"480p":resolution==="provider_default"?profile.defaultResolution:resolution;
   if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   const ratio=ratioFor(id,aspectRatio,effectiveResolution);
