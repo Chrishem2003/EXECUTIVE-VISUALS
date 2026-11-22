@@ -32,6 +32,7 @@ on:
       - feat/financial-governance-batch-48
       - feat/revenue-movement-cohort-intelligence-batch-39
       - feat/verified-job-cost-coverage-batch-70-2026-11-22
+      - feat/verified-credit-revenue-allocation-batch-71-2026-11-22
   pull_request:
 
 permissions:
@@ -179,6 +180,12 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122170000_verified_job_cost_coverage_batch_70.sql
       - name: Verify Batch 70 invoice-backed job costs, settled credits and revenue gate
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-job-cost-coverage-postgres-integration.sql
+      - name: Apply Batch 71 verified credit revenue allocation
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122230000_verified_credit_revenue_allocation_batch_71.sql
+      - name: Verify Batch 71 payment-to-generation revenue allocation
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-credit-revenue-allocation-postgres-integration-batch-71.sql
+      - name: Test Batch 71 verified revenue allocation and Financial Command Centre
+        run: npm run verify:verified-credit-revenue-allocation
       - name: Verify Paddle and Pesapal reservation, activation, renewal and lifecycle settlement
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/paddle-pesapal-subscription-postgres-integration.sql
       - name: Verify resource economics and shadow model routing

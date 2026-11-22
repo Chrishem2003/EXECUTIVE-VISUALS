@@ -9,7 +9,7 @@ Connect immutable provider-invoice reconciliation evidence to settled generation
 - Provider actual cost is included only when an immutable ai_provider_invoice_reconciliation_events row is matched, its invoice import is fully matched, and the linked usage event belongs to the reporting month and a job.
 - Customer credit consumption comes only from settled billing_credit_reservations with a recorded actual_credits amount.
 - Job costs are grouped by currency. A mixed-currency job is flagged and its amounts are never added together.
-- The report does not convert credits into money. Recognized revenue and gross margin remain null; profitabilityAvailable remains false until a separately verified revenue-allocation ledger is implemented.
+- The report does not convert credits into money. Recognized revenue and gross margin are exposed only through the separately verified Batch 71 revenue-allocation ledger; incomplete or mixed evidence keeps profitability unavailable.
 - Missing invoice-backed cost or settled credit evidence is surfaced as an exception rather than silently treated as zero.
 
 ## API
@@ -30,4 +30,4 @@ The month must be the first day of a real calendar month. Page size is bounded t
 
 ## Next gate
 
-Implement a trusted revenue-allocation ledger that distinguishes paid top-ups, subscription revenue, included credits, promotional grants, refunds and chargebacks. Allocate recognized revenue to settled job consumption with explicit evidence and currency handling. Only then may the existing verified-job profitability calculator produce gross-margin results for these jobs.
+Batch 71 adds verified paid-credit source allocation and subscription credit-component review. Remaining gates are payment-fee, refund and chargeback allocation, project-pool source transfers, historical grant reconciliation and clean combined-stack PostgreSQL verification. Do not enable production profitability until these evidence sources are complete.

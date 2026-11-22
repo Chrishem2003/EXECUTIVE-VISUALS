@@ -16,6 +16,7 @@ on:
       - feat/model-specific-provider-cost-estimates-2026-11-22
       - feat/verified-job-profitability-batch-43-2026-11-22
       - feat/verified-job-cost-coverage-batch-70-2026-11-22
+      - feat/verified-credit-revenue-allocation-batch-71-2026-11-22
       - feat/live-workload-telemetry-batch-36
       - feat/subscription-customer-economics-batch-37
       - feat/financial-governance-batch-48

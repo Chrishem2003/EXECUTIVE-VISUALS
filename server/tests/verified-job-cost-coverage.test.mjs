@@ -64,9 +64,9 @@ test("verified job cost coverage calls the read-only report with authenticated a
 test("financial command centre renders invoice-backed job cost coverage and revenue gate",async()=>{
   const app=await readFile(new URL("../../src/platform/app.ts",import.meta.url),"utf8");
   assert.match(app,/\/api\/admin\/finance\/job-cost-coverage/);
-  assert.match(app,/Verified job cost & credit coverage/);
-  assert.match(app,/Profitability: blocked pending revenue evidence/);
-  assert.match(app,/Revenue and gross margin are deliberately not inferred from credits/);
+  assert.match(app,/Verified job revenue, cost & margin/);
+  assert.match(app,/Revenue allocation: /);
+  assert.match(app,/Revenue is recognized against consumed credits/);
 });
 
 test("coverage migration requires invoice-backed matches and never converts credits into revenue",async()=>{
@@ -85,4 +85,34 @@ test("coverage migration requires invoice-backed matches and never converts cred
   assert.match(sql,/profitabilityAvailable',false/);
   assert.match(sql,/revoke all on function executive_visuals\.get_verified_job_cost_coverage/);
   assert.match(sql,/grant execute on function executive_visuals\.get_verified_job_cost_coverage/);
+});
+
+test("Batch 71 migration allocates only verified paid-credit revenue to settled job usage",async()=>{
+  const sql=await readFile(new URL("../../supabase/migrations/20261122230000_verified_credit_revenue_allocation_batch_71.sql",import.meta.url),"utf8");
+  assert.match(sql,/register_generation_credit_revenue_source/);
+  assert.match(sql,/sync_verified_payment_credit_grant_to_generation_wallet/);
+  assert.match(sql,/sync_generation_wallet_grant_source/);
+  assert.match(sql,/Pre-Batch71 grant; payment provenance was not reconstructed/);
+  assert.match(sql,/after insert on executive_visuals\.credit_ledger/);
+  assert.match(sql,/approve_subscription_credit_revenue_split/);
+  assert.match(sql,/billing_credit_revenue_source_reviews/);
+  assert.match(sql,/status='successful' and verified_at is not null/);
+  assert.match(sql,/payment_purpose'<>'credit_pack_purchase'/);
+  assert.match(sql,/subscription_purchase/);
+  assert.match(sql,/pending_subscription_split/);
+  assert.match(sql,/billing_credit_revenue_allocations/);
+  assert.match(sql,/floor\(/);
+  assert.match(sql,/unattributed/);
+  assert.match(sql,/allocate_generation_credit_revenue_for_reservation/);
+  assert.match(sql,/rename to settle_generation_credit_reservation_pre_revenue_batch71/);
+  assert.match(sql,/recognized_revenue_minor/);
+  assert.match(sql,/gross_margin_pct/);
+  assert.match(sql,/Gross margin excludes payment processing fees/);
+});
+test("Financial Command Centre displays verified revenue and gross margin without assuming subscription revenue",async()=>{
+  const app=await readFile(new URL("../../src/platform/app.ts",import.meta.url),"utf8");
+  assert.match(app,/Verified job revenue, cost & margin/);
+  assert.match(app,/Recognized revenue/);
+  assert.match(app,/Gross margin/);
+  assert.match(app,/Subscription credit revenue remains unrecognized/);
 });
