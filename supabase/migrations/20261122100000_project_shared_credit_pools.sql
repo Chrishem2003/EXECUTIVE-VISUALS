@@ -168,7 +168,10 @@ begin
   if pool.owner_id<>p_owner_id then raise exception 'PROJECT_CREDIT_POOL_OWNER_MISMATCH'; end if;
   select * into pool from project_credit_pools where project_id=job_row.project_id for update;
   if pool.status<>'active' then raise exception 'PROJECT_CREDIT_POOL_NOT_ACTIVE'; end if;
-  select * into existing from project_credit_pool_reservations where job_id=p_job_id or idempotency_key=p_idempotency_key;
+  select * into existing from project_credit_pool_reservations where job_id=p_job_id;
+  if existing.id is null then
+   select * into existing from project_credit_pool_reservations where idempotency_key=p_idempotency_key;
+  end if;
   if existing.id is not null then
    if existing.project_id<>job_row.project_id or existing.owner_id<>p_owner_id
       or existing.job_id<>p_job_id or existing.reserved_credits<>p_credits
@@ -202,27 +205,7 @@ begin
   from reserve_generation_credits_without_entitlement(p_owner_id,p_job_id,p_credits,p_idempotency_key) r;
  return;
 
- /* Personal-wallet fallback is delegated to the original entitlement-gated implementation. */
- insert into billing_credit_accounts(owner_id) values(p_owner_id) on conflict(owner_id) do nothing;
- select a.status into account_status from billing_credit_accounts a where a.owner_id=p_owner_id for update;
- if account_status is distinct from 'active' then raise exception 'BILLING_ACCOUNT_NOT_ACTIVE'; end if;
- if exists(select 1 from billing_credit_reservations r where r.job_id=p_job_id or r.idempotency_key=p_idempotency_key) then
-  if not exists(select 1 from billing_credit_reservations r where r.job_id=p_job_id and r.idempotency_key=p_idempotency_key
-    and r.owner_id=p_owner_id and r.reserved_credits=p_credits) then
-   raise exception 'BILLING_CREDIT_IDEMPOTENCY_CONFLICT';
-  end if;
-  select r.id into new_id from billing_credit_reservations r where r.job_id=p_job_id;
-  select coalesce(sum(l.amount),0) into current_balance from billing_credit_ledger l where l.owner_id=p_owner_id;
-  return query select new_id,current_balance,true; return;
- end if;
- select coalesce(sum(l.amount),0) into current_balance from billing_credit_ledger l where l.owner_id=p_owner_id;
- if current_balance<p_credits then raise exception 'BILLING_INSUFFICIENT_CREDITS'; end if;
- insert into billing_credit_reservations(owner_id,job_id,idempotency_key,reserved_credits)
- values(p_owner_id,p_job_id,p_idempotency_key,p_credits) returning id into new_id;
- insert into billing_credit_ledger(owner_id,amount,event_type,reference_id,idempotency_key,description)
- values(p_owner_id,-p_credits,'generation_reserve',p_job_id,'credit-reserve:'||p_idempotency_key,'Generation credit reservation');
- return query select new_id,current_balance-p_credits,false;
-end $$;
+end $$;;
 
 create or replace function executive_visuals.settle_project_credit_pool_reservation(
  p_reservation_id uuid,p_actual_credits bigint,p_evidence jsonb
