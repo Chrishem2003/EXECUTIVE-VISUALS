@@ -430,7 +430,8 @@ export function createFinancialIntelligenceApi({
         const safeCount=value=>Number.isSafeInteger(Number(value))&&Number(value)>=0?Number(value):null;
         if(!wallet||typeof wallet!=="object"||
           !balance||safeCount(balance.ledger_balance)===null||
-          safeCount(wallet.availableCredits)===null||
+          safeCount(balance.reserved_credits)===null||
+          safeCount(balance.available_credits)===null||
           safeCount(wallet.reservedCredits)===null||
           safeCount(wallet.consumedCredits)===null||
           safeCount(wallet.expiringWithinSevenDays)===null||
@@ -470,8 +471,8 @@ export function createFinancialIntelligenceApi({
         });
         return response(200,{credits:{
           ledgerBalance:Number(balance.ledger_balance),
-          reserved:Number(wallet.reservedCredits),
-          available:Number(wallet.availableCredits),
+          reserved:Number(balance.reserved_credits),
+          available:Number(balance.available_credits),
           consumed:Number(wallet.consumedCredits),
           expiringWithinSevenDays:Number(wallet.expiringWithinSevenDays),
           pendingExpiry:Number(wallet.pendingExpiryCredits),
