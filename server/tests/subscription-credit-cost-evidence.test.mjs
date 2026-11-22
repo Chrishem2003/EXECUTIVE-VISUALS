@@ -22,8 +22,8 @@ test("derives a conservative blended USD-cent cost per platform credit from five
  assert.equal(result.sampleCredits,5000);
  assert.equal(result.totalProviderCostMinor,500);
  assert.equal(result.providerCostPerCustomerCreditMinor,1);
- assert.equal(result.evidence.status,"approved_measured");
- assert.equal(result.evidence.approved,true);
+ assert.equal(result.evidence.status,"verified_measured");
+ assert.equal(result.evidence.approved,false);
  assert.equal(result.evidence.rateCardVersion,"invoice-attribution-derived-v1");
 });
 
