@@ -61,10 +61,17 @@ export function quoteCustomerCredits(providerQuote,rawPolicy){
  const fullyLoaded=minor+retry+infrastructure;
  const denominator=10000n-BigInt(policy.targetMarginBps+policy.paymentFeeBps);
  const revenue=ceilDiv((fullyLoaded+BigInt(policy.fixedPaymentFeeMinor))*10000n,denominator);
- const credits=ceilDiv(revenue,BigInt(policy.creditValueMinor));
- const customerPrice=credits*BigInt(policy.creditValueMinor);
- const paymentFee=ceilDiv(customerPrice*BigInt(policy.paymentFeeBps),10000n)+BigInt(policy.fixedPaymentFeeMinor);
- const contribution=customerPrice-paymentFee-fullyLoaded;
+ let credits=ceilDiv(revenue,BigInt(policy.creditValueMinor));
+ let customerPrice=0n,paymentFee=0n,contribution=0n;
+ let marginSatisfied=false;
+ for(let attempt=0;attempt<100;attempt++){
+  customerPrice=credits*BigInt(policy.creditValueMinor);
+  paymentFee=ceilDiv(customerPrice*BigInt(policy.paymentFeeBps),10000n)+BigInt(policy.fixedPaymentFeeMinor);
+  contribution=customerPrice-paymentFee-fullyLoaded;
+  if(contribution*10000n>=customerPrice*BigInt(policy.targetMarginBps)){marginSatisfied=true;break;}
+  credits++;
+ }
+ if(!marginSatisfied)return Object.freeze({available:false,reason:"Credit denomination cannot satisfy the configured minimum margin within safe rounding bounds.",billable:false});
  const grossMarginBps=customerPrice>0n?Number((contribution*10000n)/customerPrice):0;
  for(const value of [minor,retry,infrastructure,fullyLoaded,revenue,credits,customerPrice,paymentFee,contribution]){
   if(value<0n||value>BigInt(Number.MAX_SAFE_INTEGER))return Object.freeze({available:false,reason:"The quote exceeds supported monetary or credit bounds.",billable:false});
