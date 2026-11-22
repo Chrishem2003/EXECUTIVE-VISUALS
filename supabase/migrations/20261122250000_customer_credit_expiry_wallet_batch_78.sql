@@ -38,6 +38,19 @@ begin
      where id=legacy_grant_id and owner_id=new.owner_id
        and entry_type='purchase_grant';
   end if;
+  if period_end is null and new.source_reference_id is not null then
+    -- Batch 71's wallet-source trigger may register the source before the
+    -- payment-ledger mirror supplies its richer evidence. Resolve the exact
+    -- legacy grant through the verified payment reference, never by guessing.
+    select nullif(metadata->>'period_end','')::timestamptz
+      into period_end
+      from executive_visuals.credit_ledger
+     where owner_id=new.owner_id
+       and payment_transaction_id=new.source_reference_id
+       and entry_type='purchase_grant'
+     order by created_at desc
+     limit 1;
+  end if;
 
   -- Older subscription grants without a recorded period end are deliberately
   -- non-expiring until their provenance is reconciled; never guess a date.
@@ -52,6 +65,29 @@ drop trigger if exists ev_set_generation_credit_source_expiry
 create trigger ev_set_generation_credit_source_expiry
   before insert on executive_visuals.billing_credit_revenue_sources
   for each row execute function executive_visuals.set_generation_credit_source_expiry();
+
+-- Deterministic metadata-only backfill for already mirrored subscription
+-- allowances. No wallet ledger balance or customer credit amount is changed.
+update executive_visuals.billing_credit_revenue_sources s
+   set expires_at=(
+     select nullif(l.metadata->>'period_end','')::timestamptz
+       from executive_visuals.credit_ledger l
+      where l.owner_id=s.owner_id
+        and l.payment_transaction_id=s.source_reference_id
+        and l.entry_type='purchase_grant'
+      order by l.created_at desc
+      limit 1
+   )
+ where s.source_type='subscription_allowance'
+   and s.expires_at is null
+   and s.source_reference_id is not null
+   and exists(
+     select 1 from executive_visuals.credit_ledger l
+      where l.owner_id=s.owner_id
+        and l.payment_transaction_id=s.source_reference_id
+        and l.entry_type='purchase_grant'
+        and nullif(l.metadata->>'period_end','') is not null
+   );
 
 create table if not exists executive_visuals.billing_credit_source_expirations (
   id uuid primary key default gen_random_uuid(),
