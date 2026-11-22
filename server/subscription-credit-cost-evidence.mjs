@@ -1,3 +1,5 @@
+import {createHash} from "node:crypto";
+
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_MINOR=9_000_000_000_000;
 const MIN_SAMPLE_JOBS=5;
@@ -46,6 +48,7 @@ export function deriveInvoiceBackedCreditCostEvidence({
   reservationsByJob.get(jobId).push(reservation);
  }
  let totalCost=0n,totalCredits=0n,sampleJobs=0,excludedJobs=0;
+ const evidenceRows=[];
  for(const [jobId,jobEvents] of byJob){
   if(jobEvents.some(event=>event.status!=="succeeded")){excludedJobs++;continue;}
   const jobReservations=reservationsByJob.get(jobId)||[];
@@ -54,6 +57,7 @@ export function deriveInvoiceBackedCreditCostEvidence({
   const credits=Number(reservation.actual_credits);
   if(reservation.state!=="settled"||!Number.isSafeInteger(credits)||credits<=0){excludedJobs++;continue;}
   let jobCost=0n,valid=true;
+  const jobEvidence=[];
   for(const event of jobEvents){
    const links=linksByEvent.get(String(event.id))||[];
    if(links.length!==1){valid=false;break;}
@@ -63,20 +67,27 @@ export function deriveInvoiceBackedCreditCostEvidence({
       !UUID.test(String(link.invoice_import_id||""))||
       !UUID.test(String(link.invoice_line_id||""))){valid=false;break;}
    jobCost+=BigInt(amount);
+   jobEvidence.push({jobId,usageEventId:String(event.id),invoiceImportId:String(link.invoice_import_id),invoiceLineId:String(link.invoice_line_id),amountMinor:amount});
   }
   if(!valid){excludedJobs++;continue;}
   totalCost+=jobCost;totalCredits+=BigInt(credits);sampleJobs++;
+  evidenceRows.push({jobId,actualCredits:credits,usageEvents:jobEvidence});
  }
  const safeCost=totalCost<=BigInt(MAX_MINOR)&&totalCredits<=BigInt(Number.MAX_SAFE_INTEGER);
  const enough=sampleJobs>=MIN_SAMPLE_JOBS&&totalCost>0n&&totalCredits>0n&&safeCost;
  const perCredit=enough?Number((totalCost+totalCredits-1n)/totalCredits):null;
  const sampleCredits=sampleJobs&&safeCost?Number(totalCredits):null;
  const totalProviderCostMinor=sampleJobs&&safeCost?Number(totalCost):null;
+ const evidenceDigest=enough?createHash("sha256").update(JSON.stringify(
+  evidenceRows.sort((a,b)=>a.jobId.localeCompare(b.jobId)).map(row=>({
+   ...row,usageEvents:row.usageEvents.sort((a,b)=>a.usageEventId.localeCompare(b.usageEventId))
+  }))
+ )).digest("hex"):null;
  const evidence=enough?Object.freeze({
   status:"verified_measured",approved:false,
   source:"immutable invoice attribution links + settled job credit reservations",
   rateCardVersion:"invoice-attribution-derived-v1",
-  sampleJobs,periodStart,periodEnd
+  sampleJobs,sampleCredits,totalProviderCostMinor,evidenceDigest,periodStart,periodEnd
  }):null;
  return Object.freeze({
   status:!byJob.size?"no_usage_jobs":!sampleJobs?"no_verified_jobs":!safeCost?"sample_out_of_range":sampleJobs<MIN_SAMPLE_JOBS?"insufficient_sample":!totalCost?"zero_invoice_cost":"verified_measured",
