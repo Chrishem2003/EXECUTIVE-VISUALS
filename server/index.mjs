@@ -1875,9 +1875,13 @@ export function createAppServer() {
                Math.abs(approvedMaxAmount*1000000-Math.round(approvedMaxAmount*1000000))>0.0001){
               fail(res,400,"VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID","Approved USD ceiling must be at least the quote and have at most six decimal places.");return;
             }
+            const customerCreditBudgetCredits=Number(approvalBody.customerCreditBudgetCredits);
+            if(!Number.isSafeInteger(customerCreditBudgetCredits)||customerCreditBudgetCredits<Number(quote.estimatedCustomerCredits||0)||customerCreditBudgetCredits>100000000){
+              fail(res,400,"VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_INVALID","Provide an integer customer-credit ceiling at least as large as the quoted customer credits.");return;
+            }
             const approval=await cloudTimelineApi.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:user.id,body:{
               confirmed:true,projectId:run.project_id,quoteId:quote.quoteId,requestId:quote.requestId,
-              node:quote.cloudNode,values:quote.cloudValues,approvedMaxAmount,
+              node:quote.cloudNode,values:quote.cloudValues,approvedMaxAmount,customerCreditBudgetCredits,
               approvalNote:String(approvalBody.approvalNote||"Approved by project owner in Video Studio").slice(0,1000)
             }});
             if(!approval||![200,202].includes(approval.status)){send(res,approval?.status||503,{error:approval?.body?.error||{code:"VIDEO_WORKFLOW_APPROVAL_FAILED",message:"The cloud quote could not be approved. No workflow job was queued."}},cors);return;}
