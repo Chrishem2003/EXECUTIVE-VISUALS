@@ -42,6 +42,7 @@ on:
       - feat/governed-hdr-costing-batch-84-2026-11-23
       - feat/strict-premium-media-flags-batch-85-2026-11-23
       - feat/governed-customer-credit-quotes-batch-86-2026-11-23
+      - feat/customer-credit-approval-ceilings-batch-87-2026-11-23
       - feat/strict-premium-media-flags-batch-85-2026-11-23
   pull_request:
 
