@@ -1,9 +1,8 @@
 -- Batch 70: invoice-backed job cost coverage and strict revenue-allocation gate.
-set role service_role;
-do $batch70$
+reset role;
+do $batch70_seed$
 declare
   v_actor constant uuid:='11111111-1111-4111-8111-111111111111';
-  v_other constant uuid:='22222222-2222-4222-8222-222222222222';
   v_job_mixed constant uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
   v_job_credit_only constant uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
   v_job_cost_only constant uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
@@ -16,12 +15,10 @@ declare
   v_usage_usd uuid:=gen_random_uuid();
   v_usage_ugx uuid:=gen_random_uuid();
   v_usage_cost_only uuid:=gen_random_uuid();
-  v_report jsonb;
-  v_row jsonb;
 begin
   insert into auth.users(id,email) values
     (v_actor,'batch70-admin@example.invalid'),
-    (v_other,'batch70-nonadmin@example.invalid')
+    ('22222222-2222-4222-8222-222222222222','batch70-nonadmin@example.invalid')
   on conflict(id) do nothing;
   insert into executive_visuals.platform_admins(user_id,role,reason)
   values(v_actor,'billing_admin','Batch 70 disposable PostgreSQL integration')
@@ -80,7 +77,20 @@ begin
     (v_import_usd,v_line_usd,v_usage_usd,'matched',1,680,680,'USD','{"matchMethod":"exact_provider_line_reference"}','batch70-recon-usd'),
     (v_import_ugx,v_line_ugx,v_usage_ugx,'matched',1,4000,4000,'UGX','{"matchMethod":"exact_provider_line_reference"}','batch70-recon-ugx'),
     (v_import_cost_only,v_line_cost_only,v_usage_cost_only,'matched',1,250,250,'USD','{"matchMethod":"exact_provider_line_reference"}','batch70-recon-cost-only');
+end
+$batch70_seed$;
 
+set role service_role;
+do $batch70_verify$
+declare
+  v_actor constant uuid:='11111111-1111-4111-8111-111111111111';
+  v_other constant uuid:='22222222-2222-4222-8222-222222222222';
+  v_job_mixed constant uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+  v_job_credit_only constant uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+  v_job_cost_only constant uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
+  v_report jsonb;
+  v_row jsonb;
+begin
   v_report:=executive_visuals.get_verified_job_cost_coverage(v_actor,'2026-11-01',100);
   if (v_report->>'profitabilityAvailable')::boolean is distinct from false
      or (v_report->>'revenueAllocationAvailable')::boolean is distinct from false
@@ -127,5 +137,5 @@ begin
   exception when sqlstate '22023' then null;
   end;
 end
-$batch70$;
+$batch70_verify$;
 reset role;
