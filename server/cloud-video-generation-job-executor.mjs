@@ -306,7 +306,8 @@ export async function executeCloudVideoGenerationJob({
     assetIds: Object.freeze([...ingested.assetIds]),
     usage: ingested.usage || null,
     actualAmount: cost.amount,
-    actualCredits: input.workflowQuoteId ? actualCustomerCredits : null,\n    providerCredits: Number.isSafeInteger(cost.providerCredits) ? cost.providerCredits : null,
+    actualCredits: input.workflowQuoteId ? actualCustomerCredits : null,
+    providerCredits: Number.isSafeInteger(cost.providerCredits) ? cost.providerCredits : null,
     currency: cost.currency,
     costEvidenceReference: cost.evidenceReference,
     customerCreditSettlement
