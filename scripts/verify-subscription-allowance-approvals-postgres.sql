@@ -1,4 +1,4 @@
--- Execute after prepare script, Batch 30 audit migration and Batch 59 migration.
+-- Execute after the disposable schema preparation, Batch 30 audit migration, Batch 59 approval migration and Batch 60 publication migration.
 \set ON_ERROR_STOP on
 insert into auth.users(id) values
  ('11111111-1111-4111-8111-111111111111'),
