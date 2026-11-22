@@ -1295,6 +1295,7 @@ test("Neon workflow approval validates the persisted exact quote before durable 
  assert.equal(dispatched[0].estimatedAmount,2.75);
  assert.equal(dispatched[0].approvedMaxAmount,3.25);
  assert.equal(dispatched[0].customerCreditBudgetCredits,3500);
+ assert.equal(dispatched[0].requiredCustomerCredits,3250);
  assert.equal(dispatched[0].expiresAt,expiresAt);
  assert.equal(calls.some(call=>call.url.endsWith("/rpc/approve_and_enqueue_video_workflow")),false);
  assert.ok(calls.some(call=>call.options.method==="PATCH"&&call.url.includes("video_workflow_quotes")));
