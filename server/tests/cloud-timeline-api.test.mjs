@@ -807,7 +807,7 @@ test("Luma Ray 3.2 workflow quote validates private frame assets and records acc
   url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
   fetchImpl:async(url,options)=>{
    const route=url.split("/rest/v1/")[1]||"";
-   if(route==="rpc/record_video_workflow_quote"){
+   if(route==="rpc/record_video_workflow_quote_with_customer_credits"){
     writes.push(JSON.parse(options.body));
     return{ok:true,status:200,async text(){return JSON.stringify(JSON.parse(options.body).p_quote_id);}};
    }
