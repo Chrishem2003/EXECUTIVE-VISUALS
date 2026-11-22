@@ -218,7 +218,7 @@ test("project pool top-ups transfer existing personal credits atomically and rep
  assert.match(projectPoolSql,/BILLING_INSUFFICIENT_CREDITS/);
  assert.match(projectPoolSql,/PROJECT_CREDIT_POOL_IDEMPOTENCY_CONFLICT/);
  assert.match(projectPoolIntegration,/project pool top-up replay changed either wallet balance/i);
- assert.match(projectPoolIntegration,/personal_balance<>\\(select balance-1000 from project_pool_personal_before\\)/i);
+ assert.match(projectPoolIntegration,/personal_balance<>\(select balance-1000 from project_pool_personal_before\)/i);
 });
 
 test("the existing video-generation reservation RPC routes configured projects to the pool and preserves subscription entitlements",()=>{
@@ -226,7 +226,7 @@ test("the existing video-generation reservation RPC routes configured projects t
  assert.match(projectPoolSql,/reserve_generation_credits_without_entitlement\(p_owner_id,p_job_id,p_credits,p_idempotency_key\)/i);
  assert.match(projectPoolSql,/BILLING_INSUFFICIENT_PROJECT_CREDITS/);
  assert.match(projectPoolSql,/PROJECT_CREDIT_POOL_MONTHLY_LIMIT_REACHED/);
- assert.match(projectPoolSql,/insert into billing_credit_reservations\\(id,owner_id,job_id,idempotency_key,reserved_credits\\)/i);
+ assert.match(projectPoolSql,/insert into billing_credit_reservations\(id,owner_id,job_id,idempotency_key,reserved_credits\)/i);
  assert.match(projectPoolIntegration,/project pool unexpectedly fell back to personal credits/i);
  assert.match(projectPoolIntegration,/project monthly spend cap unexpectedly allowed excess usage/i);
 });
