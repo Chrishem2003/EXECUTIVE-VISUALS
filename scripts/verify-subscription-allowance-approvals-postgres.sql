@@ -3,16 +3,19 @@
 insert into auth.users(id) values
  ('11111111-1111-4111-8111-111111111111'),
  ('22222222-2222-4222-8222-222222222222'),
- ('33333333-3333-4333-8333-333333333333')
+ ('33333333-3333-4333-8333-333333333333'),
+ ('55555555-5555-4555-8555-555555555555')
  on conflict do nothing;
 insert into executive_visuals.platform_admins(user_id,role,granted_by,reason) values
  ('11111111-1111-4111-8111-111111111111','billing_admin','11111111-1111-4111-8111-111111111111','disposable integration fixture'),
  ('22222222-2222-4222-8222-222222222222','billing_admin','11111111-1111-4111-8111-111111111111','disposable integration fixture'),
- ('33333333-3333-4333-8333-333333333333','platform_admin','11111111-1111-4111-8111-111111111111','disposable integration fixture')
+ ('33333333-3333-4333-8333-333333333333','platform_admin','11111111-1111-4111-8111-111111111111','disposable integration fixture'),
+ ('55555555-5555-4555-8555-555555555555','owner','11111111-1111-4111-8111-111111111111','disposable publication fixture')
  on conflict(user_id) do update set role=excluded.role;
 
 do $$
 declare
+ v_publisher uuid:='55555555-5555-4555-8555-555555555555';
  v_creator uuid:='11111111-1111-4111-8111-111111111111';
  v_finance uuid:='22222222-2222-4222-8222-222222222222';
  v_product uuid:='33333333-3333-4333-8333-333333333333';
@@ -27,6 +30,8 @@ declare
  v_status jsonb;
  v_event_id uuid;
  v_occurred text;
+ v_publication jsonb;
+ v_published_plan record;
 begin
  v_proposal:=jsonb_build_object(
   'planCode','starter_creator','name','Starter Creator','planVersion',1,'currency','USD',
@@ -114,6 +119,55 @@ begin
   raise exception 'dual approval must be eligible only for a separate publication gate: %',v_result;
  end if;
  v_status:=executive_visuals.get_subscription_allowance_approval_status(v_proposal_id);
+
+ -- The exact approved draft can be published only by an independent owner.
+ insert into executive_visuals.subscription_plans(
+  plan_code,name,description,status,billing_interval,amount_minor,currency,
+  included_credits,entitlements,is_public,version,credit_allowance_published
+ ) values(
+  'starter_creator','Starter Creator','Disposable publication fixture','draft','monthly',
+  900,'USD',0,'{"commercial_exports":true}'::jsonb,false,1,false
+ ) on conflict(plan_code) do update set
+  name=excluded.name,description=excluded.description,status='draft',
+  billing_interval='monthly',amount_minor=900,currency='USD',included_credits=0,
+  entitlements=excluded.entitlements,is_public=false,version=1,credit_allowance_published=false;
+
+ v_event_id:=gen_random_uuid();
+ v_occurred:=to_char(clock_timestamp() at time zone 'utc','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
+ v_envelope:=jsonb_build_object('canonicalizationVersion',1,'hashAlgorithm','SHA-256',
+  'eventId',v_event_id,'sequence',1,'ownerId',v_publisher,'actorId',v_publisher,
+  'eventType','subscription_allowance.published','occurredAt',v_occurred,
+  'payload',jsonb_build_object('proposalId',v_proposal_id,'proposalHash',v_proposal_hash,
+   'planCode','starter_creator','sourcePlanVersion',1),
+  'idempotencyKey','batch60-publish-01','previousHash',repeat('0',64));
+ v_canonical:=v_envelope::text;v_hash:=encode(digest(convert_to(v_canonical,'UTF8'),'sha256'),'hex');
+ v_publication:=executive_visuals.publish_subscription_allowance_proposal(
+  v_publisher,v_proposal_id,v_proposal_hash,1,v_envelope,v_canonical,v_hash);
+ if v_publication->>'cataloguePublished'<>'true'
+  or v_publication->>'checkoutEnabled'<>'false'
+  or v_publication->>'creditsGranted'<>'false'
+  or (v_publication->>'publishedPlanVersion')::integer<>2 then
+  raise exception 'publication must expose only the approved plan without checkout or credits: %',v_publication;
+ end if;
+ select * into v_published_plan from executive_visuals.subscription_plans
+  where plan_code='starter_creator';
+ if v_published_plan.status<>'active' or not v_published_plan.is_public
+  or v_published_plan.included_credits<>80 or not v_published_plan.credit_allowance_published
+  or v_published_plan.version<>2 then
+  raise exception 'published plan does not match approved allowance snapshot';
+ end if;
+ v_publication:=executive_visuals.publish_subscription_allowance_proposal(
+  v_publisher,v_proposal_id,v_proposal_hash,1,v_envelope,v_canonical,v_hash);
+ if v_publication->>'duplicate'<>'true' then
+  raise exception 'publication replay was not idempotent: %',v_publication;
+ end if;
+ begin
+  update executive_visuals.subscription_allowance_publications
+   set published_plan_version=published_plan_version+1 where proposal_id=v_proposal_id;
+  raise exception 'immutable publication update unexpectedly succeeded';
+ exception when object_not_in_prerequisite_state then
+  if sqlerrm not like '%immutable%' then raise; end if;
+ end;
  if v_status->>'status'<>'approved' or v_status->>'publishable'<>'false'
   or jsonb_array_length(v_status->'approvals')<>2 then
   raise exception 'durable status read did not return both immutable approvals: %',v_status;
