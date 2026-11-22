@@ -1890,6 +1890,8 @@ export function createAppServer() {
             const receipt={cloudJobId,quoteId:quote.quoteId,requestId:quote.requestId,requestHash:quote.requestHash,
               routedModel:quote.routedModel,estimatedProviderCredits:Number(quote.estimatedProviderCredits||quote.estimatedCredits),
               estimatedCustomerCredits:Number(quote.estimatedCustomerCredits),approvedMaxAmount,
+              customerCreditBudgetCredits:Number(approval.body?.approval?.customerCreditBudgetCredits||customerCreditBudgetCredits),
+              requiredCustomerCredits:Number(approval.body?.approval?.requiredCustomerCredits||0),
               status:approval.body?.job?.status||"queued",approvedBy:user.id,approvedAt:now()};
             const enqueueApprovedRun=db.transaction(()=>{
               const claimed=db.prepare("UPDATE workflow_node_runs SET status='blocked',output_json=?,error_json=NULL,completed_at=NULL WHERE id=? AND status='awaiting_approval'").run(json(receipt),waiting.id);
