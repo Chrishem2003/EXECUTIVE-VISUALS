@@ -63,6 +63,7 @@ test("subscription allowance simulation is finance-admin-only and remains scenar
  assert.equal(deniedResult.status,403);
  const allowed=api(async url=>{
   if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(String(url).includes("ai_usage_cost_events?"))return json([]);
   throw new Error("Read-only scenario must not write to the database");
  });
  const result=await allowed.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-simulation",ownerId:owner,
@@ -84,6 +85,58 @@ test("subscription allowance simulation rejects browser-supplied provider cost e
    costEvidence:{status:"approved_measured",approved:true,source:"browser",rateCardVersion:"fake",sampleJobs:999,periodStart:"2026-11-01",periodEnd:"2026-11-22"}}});
  assert.equal(result.status,400);
  assert.equal(result.body.error.code,"SUBSCRIPTION_ECONOMICS_INPUT_INVALID");
+});
+
+test("subscription allowance simulation derives measured cost only from invoice-attributed settled jobs",async()=>{
+ const uuid=n=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
+ const usageEvents=[],invoiceAttributions=[],creditReservations=[];
+ for(let i=1;i<=5;i++){
+  const jobId=uuid(100+i),usageId=uuid(200+i);
+  usageEvents.push({id:usageId,job_id:jobId,status:"succeeded",period_month:"2026-11-01"});
+  invoiceAttributions.push({usage_event_id:usageId,amount_minor:100,currency:"USD",invoice_import_id:uuid(300+i),invoice_line_id:uuid(400+i)});
+  creditReservations.push({job_id:jobId,actual_credits:1000,state:"settled"});
+ }
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url);calls.push({target,method:options.method||"GET"});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.includes("ai_usage_cost_events?"))return json(usageEvents);
+  if(target.includes("financial_cost_attribution_links?"))return json(invoiceAttributions);
+  if(target.includes("billing_credit_reservations?"))return json(creditReservations);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-simulation",ownerId:owner,
+  body:{targetGrossMarginBps:6000,paymentFeeBps:300,refundReserveBps:200,supportReserveMinor:50,infrastructureReserveMinor:50,periodMonth:"2026-11-01"}});
+ assert.equal(result.status,200,JSON.stringify({body:result.body,calls}));
+ assert.equal(result.body.costEvidenceSummary.status,"verified_measured");
+ assert.equal(result.body.costEvidenceSummary.sampleJobs,5);
+ assert.equal(result.body.costEvidenceSummary.sampleCredits,5000);
+ assert.equal(result.body.costEvidenceSummary.totalProviderCostMinor,500);
+ assert.equal(result.body.costEvidenceSummary.providerCostPerCustomerCreditMinor,1);
+ assert.equal(result.body.simulation.creditAllowanceCalculated,true);
+ assert.ok(result.body.simulation.plans.every(plan=>Number.isSafeInteger(plan.estimatedIncludedCredits)&&plan.publishable===false));
+ assert.ok(calls.every(call=>call.method==="GET"));
+ assert.ok(calls.some(call=>call.target.includes("period_month=eq.2026-11-01")));
+});
+
+test("subscription allowance simulation fails closed when invoice evidence query exceeds its bounded sample",async()=>{
+ const uuid=n=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
+ const oversized=Array.from({length:1001},(_,i)=>({id:uuid(2000+i),job_id:uuid(4000+i),status:"succeeded",period_month:"2026-11-01"}));
+ const calls=[];
+ const service=api(async(url)=>{
+  const target=String(url);calls.push(target);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.includes("ai_usage_cost_events?"))return json(oversized);
+  throw new Error("Oversized samples must not trigger attribution joins.");
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-simulation",ownerId:owner,
+  body:{targetGrossMarginBps:6000,paymentFeeBps:300,periodMonth:"2026-11-01"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.costEvidenceSummary.status,"sample_incomplete");
+ assert.equal(result.body.costEvidenceSummary.providerCostPerCustomerCreditMinor,null);
+ assert.equal(result.body.simulation.creditAllowanceCalculated,false);
+ assert.equal(calls.some(url=>url.includes("financial_cost_attribution_links?")),false);
+ assert.equal(calls.some(url=>url.includes("billing_credit_reservations?")),false);
 });
 
 test("customer-success admin overview requires an authorized admin role",async()=>{
