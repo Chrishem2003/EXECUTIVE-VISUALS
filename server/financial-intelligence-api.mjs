@@ -13,6 +13,7 @@ import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.m
 import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.mjs";
 import { calculateSubscriptionPlanCreditEconomics } from "./subscription-plan-credit-economics.mjs";
 import { calculateMixedSubscriptionWorkloadEconomics } from "./mixed-subscription-workload-economics.mjs";
+import { deriveInvoiceBackedCreditCostEvidence } from "./subscription-credit-cost-evidence.mjs";
 import { analyzeWorkloadCostVariance } from "./workload-cost-variance.mjs";
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
@@ -891,7 +892,10 @@ export function createFinancialIntelligenceApi({
       }
       if(path==="/api/admin/finance/subscription-plan-economics"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
-        if(!body||typeof body!=="object"||Array.isArray(body)||!Array.isArray(body.scenarios)||body.scenarios.length<1||body.scenarios.length>20)
+        const allowedRequestFields=new Set(["creditBudgetShareBps","scenarios","workloads","periodMonth"]);
+        if(!body||typeof body!=="object"||Array.isArray(body)||Object.keys(body).some(key=>!allowedRequestFields.has(key)))
+          return error(400,"SUBSCRIPTION_ECONOMICS_INPUT_INVALID","Only provider workload scenarios, a credit-budget share, optional workload mixes and a reporting month are accepted. Actual cost evidence is derived from server-side invoice reconciliation.");
+        if(!Array.isArray(body.scenarios)||body.scenarios.length<1||body.scenarios.length>20)
           return error(400,"SUBSCRIPTION_ECONOMICS_SCENARIOS_INVALID","Provide between one and twenty provider cost scenarios.");
         if(!Number.isSafeInteger(body.creditBudgetShareBps)||body.creditBudgetShareBps<1000||body.creditBudgetShareBps>10000)
           return error(400,"SUBSCRIPTION_ECONOMICS_BUDGET_SHARE_INVALID","Provide an explicit credit-budget share between 1000 and 10000 basis points.");
@@ -932,7 +936,71 @@ export function createFinancialIntelligenceApi({
           });
           const mixedEconomics=body.workloads===undefined?null:
             calculateMixedSubscriptionWorkloadEconomics({planEconomics:economics,workloads:body.workloads});
-          return response(200,{economics,...(mixedEconomics?{mixedEconomics}:{})});
+
+          // Invoice-backed cost evidence is derived exclusively from immutable posted-invoice links
+          // and settled reservations. It is intentionally separate from provider list-price forecasts.
+          const periodMonth=body.periodMonth===undefined
+            ?new Date().toISOString().slice(0,7)+"-01":String(body.periodMonth);
+          if(!/^\d{4}-\d{2}-01$/.test(periodMonth)||
+             !Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
+             new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
+            return error(400,"SUBSCRIPTION_COST_EVIDENCE_PERIOD_INVALID","Choose a valid reporting month.");
+          const candidateResult=await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month&job_id=not.is.null&period_month=eq."+encodeURIComponent(periodMonth)+"&order=occurred_at.asc,id.asc&limit=1000");
+          const candidates=Array.isArray(candidateResult.data)?candidateResult.data:[];
+          let sampleComplete=candidates.length<1000;
+          const candidateJobIds=[...new Set(candidates.map(row=>String(row.job_id||"")).filter(id=>UUID.test(id)))];
+          const allUsageResult=sampleComplete&&candidateJobIds.length
+            ?await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month&job_id=in.("+candidateJobIds.join(",")+")&order=occurred_at.asc,id.asc&limit=1000")
+            :{data:[]};
+          const allRawEvents=Array.isArray(allUsageResult.data)?allUsageResult.data:[];
+          sampleComplete=sampleComplete&&allRawEvents.length<1000;
+          const usageEvents=allRawEvents.slice(0,1000);
+          const usageIds=usageEvents.map(row=>String(row.id||"")).filter(id=>UUID.test(id));
+          const jobIds=[...new Set(usageEvents.map(row=>String(row.job_id||"")).filter(id=>UUID.test(id)))];
+          const [attributionResult,reservationResult]=sampleComplete?await Promise.all([
+            usageIds.length?dbRequest("financial_cost_attribution_links?select=usage_event_id,amount_minor,currency,invoice_import_id,invoice_line_id&usage_event_id=in.("+usageIds.join(",")+")"):Promise.resolve({data:[]}),
+            jobIds.length?dbRequest("billing_credit_reservations?select=job_id,actual_credits,state&job_id=in.("+jobIds.join(",")+")"):Promise.resolve({data:[]})
+          ]):[{data:[]},{data:[]}];
+          const invoiceAttributions=Array.isArray(attributionResult.data)?attributionResult.data:[];
+          const creditReservations=Array.isArray(reservationResult.data)?reservationResult.data:[];
+          sampleComplete=sampleComplete&&invoiceAttributions.length<1000&&creditReservations.length<1000;
+          const costEvidence=deriveInvoiceBackedCreditCostEvidence({
+            periodMonth,usageEvents:sampleComplete?usageEvents:[],
+            invoiceAttributions:sampleComplete?invoiceAttributions:[],
+            creditReservations:sampleComplete?creditReservations:[],sampleComplete
+          });
+          const verifiedInvoiceCoverage=costEvidence.sampleJobs+Number(costEvidence.excludedJobs||0);
+          const evidenceTimestamp=new Date().toISOString();
+          const actualCostEvidence={
+            status:costEvidence.status,periodMonth:costEvidence.periodMonth,
+            periodStart:costEvidence.periodStart,periodEnd:costEvidence.periodEnd,
+            currency:"USD",sampleJobs:costEvidence.sampleJobs,sampleCredits:costEvidence.sampleCredits,
+            totalProviderCostMinor:costEvidence.totalProviderCostMinor,
+            providerCostPerCustomerCreditMinor:costEvidence.providerCostPerCustomerCreditMinor,
+            excludedJobs:costEvidence.excludedJobs,minimumSampleJobs:costEvidence.minimumSampleJobs,
+            verifiedInvoiceCoverage:verifiedInvoiceCoverage>0?Number((costEvidence.sampleJobs/verifiedInvoiceCoverage).toFixed(6)):null,
+            evidenceTimestamp,rateCardVersion:costEvidence.evidence?.rateCardVersion||null,
+            sampleComplete,perModelAttributionAvailable:false,
+            workloadCostStatus:"unpriced_model_operation_attribution_unavailable",
+            limitations:[
+              "Actual cost is a historical blended platform-credit measure from immutable USD invoice attribution and settled reservations, not a model-specific rate.",
+              "Provider list-price estimates in economics and mixedEconomics remain forecasts and are never silently replaced by invoice-backed blended cost.",
+              "Model/operation workload lines remain unpriced on an actual-cost basis until invoice attribution is sufficiently granular to match the exact model, operation and request dimensions.",
+              "At least five complete verified jobs are required; ambiguous, partial, failed, non-USD, unsettled and potentially truncated samples are excluded.",
+              "Evidence is historical and read-only; finance/product approval is still required before any allowance can be published."
+            ]
+          };
+          return response(200,{
+            economics,mixedEconomics,
+            actualCostEvidence,
+            allowanceReadiness:{
+              status:costEvidence.status==="verified_measured"
+                ?"measured_blended_cost_available_requires_finance_product_approval"
+                :"blocked_waiting_for_sufficient_complete_invoice_evidence",
+              publishable:false,
+              note:"This calculation does not grant credits, activate plans, or publish allowances."
+            }
+          });
         }catch(err){
           const code=String(err?.code||"SUBSCRIPTION_ECONOMICS_CALCULATION_FAILED");
           return error(422,code,String(err?.message||"Subscription plan economics could not be calculated safely.").slice(0,300));
