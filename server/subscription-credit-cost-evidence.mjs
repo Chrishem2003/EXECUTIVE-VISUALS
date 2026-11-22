@@ -72,7 +72,7 @@ export function deriveInvoiceBackedCreditCostEvidence({
  const sampleCredits=safeCost?Number(totalCredits):null;
  const totalProviderCostMinor=safeCost?Number(totalCost):null;
  const evidence=enough?Object.freeze({
-  status:"approved_measured",approved:true,
+  status:"verified_measured",approved:false,
   source:"immutable invoice attribution links + settled job credit reservations",
   rateCardVersion:"invoice-attribution-derived-v1",
   sampleJobs,periodStart,periodEnd
