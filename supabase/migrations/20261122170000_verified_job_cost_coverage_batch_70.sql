@@ -33,7 +33,7 @@ begin
     join ai_provider_invoice_lines l on l.import_id=i.id
     join ai_provider_invoice_reconciliation_events r
       on r.invoice_import_id=i.id and r.invoice_line_id=l.id
-    where i.reconciliation_status='pending'
+    where i.reconciliation_status in('pending','matched')
     group by i.id,i.imported_line_count
     having count(r.id)=i.imported_line_count
        and count(*) filter(where r.match_status<>'matched')=0
