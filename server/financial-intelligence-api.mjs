@@ -12,6 +12,7 @@ import { estimateProviderVideoCost } from "./provider-video-cost-estimator.mjs";
 import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
 import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.mjs";
 import { calculateSubscriptionPlanCreditEconomics } from "./subscription-plan-credit-economics.mjs";
+import { calculateMixedSubscriptionWorkloadEconomics } from "./mixed-subscription-workload-economics.mjs";
 import { analyzeWorkloadCostVariance } from "./workload-cost-variance.mjs";
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
@@ -929,7 +930,9 @@ export function createFinancialIntelligenceApi({
             creditsPerUsd:Number(policyEnv.NEON_CUSTOMER_CREDITS_PER_USD),
             creditBudgetShareBps:body.creditBudgetShareBps
           });
-          return response(200,{economics});
+          const mixedEconomics=body.workloads===undefined?null:
+            calculateMixedSubscriptionWorkloadEconomics({planEconomics:economics,workloads:body.workloads});
+          return response(200,{economics,...(mixedEconomics?{mixedEconomics}:{})});
         }catch(err){
           const code=String(err?.code||"SUBSCRIPTION_ECONOMICS_CALCULATION_FAILED");
           return error(422,code,String(err?.message||"Subscription plan economics could not be calculated safely.").slice(0,300));

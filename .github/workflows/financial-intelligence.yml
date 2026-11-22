@@ -18,6 +18,8 @@ on:
       - feat/verified-job-cost-coverage-batch-70-2026-11-22
       - feat/verified-credit-revenue-allocation-batch-71-2026-11-22
       - feat/subscription-plan-economics-batch-72-2026-11-22
+      - feat/mixed-workload-subscription-economics-batch-73-rebased-2026-11-22
+      - feat/mixed-workload-subscription-economics-batch-73-2026-11-22
       - feat/live-workload-telemetry-batch-36
       - feat/subscription-customer-economics-batch-37
       - feat/financial-governance-batch-48
@@ -50,6 +52,7 @@ jobs:
           node --check server/video-generation-cost-estimator.mjs
           node --check server/runway-video-pricing.mjs
           node --check server/subscription-plan-credit-economics.mjs
+          node --check server/mixed-subscription-workload-economics.mjs
           node --check server/workload-cost-variance.mjs
           node --check server/verified-job-profitability.mjs
           node --check server/financial-intelligence-api.mjs
@@ -65,6 +68,7 @@ jobs:
       - name: Test subscription plan economics and current provider pricing
         run: |
           npm run verify:subscription-plan-economics
+          npm run verify:mixed-subscription-workload-economics
           node --test server/tests/runway-video-pricing.test.mjs server/tests/video-generation-cost-estimator.test.mjs
       - name: Test Batch 48 financial governance rules and UI integration
         run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs
