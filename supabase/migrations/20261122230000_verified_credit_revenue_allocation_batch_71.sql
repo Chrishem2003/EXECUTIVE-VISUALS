@@ -92,7 +92,7 @@ declare
   v_revenue bigint;
   v_currency text;
 begin
-  if p_owner_id is null or p_grant_ledger_id is null
+  if p_owner_id is null or p_grant_ledger_id is null or p_source_type is null
      or p_source_type not in('paid_credit_pack','subscription_allowance','promotional','admin_compensation')
      or p_evidence is null or jsonb_typeof(p_evidence)<>'object' then
     raise exception 'CREDIT_REVENUE_SOURCE_ARGUMENTS_INVALID' using errcode='22023';
@@ -397,7 +397,6 @@ begin
         then max(currency) end revenue_currency,
       case when count(*) filter(where currency is not null)=1
         and sum(incomplete_count)=0
-        and count(*) filter(where currency is null)=0
         then max(revenue_minor) end recognized_revenue_minor,
       sum(incomplete_count)::integer incomplete_allocation_count
     from revenue_currency group by job_id,owner_id
@@ -432,14 +431,20 @@ begin
     left join credit_usage u on u.job_id=j.job_id and u.owner_id=j.owner_id
     left join revenue_by_job r on r.job_id=j.job_id and r.owner_id=j.owner_id
   )
+  ), coverage as (
+    select
+      coalesce(bool_and(recognized_revenue_minor is not null and profitability_status not in(
+        'missing_settled_credit_usage','missing_revenue_allocation','revenue_allocation_incomplete')),false) revenue_complete,
+      coalesce(bool_and(recognized_revenue_minor is not null and actual_provider_cost_minor is not null
+        and revenue_currency=currency and gross_margin_pct is not null),false) profitability_complete
+    from report_rows
+  )
   select coalesce(jsonb_agg(to_jsonb(p)-'total_jobs' order by p.actual_provider_cost_minor desc nulls last,p.job_id),'[]'::jsonb),
-    coalesce(max(p.total_jobs),0),
-    coalesce(bool_and(p.recognized_revenue_minor is not null and p.profitability_status not in(
-      'missing_settled_credit_usage','missing_revenue_allocation','revenue_allocation_incomplete')),false),
-    coalesce(bool_and(p.recognized_revenue_minor is not null and p.actual_provider_cost_minor is not null
-      and p.revenue_currency=p.currency and p.gross_margin_pct is not null),false)
+    coalesce(max(p.total_jobs),0),coverage.revenue_complete,coverage.profitability_complete
   into v_rows,v_total,v_revenue_complete,v_profitability_complete
-  from (select * from report_rows order by actual_provider_cost_minor desc nulls last,job_id limit p_limit) p;
+  from (select * from report_rows order by actual_provider_cost_minor desc nulls last,job_id limit p_limit) p
+  cross join coverage
+  group by coverage.revenue_complete,coverage.profitability_complete;
 
   return jsonb_build_object(
     'periodMonth',p_period_month,'totalJobs',v_total,'returnedJobs',jsonb_array_length(v_rows),'rows',v_rows,
