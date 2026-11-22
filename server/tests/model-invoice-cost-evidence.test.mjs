@@ -46,6 +46,15 @@ test("rejects duplicate, mismatched, non-positive or unreferenced invoice links"
  assert.equal(result.models[0].totalProviderCostMinor,null);
 });
 
+test("does not certify a group when period usage contains an unclassified model event",()=>{
+ const data=fixture();
+ data.usageEvents.push({...data.usageEvents[0],id:uuid(999),job_id:uuid(999),response_model:null,requested_model:""});
+ const result=deriveInvoiceBackedModelCostEvidence(data);
+ assert.equal(result.unclassifiedUsageEvents,1);
+ assert.equal(result.models[0].status,"partial_invoice_coverage");
+ assert.equal(result.models[0].totalProviderCostMinor,null);
+});
+
 test("requires five distinct jobs even when there are five or more usage events",()=>{
  const data=fixture(6);
  for(const event of data.usageEvents.slice(1))event.job_id=uuid(201);
