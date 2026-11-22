@@ -18,7 +18,7 @@ export function deriveInvoiceBackedCreditCostEvidence({
  const monthDate=new Date(periodMonth+"T00:00:00.000Z");
  monthDate.setUTCMonth(monthDate.getUTCMonth()+1);
  const periodEnd=monthDate.toISOString();
- if(!sampleComplete)return Object.freeze({status:"sample_incomplete",periodMonth,periodStart,periodEnd,sampleJobs:0,sampleCredits:null,totalProviderCostMinor:null,providerCostPerCustomerCreditMinor:null,excludedJobs:null,minimumSampleJobs:MIN_SAMPLE_JOBS});
+ if(!sampleComplete)return Object.freeze({status:"sample_incomplete",periodMonth,periodStart,periodEnd,sampleJobs:0,sampleCredits:null,totalProviderCostMinor:null,providerCostPerCustomerCreditMinor:null,excludedJobs:null,minimumSampleJobs:MIN_SAMPLE_JOBS,evidence:null});
  const events=Array.isArray(usageEvents)?usageEvents:[];
  const attributions=Array.isArray(invoiceAttributions)?invoiceAttributions:[];
  const reservations=Array.isArray(creditReservations)?creditReservations:[];
