@@ -17,6 +17,7 @@ create table executive_visuals.subscription_plans(
  id uuid primary key default gen_random_uuid(),
  plan_code text not null unique,
  name text not null default 'Plan',
+ description text not null default '',
  version integer not null default 1,
  status text not null,
  is_public boolean not null default true,
