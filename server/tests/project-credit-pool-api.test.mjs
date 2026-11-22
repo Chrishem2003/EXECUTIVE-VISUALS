@@ -79,10 +79,10 @@ test("cloud project routes parse mutation bodies and expose the guarded shared c
 });
 
 test("cloud team API validates registered-account member invitations and removal identities",async()=>{
- const f=fixture({payload:{memberId,role:"editor"}});
+ const f=fixture({payload:{memberId:member,role:"editor"}});
  await f.api.addMember({ownerId:owner,projectId:project,email:"  editor@example.test  ",role:"editor"});
  await f.api.listMembers({ownerId:owner,projectId:project});
- await f.api.removeMember({ownerId:owner,projectId:project,memberId});
+ await f.api.removeMember({ownerId:owner,projectId:project,memberId:member});
  assert.ok(f.calls[0].url.endsWith("/rpc/add_project_member"));
  assert.deepEqual(JSON.parse(f.calls[0].options.body),{p_owner_id:owner,p_project_id:project,p_email:"editor@example.test",p_role:"editor"});
  assert.ok(f.calls[1].url.endsWith("/rpc/list_project_members"));
