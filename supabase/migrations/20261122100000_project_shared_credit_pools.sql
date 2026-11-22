@@ -115,11 +115,13 @@ begin
  if not exists(select 1 from projects where id=p_project_id and owner_id=p_owner_id) then
   raise exception 'PROJECT_CREDIT_POOL_OWNER_REQUIRED' using errcode='42501';
  end if;
+ -- Lock the project pool before the personal wallet. Generation reservations use
+ -- the same lock order, preventing funding/reservation deadlocks.
+ select * into pool from project_credit_pools where project_id=p_project_id and owner_id=p_owner_id for update;
+ if pool.project_id is null or pool.status<>'active' then raise exception 'PROJECT_CREDIT_POOL_NOT_ACTIVE'; end if;
  insert into billing_credit_accounts(owner_id) values(p_owner_id) on conflict(owner_id) do nothing;
  perform 1 from billing_credit_accounts where owner_id=p_owner_id and status='active' for update;
  if not found then raise exception 'BILLING_ACCOUNT_NOT_ACTIVE'; end if;
- select * into pool from project_credit_pools where project_id=p_project_id and owner_id=p_owner_id for update;
- if pool.project_id is null or pool.status<>'active' then raise exception 'PROJECT_CREDIT_POOL_NOT_ACTIVE'; end if;
  select * into existing from project_credit_pool_ledger where idempotency_key=p_idempotency_key;
  if existing.id is not null then
   if existing.project_id<>p_project_id or existing.owner_id<>p_owner_id or existing.actor_id<>p_owner_id
