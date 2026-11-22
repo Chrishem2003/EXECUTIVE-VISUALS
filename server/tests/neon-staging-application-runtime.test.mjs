@@ -43,7 +43,7 @@ test("builds a deterministic server-side USD credit quote using integer arithmet
   assert.equal(result.enabled,true);
   assert.equal(runtime.state.quote({currency:"USD",amountMicros:1_250_000}),179);
   assert.equal(runtime.state.quote({currency:"USD",amountMicros:1}),1);
-  assert.throws(()=>runtime.state.quote({currency:"EUR",amountMicros:1_000_000}),/requires a verified USD quote/);
+  assert.throws(()=>runtime.state.quote({currency:"EUR",amountMicros:1_000_000}),/requires a verified positive USD provider cost/);
   assert.throws(()=>runtime.state.quote({currency:"USD",amountMicros:1_000_000_000_001}),/exceeds/);
   await result.close();assert.equal(runtime.state.closed,true);
 });
