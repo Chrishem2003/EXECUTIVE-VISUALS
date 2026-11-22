@@ -292,3 +292,13 @@ test("project member spend policy migration and PostgreSQL integration are seque
  assert.ok(poolMigration>=0&&poolIntegration>poolMigration&&memberMigration>poolIntegration&&memberIntegration>memberMigration);
  assert.doesNotMatch(projectMemberPolicySql,/\b(drop\s+table|truncate\s+table|delete\s+from)\b/i);
 });
+
+test("cloud project membership administration is owner-scoped and retains removed-member spend history",()=>{
+ assert.match(projectMemberPolicySql,/add_project_member/);
+ assert.match(projectMemberPolicySql,/remove_project_member/);
+ assert.match(projectMemberPolicySql,/list_project_members/);
+ assert.match(projectMemberPolicySql,/lower\(email\)=lower\(btrim\(p_email\)\)/i);
+ assert.match(projectMemberPolicyIntegration,/owner-managed cloud project member directory did not return the registered editor/i);
+ assert.match(projectMemberPolicyIntegration,/removed project member retained cloud project access/i);
+ assert.match(projectMemberPolicyIntegration,/member removal deleted or lost historical credit attribution/i);
+});
