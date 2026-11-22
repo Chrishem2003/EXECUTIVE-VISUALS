@@ -688,7 +688,7 @@ export function createRunwayCloudVideoAdapter({
       })) {
         throw fail("Runway returned an unsafe or duplicate output URL.", "VIDEO_OUTPUT_URL_REJECTED");
       }
-      return { status: "succeeded", taskId: id, outputUrls, provider: "runway", model: selectedModel };
+      return { status: "succeeded", taskId: id, outputUrls, provider: "runway", model: selectedModel, ...(task.cost && typeof task.cost === "object" && !Array.isArray(task.cost) ? { actualCostCredits: task.cost.credits } : {}) };
     },
 
     async cancel(providerTaskId) {
