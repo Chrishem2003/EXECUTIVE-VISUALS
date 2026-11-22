@@ -21,7 +21,8 @@ test("converts a provider estimate to a rounded-up customer credit quote with re
 
 test("fails closed when provider rates or customer credit pricing are unavailable",()=>{
  assert.equal(quoteCustomerCredits({...providerQuote,available:false},policy).available,false);
- assert.equal(quoteCustomerCredits(providerQuote,null).available,false);\n assert.match(quoteCustomerCredits(providerQuote,{...policy,currency:"UGX"}).reason,/currency/);
+ assert.equal(quoteCustomerCredits(providerQuote,null).available,false);
+ assert.match(quoteCustomerCredits(providerQuote,{...policy,currency:"UGX"}).reason,/currency/);
  assert.equal(resolveCustomerCreditPolicy({}).configured,false);
  assert.equal(resolveCustomerCreditPolicy({
   CUSTOMER_CREDIT_CURRENCY:"USD",\n  CUSTOMER_CREDIT_VALUE_MINOR:"1",CUSTOMER_CREDIT_MINOR_UNITS_PER_MAJOR:"100",
