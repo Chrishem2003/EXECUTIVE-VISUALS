@@ -127,7 +127,7 @@ test("subscription allowance simulation derives measured cost only from invoice-
 
 test("subscription allowance simulation fails closed when invoice evidence query exceeds its bounded sample",async()=>{
  const uuid=n=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
- const oversized=Array.from({length:1001},(_,i)=>({id:uuid(2000+i),job_id:uuid(4000+i),status:"succeeded",period_month:"2026-11-01"}));
+ const oversized=Array.from({length:1000},(_,i)=>({id:uuid(2000+i),job_id:uuid(4000+i),status:"succeeded",period_month:"2026-11-01"}));
  const calls=[];
  const service=api(async(url)=>{
   const target=String(url);calls.push(target);
