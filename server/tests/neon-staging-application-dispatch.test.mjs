@@ -38,7 +38,7 @@ function fixture({status=local.status,allowed=true,registerError=null,enqueueErr
       budgetCeilingMicros:input.budgetCeilingMicros,status:"approved_pending_submission"
     };},
     async enqueue(id,ownerId){calls.push(["enqueue",id,ownerId]);if(enqueueError)throw enqueueError;return receipts;},
-    async enqueueWorkflowNode(input){calls.push(["enqueueWorkflowNode",input]);return{
+    async enqueueWorkflowNode(input){calls.push(["enqueueWorkflowNode",input]);if(enqueueError)throw enqueueError;return{
       backend:"neon-postgres",approvalId:input.quoteId,jobId:job,status:"queued",idempotentReplay:false,providerRequestsSubmitted:false
     };}
   }}};
