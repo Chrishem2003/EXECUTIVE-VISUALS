@@ -8,7 +8,7 @@ const DIMENSION_KEYS = new Set([
     "inputVideoSecondMinor_"+value
   ])
 ]);
-const fail=(code,message)=>Object.assign(new Error(message),{code});
+const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 function seconds(value,label,{required=false,max=600}={}){
   if(value===undefined||value===null||value===""){
     if(required)fail("PROVIDER_VIDEO_QUANTITY_REQUIRED",label+" is required.");
