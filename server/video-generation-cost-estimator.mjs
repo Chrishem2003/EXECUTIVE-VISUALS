@@ -99,7 +99,7 @@ export function estimateVideoGenerationCost({
     amount: Number(estimate.estimatedUsd.toFixed(6)),
     basis: "provider_list_price_estimate",
     pricingSource: RUNWAY_PRICING_SOURCE, pricingDate: estimate.pricingDate,
-    pricingFormula: estimate.formula,
+    pricingFormula: estimate.formula, discount: estimate.discount ?? null,
     evidenceType: estimate.evidenceType, billable: false, settlementEligible: false
   });
 }
