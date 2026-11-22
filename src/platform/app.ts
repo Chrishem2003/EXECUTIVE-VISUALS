@@ -1500,9 +1500,9 @@ const reconcileInvoiceButton=t.closest<HTMLButtonElement>("[data-finance-invoice
   try{
    const share=Number($<HTMLInputElement>("#finance-plan-credit-share").value);
    const raw=$<HTMLTextAreaElement>("#finance-plan-credit-scenarios").value.trim();
+   financeState.planEconomicsBudgetShareBps=share;financeState.planEconomicsScenarioJson=raw;
    const scenarios=JSON.parse(raw);
    if(!Array.isArray(scenarios)||scenarios.length<1||scenarios.length>20)throw new Error("Provide between one and twenty provider scenarios as a JSON array.");
-   financeState.planEconomicsBudgetShareBps=share;financeState.planEconomicsScenarioJson=raw;
    financeState.planCreditEconomics=null;render();
    const result=await apiRequest<{economics:FinanceDashboard}>("/api/admin/finance/subscription-plan-economics",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({creditBudgetShareBps:share,scenarios})});
    financeState.planCreditEconomics=result.economics;financeState.error="";
