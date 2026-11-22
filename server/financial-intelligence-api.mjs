@@ -982,6 +982,9 @@ export function createFinancialIntelligenceApi({
             if(!scenario||typeof scenario!=="object"||Array.isArray(scenario)||
               Object.keys(scenario).some(key=>!allowedScenarioFields.has(key)))
               throw Object.assign(new Error("Each provider scenario must be a JSON object containing only supported workload fields."),{code:"SUBSCRIPTION_ECONOMICS_SCENARIO_INVALID"});
+            if((scenario.audio!==undefined&&typeof scenario.audio!=="boolean")||
+              (scenario.hdr!==undefined&&typeof scenario.hdr!=="boolean"))
+              throw Object.assign(new Error("Audio and HDR selections must be explicit boolean values; string and numeric coercion is not accepted."),{code:"SUBSCRIPTION_ECONOMICS_MEDIA_FLAG_INVALID"});
             if(scenario.rateCardVersion!==undefined){
               const provider=String(scenario.provider||"").trim().toLowerCase();
               const model=String(scenario.model||"").trim();
