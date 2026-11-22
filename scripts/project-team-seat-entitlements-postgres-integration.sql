@@ -19,6 +19,7 @@ begin
 end
 $seat_entitlement_required$;
 
+reset role;
 update executive_visuals.customer_subscriptions
 set entitlements_snapshot=entitlements_snapshot || '{"limits":{"teamSeats":2}}'::jsonb
 where owner_id='123e4567-e89b-42d3-a456-426614174000'
@@ -28,6 +29,7 @@ values('423e4567-e89b-42d3-a456-426614174000',
  '123e4567-e89b-42d3-a456-426614174000','Second agency workspace');
 insert into auth.users(id,email)
 values('333e4567-e89b-42d3-a456-426614174000','second@example.test');
+set role service_role;
 
 -- Owner + one collaborator consumes two seats across the whole account.
 select executive_visuals.add_project_member(
@@ -72,10 +74,12 @@ end
 $seat_summary$;
 
 -- Increase the trusted plan entitlement and confirm the second distinct member can join.
+reset role;
 update executive_visuals.customer_subscriptions
 set entitlements_snapshot=entitlements_snapshot || '{"limits":{"teamSeats":3}}'::jsonb
 where owner_id='123e4567-e89b-42d3-a456-426614174000'
  and status='active';
+set role service_role;
 select executive_visuals.add_project_member(
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
