@@ -196,7 +196,7 @@ export function createNeonStagingApplicationDispatch({
     }catch(error){
       const detail=safeError(error);
       const status=detail.code==="VIDEO_WORKFLOW_APPROVAL_INVALID"?400:
-        detail.code==="VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT"?409:
+        detail.code==="VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT"||detail.code==="VIDEO_CUSTOMER_CREDIT_QUOTE_MISMATCH"?409:
         detail.code==="VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID"||detail.code==="VIDEO_WORKFLOW_MODEL_UNSUPPORTED"||
         detail.code==="VIDEO_WORKFLOW_INPUT_INVALID"||detail.code==="VIDEO_WORKFLOW_QUOTE_EXPIRED"||
         detail.code==="VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED"?422:
