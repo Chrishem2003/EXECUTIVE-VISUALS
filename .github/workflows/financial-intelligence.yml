@@ -40,7 +40,10 @@ jobs:
       - name: Check financial modules
         run: |
           node --check server/financial-intelligence-api.mjs
-          node --check server/subscription-allowance-approval.mjs\n          node --check server/subscription-allowance-profitability.mjs\n          node --check server/subscription-credit-cost-evidence.mjs\n          node --check server/financial-intelligence-api.mjs
+          node --check server/subscription-allowance-approval.mjs
+          node --check server/subscription-allowance-profitability.mjs
+          node --check server/subscription-credit-cost-evidence.mjs
+          node --check server/financial-intelligence-api.mjs
           node --check server/ai-workload-telemetry.mjs
           node --check server/ai-workload-economics.mjs
           node --check server/provider-video-cost-estimator.mjs
