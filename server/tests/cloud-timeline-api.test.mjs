@@ -1358,3 +1358,50 @@ test("cloud workflow quote fails closed when customer-credit pricing is not conf
  assert.equal(preflights,1);
  assert.equal(writes,0);
 });
+
+test("generation quote previews the exact personal or project-pool balance without reserving credits",async()=>{
+ const cases=[
+  {name:"personal wallet can cover quote",balance:{ledger_balance:5000,reserved_credits:500,available_credits:4500,funding_source:"personal",pool_status:"active"},status:"sufficient",canCover:true},
+  {name:"project pool cannot cover quote",balance:{ledger_balance:3000,reserved_credits:250,available_credits:2750,funding_source:"project_pool",pool_status:"active"},status:"sufficient",canCover:true},
+  {name:"insufficient project pool",balance:{ledger_balance:1000,reserved_credits:100,available_credits:900,funding_source:"project_pool",pool_status:"active"},status:"insufficient",canCover:false},
+  {name:"suspended project pool",balance:{ledger_balance:9000,reserved_credits:0,available_credits:9000,funding_source:"project_pool",pool_status:"suspended"},status:"suspended",canCover:false},
+  {name:"balance service unavailable",balance:null,status:"unavailable",canCover:null}
+ ];
+ for(const item of cases){
+  const quoteId="623e4567-e89b-42d3-a456-426614174000";
+  const api=createCloudTimelineApi({
+   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+   fetchImpl:async(url,options)=>{
+    if(url.endsWith("/rpc/get_generation_credit_balance_for_project"))
+     return{ok:true,status:200,async text(){return JSON.stringify(item.balance?[item.balance]:[]);}};
+    if(url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){
+     const args=JSON.parse(options.body);
+     return{ok:true,status:200,async text(){return JSON.stringify(args.p_quote_id);}};
+    }
+    return{ok:true,status:200,async text(){return"[]";}};
+   },
+   timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+   authorize:async({ownerId:requestedOwner,projectId:requestedProject,action})=>requestedOwner===owner&&requestedProject===project&&action==="write",
+   runwayRouterAdapter:{
+    async prepareInput(input){return{...input};},
+    async preflight(){return{billable:false,estimatedCredits:275,estimatedUsd:2.75,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
+   },
+   env:{RUNWAY_MODEL_ROUTER_ENABLED:"false",RUNWAY_VIDEO_ALLOW_REMOTE:"false"}
+  });
+  const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:8,aspectRatio:"16:9",resolution:"provider_default",audioMode:"generated"},inputs:[],outputs:[]};
+  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,
+   body:{projectId:project,requestId:"workflow-credit-preview-"+item.status,node,values:{prompt:"A cinematic product launch"}}});
+  assert.equal(result.status,200,item.name);
+  assert.equal(result.body.quote.creditAvailability.status,item.status,item.name);
+  assert.equal(result.body.quote.creditAvailability.canCoverQuote,item.canCover,item.name);
+  assert.equal(result.body.quote.creditAvailability.requiredCredits,2750,item.name);
+  assert.equal(result.body.quote.billable,false,item.name);
+  assert.equal(result.body.quote.requiresExplicitApproval,true,item.name);
+  if(item.balance){
+   assert.equal(result.body.quote.creditAvailability.availableCredits,item.balance.available_credits,item.name);
+   assert.equal(result.body.quote.creditAvailability.fundingSource,item.balance.funding_source,item.name);
+  }else{
+   assert.equal(result.body.quote.creditAvailability.availableCredits,null,item.name);
+  }
+ }
+});
