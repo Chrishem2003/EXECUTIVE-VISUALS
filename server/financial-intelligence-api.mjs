@@ -1089,6 +1089,14 @@ export function createFinancialIntelligenceApi({
         });
         return response(200,{usage:result});
       }
+      if(path==="/api/admin/finance/ai-invoices"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const limit=query.limit==null?50:Number(query.limit);
+        if(!Number.isSafeInteger(limit)||limit<1||limit>100)
+          return error(400,"AI_INVOICE_LIST_LIMIT_INVALID","Invoice history limit must be an integer between 1 and 100.");
+        const result=await dbRequest("ai_provider_invoice_imports?select=id,provider,invoice_reference,currency,period_start,period_end,total_minor,imported_line_count,matched_line_count,reconciliation_status,imported_at&order=imported_at.desc&limit="+limit);
+        return response(200,{imports:Array.isArray(result.data)?result.data:[]});
+      }
       if(path==="/api/admin/finance/ai-invoices/import"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const provider=String(body.provider||"").trim().toLowerCase();
