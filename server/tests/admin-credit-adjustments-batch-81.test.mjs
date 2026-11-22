@@ -29,7 +29,7 @@ test("negative adjustments cannot spend active reservations and positive adjustm
  assert.match(migration,/ADMIN_CREDIT_ADJUSTMENT_EXCEEDS_AVAILABLE_BALANCE/);
  assert.match(migration,/sourceType',case when p_delta_credits>0 then 'admin_compensation'/);
  assert.match(migration,/event_type,reference_id,idempotency_key,description,evidence[\s\S]*?'admin_adjustment'/);
- assert.match(integration,/Debit must not consume reserved credits/);
+ assert.match(integration,/reserve_generation_credits/);\n assert.match(integration,/Debit must not consume reserved credits/);
  assert.match(integration,/source_type='admin_compensation'[\s\S]*?revenue_status='non_revenue'/);
 });
 
