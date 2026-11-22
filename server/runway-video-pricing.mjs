@@ -52,6 +52,9 @@ export function estimateRunwayVideoCredits(options={}) {
   const duration=durationAuto?15:finiteDuration(durationSeconds,"durationSeconds",{max:durationLimit});
   const inputVideoLimit=model==="enhance_frame_rate"?300:30;
   const inputVideo=finiteDuration(requestedInputVideoSeconds??(model==="enhance_frame_rate"?durationSeconds:0),"inputVideoSeconds",{allowZero:true,max:inputVideoLimit});
+  if(hasHdr!==false&&typeof hasHdr!=="boolean")throw fail("hdr must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
+  if(hasHdr===true&&model!=="kling_4")throw fail("The hdr flag is priced only for Kling 4.0; use the documented outputFormat for other models.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  if(["kling_4","kling_4_flash"].includes(model)&&hasAudio===false)throw fail("Kling 4.0 always generates audio; audio cannot be disabled.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
   if(model==="gen4.5"&&(duration<2||duration>10))throw fail("durationSeconds must be between 2 and 10 for Gen-4.5.","RUNWAY_PRICE_INVALID_INPUT");
   if(["kling_4_flash","gemini_omni_flash_1.2"].includes(model)&&duration<3) {
     throw fail("durationSeconds must be at least 3 for "+model+".","RUNWAY_PRICE_INVALID_INPUT");
