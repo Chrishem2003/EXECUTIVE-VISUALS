@@ -225,7 +225,15 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
       let seatSummary=null,seatSummaryError=null;
       if(typeof projectCreditPoolApi.getTeamSeatSummary==="function"){
        try{seatSummary=await projectCreditPoolApi.getTeamSeatSummary({ownerId,projectId});}
-       catch(error){seatSummaryError={code:String(error?.code||"SUBSCRIPTION_TEAM_SEAT_ENTITLEMENT_REQUIRED"),message:String(error?.message||"A valid team seat entitlement is required to add members.").slice(0,300)};}
+       catch(error){
+        const code=String(error?.code||"SUBSCRIPTION_TEAM_SEAT_LOOKUP_UNAVAILABLE");
+        const message=code==="SUBSCRIPTION_TEAM_SEAT_ENTITLEMENT_REQUIRED"||code==="SUBSCRIPTION_REQUIRED_FOR_TEAM_SEATS"
+         ?"The active plan has no verified team-seat allowance. Choose a plan with team seats before adding members."
+         :code==="SUBSCRIPTION_RECORD_AMBIGUOUS"
+          ?"Multiple active subscriptions need billing reconciliation before team membership can expand."
+          :"Team seat capacity could not be verified. Adding members is disabled until the subscription can be checked.";
+        seatSummaryError={code,message};
+       }
       }else seatSummaryError={code:"SUBSCRIPTION_TEAM_SEAT_ENTITLEMENT_REQUIRED",message:"Team seat entitlement reporting is unavailable in this runtime."};
       return response(200,{members,seatSummary,seatSummaryError});
      }
