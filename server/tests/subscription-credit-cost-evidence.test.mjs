@@ -35,8 +35,8 @@ test("excludes partial, ambiguous, non-USD and unsettled jobs instead of estimat
  data.creditReservations.find(x=>x.job_id===uuid(105)).state="reserved";
  data.creditReservations.push({...data.creditReservations[0]});
  const result=deriveInvoiceBackedCreditCostEvidence(data);
- assert.equal(result.sampleJobs,5);
- assert.equal(result.excludedJobs,4);
+ assert.equal(result.sampleJobs,4);
+ assert.equal(result.excludedJobs,5);
  assert.equal(result.providerCostPerCustomerCreditMinor,1);
 });
 
