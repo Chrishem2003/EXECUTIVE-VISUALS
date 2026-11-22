@@ -11,7 +11,7 @@ const normalized=value=>String(value??"").trim().toLowerCase();
  * invoice link and at least five distinct jobs are represented.
  */
 export function deriveInvoiceBackedModelCostEvidence({periodMonth,usageEvents=[],invoiceAttributions=[],sampleComplete=true}={}){
- if(!/^\\d{4}-\\d{2}-01$/.test(String(periodMonth||""))||
+ if(!/^\d{4}-\d{2}-01$/.test(String(periodMonth||""))||
     !Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
     new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
   fail("MODEL_COST_EVIDENCE_PERIOD_INVALID","A valid first day of a reporting month is required.");
@@ -21,16 +21,17 @@ export function deriveInvoiceBackedModelCostEvidence({periodMonth,usageEvents=[]
  const events=Array.isArray(usageEvents)?usageEvents:[];
  const links=Array.isArray(invoiceAttributions)?invoiceAttributions:[];
  const eventById=new Map();
+ let unclassifiedUsageEvents=0;
  for(const event of events){
   const id=String(event?.id||"");
-  if(!UUID.test(id)||eventById.has(id))continue;
-  if(String(event.period_month||"")!==periodMonth)continue;
+  if(!UUID.test(id)||eventById.has(id)){unclassifiedUsageEvents++;continue;}
+  if(String(event.period_month||"")!==periodMonth){unclassifiedUsageEvents++;continue;}
   const provider=normalized(event.provider);
   const model=normalized(event.response_model||event.requested_model);
   const operation=normalized(event.operation);
   const currency=String(event.currency||"").toUpperCase();
-  if(!provider||!model||!operation||!/^[A-Z]{3}$/.test(currency))continue;
-  const key=[provider,model,operation,currency].join("\\u001f");
+  if(!provider||!model||!operation||!/^[A-Z]{3}$/.test(currency)){unclassifiedUsageEvents++;continue;}
+  const key=[provider,model,operation,currency].join("\u001f");
   if(!eventById.has(id))eventById.set(id,{id,jobId:UUID.test(String(event.job_id||""))?String(event.job_id):null,provider,model,operation,currency,key});
  }
  const groups=new Map();
@@ -45,7 +46,7 @@ export function deriveInvoiceBackedModelCostEvidence({periodMonth,usageEvents=[]
   if(!linksByEvent.has(id))linksByEvent.set(id,[]);
   linksByEvent.get(id).push(link);
  }
- let verifiedGroups=0,partialGroups=0,insufficientGroups=0,totalVerifiedCost=0;
+ let verifiedGroups=0,partialGroups=0,insufficientGroups=0;
  const models=[];
  for(const group of groups.values()){
   let total=0n,matched=0,invalid=0;
@@ -65,10 +66,10 @@ export function deriveInvoiceBackedModelCostEvidence({periodMonth,usageEvents=[]
   }
   const safe=total<=BigInt(MAX_MINOR);
   const coverage=group.events.length?Number((matched/group.events.length).toFixed(6)):0;
-  const complete=sampleComplete&&invalid===0&&matched===group.events.length&&safe;
+  const complete=sampleComplete&&unclassifiedUsageEvents===0&&invalid===0&&matched===group.events.length&&safe;
   const enough=complete&&jobs.size>=MIN_SAMPLE_JOBS;
-  const status=!sampleComplete?"sample_incomplete":!safe?"sample_out_of_range":invalid?"partial_invoice_coverage":!enough?"insufficient_sample":"verified_measured";
-  if(status==="verified_measured"){verifiedGroups++;totalVerifiedCost+=Number(total);}
+  const status=!sampleComplete?"sample_incomplete":!safe?"sample_out_of_range":invalid||unclassifiedUsageEvents?"partial_invoice_coverage":!enough?"insufficient_sample":"verified_measured";
+  if(status==="verified_measured")verifiedGroups++;
   else if(status==="partial_invoice_coverage")partialGroups++;
   else insufficientGroups++;
   models.push(Object.freeze({
@@ -82,7 +83,7 @@ export function deriveInvoiceBackedModelCostEvidence({periodMonth,usageEvents=[]
  models.sort((a,b)=>a.provider.localeCompare(b.provider)||a.model.localeCompare(b.model)||a.operation.localeCompare(b.operation)||a.currency.localeCompare(b.currency));
  const status=!sampleComplete?"sample_incomplete":!models.length?"no_usage_events":verifiedGroups===models.length?"verified_measured":verifiedGroups?"partially_measured":"insufficient_or_unmatched_evidence";
  return Object.freeze({
-  status,periodMonth,periodStart,periodEnd,sampleComplete,
+  status,periodMonth,periodStart,periodEnd,sampleComplete,unclassifiedUsageEvents,
   modelGroups:models.length,verifiedModelGroups:verifiedGroups,partialModelGroups:partialGroups,
   insufficientModelGroups:insufficientGroups,models:Object.freeze(models),
   limitations:Object.freeze([
