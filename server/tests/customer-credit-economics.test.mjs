@@ -50,10 +50,10 @@ test("subscription entitlement checks are server-snapshot based and fail closed"
 
 test("trusted quality evidence parser rejects client-shaped, duplicate, unverified and under-sampled records",()=>{
  const evidence=parseVideoModelQualityEvidence(JSON.stringify([
-  {provider:"runway",model:"model-a",verified:true,sampleCount:40,qualityScore:0.95,p95LatencyMs:400,evaluationVersion:"eval-1"},
-  {provider:"runway",model:"model-a",verified:true,sampleCount:40,qualityScore:0.95,p95LatencyMs:400,evaluationVersion:"eval-1"},
-  {provider:"runway",model:"model-b",verified:false,sampleCount:100,qualityScore:0.99,p95LatencyMs:100,evaluationVersion:"eval-2"},
-  {provider:"runway",model:"model-c",verified:true,sampleCount:4,qualityScore:0.99,p95LatencyMs:100,evaluationVersion:"eval-3"}
+  {provider:"runway",model:"model-a",verified:true,sampleCount:40,qualityScore:0.95,p95LatencyMs:400,evaluationVersion:"eval-1",evidenceReference:"https://evidence.example/eval-1",evidenceSha256:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  {provider:"runway",model:"model-a",verified:true,sampleCount:40,qualityScore:0.95,p95LatencyMs:400,evaluationVersion:"eval-1",evidenceReference:"https://evidence.example/eval-1",evidenceSha256:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  {provider:"runway",model:"model-b",verified:false,sampleCount:100,qualityScore:0.99,p95LatencyMs:100,evaluationVersion:"eval-2",evidenceReference:"https://evidence.example/eval-2",evidenceSha256:"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+  {provider:"runway",model:"model-c",verified:true,sampleCount:4,qualityScore:0.99,p95LatencyMs:100,evaluationVersion:"eval-3",evidenceReference:"https://evidence.example/eval-3",evidenceSha256:"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
  ]));
  assert.equal(evidence.configured,true);
  assert.equal(evidence.records.length,1);
