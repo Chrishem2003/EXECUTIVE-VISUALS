@@ -1742,7 +1742,7 @@ test("billing plans endpoint returns a validated versioned catalogue with active
   throw new Error("Unexpected request: "+target);
  });
  const result=await service.handle({method:"GET",path:"/api/billing/plans",ownerId:owner});
- assert.equal(result.status,200);
+ assert.equal(result.status,200,JSON.stringify(result.body));
  assert.equal(result.body.catalogueVersion,1);
  assert.equal(result.body.checkoutEnabled,true);
  assert.equal(result.body.plans.length,1);
