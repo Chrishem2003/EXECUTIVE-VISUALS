@@ -1353,6 +1353,35 @@ export function createAppServer() {
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const catalog=getProviderCatalog(process.env);
         const result=preflightVideoProduction({shots:body.shots,providerCatalog:catalog,pricingCatalog:pricing,lumaUsdPerCredit:process.env.LUMA_USD_PER_CREDIT});
+        if(result.readyForApproval===true&&result.pricing?.quote){
+          if(typeof quoteCustomerCredits!=="function"){
+            result.status="pricing_unverified";result.readyForApproval=false;
+            result.pricing={...result.pricing,customerCreditQuote:{status:"unavailable"}};
+            result.reason="Provider pricing is available, but customer-credit pricing is not configured. No approval or paid submission is allowed.";
+          }else{
+            try{
+              const pricedShots=result.pricing.quote.shots;
+              if(!Array.isArray(pricedShots)||pricedShots.length!==body.shots.length)throw new Error("Per-shot provider cost evidence is incomplete.");
+              const perShotCredits=pricedShots.map((shot,index)=>{
+                const amountMicros=Math.round(Number(shot.amount)*1000000);
+                if(shot.currency!=="USD"||!Number.isSafeInteger(amountMicros)||amountMicros<1||
+                   Math.abs(Number(shot.amount)*1000000-amountMicros)>0.0001)throw new Error("Per-shot USD cost could not be normalized.");
+                const credits=quoteCustomerCredits({currency:"USD",amountMicros});
+                if(!Number.isSafeInteger(credits)||credits<1||credits>100000000)throw new Error("Per-shot customer credit quote is outside safe bounds.");
+                return{shotId:String(shot.shotId||body.shots[index]?.id||"shot-"+(index+1)),credits};
+              });
+              const totalCredits=perShotCredits.reduce((sum,item)=>sum+item.credits,0);
+              if(!Number.isSafeInteger(totalCredits)||totalCredits<1||totalCredits>100000000)throw new Error("Total customer credit quote is outside safe bounds.");
+              result.pricing={...result.pricing,quote:{...result.pricing.quote,customerCreditQuote:{
+                unit:"customer_credits",totalCredits,perShot:perShotCredits,pricingBasis:"server-side cost, margin and fee policy"
+              }}};
+            }catch{
+              result.status="pricing_unverified";result.readyForApproval=false;
+              result.pricing={...result.pricing,customerCreditQuote:{status:"unavailable"}};
+              result.reason="Customer credits could not be calculated safely for every shot. No approval or paid submission is allowed.";
+            }
+          }
+        }
         send(res,200,result,cors);return;
       }
       if(path==="/api/capabilities"&&req.method==="GET"){
