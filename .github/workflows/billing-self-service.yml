@@ -33,6 +33,7 @@ on:
       - feat/revenue-movement-cohort-intelligence-batch-39
       - feat/verified-credit-pack-topups-batch-65-2026-11-22
       - feat/pesapal-credit-topup-checkout-batch-66-2026-11-22
+      - feat/customer-credit-wallet-billing-ui-batch-67-2026-11-22
   pull_request:
 
 permissions:
