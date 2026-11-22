@@ -63,6 +63,7 @@ test("does not count provider estimates, unsuccessful jobs, duplicate invoice li
  data.creditReservations.push({...data.creditReservations[2]});
  const result=deriveInvoiceBackedCreditCostEvidence(data);
  assert.equal(result.sampleJobs,2);
+ assert.equal(result.excludedJobs,3);
  assert.equal(result.status,"insufficient_sample");
  assert.equal(result.providerCostPerCustomerCreditMinor,null);
 });
