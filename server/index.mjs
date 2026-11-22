@@ -73,7 +73,6 @@ import { getLatestCreativeGraphSnapshot, saveCreativeGraphSnapshot } from "./cre
 import { saveCreativeProjectArtifact, listCreativeProjectArtifacts, getCreativeProjectArtifact, appendCreativeProjectArtifactRevision, listCreativeProjectArtifactsForMigration } from "./creative-project-artifacts.mjs";
 import { createCloudCreativeProjectArtifactRepository } from "./creative-project-artifacts-postgres.mjs";
 import { startEmbeddedCloudWorker } from "./embedded-cloud-worker-runtime.mjs";
-import { createProjectCreditPoolApi } from "./project-credit-pool-api.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -114,13 +113,6 @@ const EXTENSIONS = {
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.audio-master","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.video-ai-upscale","timeline.render"]);
 const RETRYABLE_MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.audio-master","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"]);
 const SUPABASE_SERVER_KEY=resolveSupabaseServerKey(process.env);
-const projectCreditPoolApiEnabled=process.env.PROJECT_CREDIT_POOL_API_ENABLED==="true";
-if(projectCreditPoolApiEnabled&&(AUTH_MODE!=="supabase"||!process.env.SUPABASE_URL||!SUPABASE_SERVER_KEY)){
- throw new Error("Project credit pool API requires verified Supabase authentication and server-side Supabase credentials.");
-}
-const projectCreditPoolApi=projectCreditPoolApiEnabled?createProjectCreditPoolApi({
- url:process.env.SUPABASE_URL,serviceRoleKey:SUPABASE_SERVER_KEY,fetchImpl:globalThis.fetch
-}):null;
 const db = openDatabase(DB_FILE);
 const supabaseSessionStore = process.env.SUPABASE_SESSION_ENCRYPTION_KEY ? createSupabaseSessionStore({ db, encryptionKey: process.env.SUPABASE_SESSION_ENCRYPTION_KEY }) : null;
 const supabaseSessionRefresh = supabaseSessionStore ? createSupabaseSessionRefreshCoordinator({store:supabaseSessionStore,refreshSession:refreshSupabaseSession,getUser:getSupabaseUser}) : null;
@@ -279,6 +271,10 @@ let neonWorkflowJobLookup=null;
 let neonWorkflowJobCancel=null;
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "true";
+const projectCreditPoolApiEnabled=process.env.PROJECT_CREDIT_POOL_API_ENABLED==="true";
+if(projectCreditPoolApiEnabled&&(!cloudTimelineApiEnabled||AUTH_MODE!=="supabase")){
+ throw new Error("Project credit pool API requires the verified cloud timeline API and Supabase authentication.");
+}
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 if (cloudMediaJobsApiEnabled && (!cloudTimelineApiEnabled || AUTH_MODE !== "supabase")) throw new Error("Cloud media job submission requires the verified cloud timeline API and Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({
@@ -1397,35 +1393,6 @@ export function createAppServer() {
         if(!name){fail(res,400,"PROJECT_NAME_REQUIRED","Project name is required.");return;}
         const id=randomUUID();db.prepare("INSERT INTO projects(id,owner_id,name,description,settings_json) VALUES(?,?,?,?,?)").run(id,user.id,name,String(body.description||"").slice(0,4000),json(body.settings));
         audit(db,user.id,"project.created","project",id,{name});send(res,201,{project:{id,name,description:body.description||"",revision:1}},cors);return;
-      }
-      const projectCreditPoolMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)\/credit-pool(?:\/(fund|members|members\/([0-9a-f-]+)\/policy))?$/i);
-      if(projectCreditPoolMatch){
-        const projectId=projectCreditPoolMatch[1],action=projectCreditPoolMatch[2]||"configure",memberId=projectCreditPoolMatch[3]||null;
-        const access=getProjectAccess(db,user.id,projectId);
-        if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
-        if(access.access_role!=="owner"){fail(res,403,"OWNER_REQUIRED","Only the project owner can manage shared credits and member limits.");return;}
-        if(!projectCreditPoolApi){fail(res,503,"PROJECT_CREDIT_POOL_API_DISABLED","Shared project credits are not enabled in this runtime.");return;}
-        try{
-          let result;
-          if(action==="configure"&&req.method==="POST"){
-            const body=await readJson(req);
-            result=await projectCreditPoolApi.configure({ownerId:user.id,projectId,monthlySpendLimitCredits:body.monthlySpendLimitCredits??0});
-          }else if(action==="fund"&&req.method==="POST"){
-            const body=await readJson(req);
-            result=await projectCreditPoolApi.fund({ownerId:user.id,projectId,credits:body.credits,idempotencyKey:body.idempotencyKey});
-          }else if(action==="members"&&req.method==="GET"){
-            result=await projectCreditPoolApi.listMemberUsage({ownerId:user.id,projectId});
-          }else if(memberId&&action.startsWith("members/")&&req.method==="PUT"){
-            const body=await readJson(req);
-            result=await projectCreditPoolApi.setMemberPolicy({ownerId:user.id,projectId,memberId,monthlyLimitCredits:body.monthlyLimitCredits??0,status:body.status??"active"});
-          }else{
-            fail(res,405,"PROJECT_CREDIT_POOL_METHOD_NOT_ALLOWED","This method is not supported for the project credit pool endpoint.");return;
-          }
-          audit(db,user.id,"project.credit_pool."+action,"project",projectId,{action,memberId});
-          send(res,200,{result},cors);return;
-        }catch(error){
-          fail(res,error.status||500,error.code||"PROJECT_CREDIT_POOL_OPERATION_FAILED",error.message||"Project credit pool operation failed.");return;
-        }
       }
       const membersMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)\/members(?:\/([0-9a-f-]+))?$/i);
       if(membersMatch){
