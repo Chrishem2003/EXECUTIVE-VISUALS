@@ -25,7 +25,7 @@ All per-line currency calculations round upward to the next minor unit. The mini
 ## Evidence and safety
 
 - A forecast is not a provider quote, invoice or actual usage.
-- Source-linked rates require an HTTPS source and check timestamp; contract/admin attestation requires matching verification status.
+- Source-linked rates require an HTTPS source and a check timestamp no more than 45 days old; future-dated evidence is rejected. Contract/admin attestation requires matching verification status.
 - The estimator reads the saved rate-card record and checks its effective period at calculation time.
 - No browser-supplied rate is authoritative.
 - No default vendor price is seeded automatically. A finance administrator must review and append a versioned rate card with evidence.
