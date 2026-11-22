@@ -42,6 +42,7 @@ import { createCloudVideoGenerationRepositories } from "./cloud-video-generation
 import { createCloudVideoGenerationDispatch } from "./cloud-video-generation-dispatch.mjs";
 import { createSubscriptionEntitlementReader } from "./subscription-entitlements.mjs";
 import { createNeonStagingApprovalDispatch } from "./neon-staging-application-runtime.mjs";
+import { createCustomerCreditQuotePolicy } from "./neon-customer-credit-policy.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
@@ -271,6 +272,17 @@ let neonWorkflowJobLookup=null;
 let neonWorkflowJobCancel=null;
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "true";
+const customerCreditPolicyEnv={
+ NEON_CUSTOMER_CREDITS_PER_USD:process.env.CUSTOMER_CREDITS_PER_USD||process.env.NEON_CUSTOMER_CREDITS_PER_USD,
+ NEON_CUSTOMER_TARGET_MARGIN_BPS:process.env.CUSTOMER_TARGET_MARGIN_BPS||process.env.NEON_CUSTOMER_TARGET_MARGIN_BPS,
+ NEON_CUSTOMER_PAYMENT_FEE_BPS:process.env.CUSTOMER_PAYMENT_FEE_BPS||process.env.NEON_CUSTOMER_PAYMENT_FEE_BPS,
+ NEON_CUSTOMER_SUPPORT_RESERVE_BPS:process.env.CUSTOMER_SUPPORT_RESERVE_BPS||process.env.NEON_CUSTOMER_SUPPORT_RESERVE_BPS,
+ NEON_CUSTOMER_FIXED_PAYMENT_FEE_MICROS:process.env.CUSTOMER_FIXED_PAYMENT_FEE_MICROS||process.env.NEON_CUSTOMER_FIXED_PAYMENT_FEE_MICROS
+};
+const customerCreditPricingConfigured=Boolean(customerCreditPolicyEnv.NEON_CUSTOMER_CREDITS_PER_USD&&customerCreditPolicyEnv.NEON_CUSTOMER_TARGET_MARGIN_BPS);
+const quoteCustomerCredits=customerCreditPricingConfigured
+ ?createCustomerCreditQuotePolicy({env:customerCreditPolicyEnv})
+ :null;
 const projectCreditPoolApiEnabled=process.env.PROJECT_CREDIT_POOL_API_ENABLED==="true";
 if(projectCreditPoolApiEnabled&&(!cloudTimelineApiEnabled||AUTH_MODE!=="supabase")){
  throw new Error("Project credit pool API requires the verified cloud timeline API and Supabase authentication.");
@@ -283,7 +295,8 @@ const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({
  workflowNodeDispatch:input=>neonWorkflowNodeDispatch?neonWorkflowNodeDispatch(input):null,
  workflowNodeDispatchEnabled:()=>typeof neonWorkflowNodeDispatch==="function",
  workflowJobLookup:input=>neonWorkflowJobLookup?neonWorkflowJobLookup(input):null,
- workflowJobCancel:input=>neonWorkflowJobCancel?neonWorkflowJobCancel(input):null
+ workflowJobCancel:input=>neonWorkflowJobCancel?neonWorkflowJobCancel(input):null,
+ quoteCustomerCredits
 }) : null;
 const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : { ready:false, storage:"disabled" };
 const cloudMediaReadinessBlockers=[];
