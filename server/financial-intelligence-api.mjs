@@ -14,6 +14,7 @@ import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
 import { canonicalFinancialAuditJson, createFinancialAuditEvent, verifyFinancialAuditChain, FINANCIAL_AUDIT_EVENT_TYPES } from "./financial-audit-ledger.mjs";
 import { exportFinancialAuditBundle } from "./financial-audit-export.mjs";
 import { calculateFinancialScenarioIntelligence } from "./financial-scenario-intelligence.mjs";
+import { calculateCreditPriceFloor, calculateSubscriptionCreditCeiling } from "./credit-unit-economics.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -874,6 +875,17 @@ export function createFinancialIntelligenceApi({
           return error(400,"AI_COST_PERIOD_INVALID","Provide a valid reporting month.");
         const result=await rpc("ai_cost_intelligence_overview",{p_actor_id:ownerId,p_period_month:periodMonth});
         return response(200,{intelligence:result||{byProviderModel:[],byCustomer:[],unpricedEvents:0,limitations:[]}});
+      }
+      if(path==="/api/admin/finance/credit-pricing/scenario"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        try{
+          const mode=String(body.mode||"credit_pack");
+          if(mode==="credit_pack")return response(200,{pricing:calculateCreditPriceFloor(body)});
+          if(mode==="subscription")return response(200,{pricing:calculateSubscriptionCreditCeiling(body)});
+          return error(400,"CREDIT_PRICING_MODE_INVALID","Pricing mode must be credit_pack or subscription.");
+        }catch(err){
+          return error(400,err.code||"CREDIT_PRICING_INPUT_INVALID",err.message||"Credit pricing inputs are invalid.");
+        }
       }
       if(path==="/api/admin/finance/model-rate-cards"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
