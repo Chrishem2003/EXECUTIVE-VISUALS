@@ -31,6 +31,7 @@ on:
       - feat/executive-financial-intelligence-batch-47
       - feat/financial-governance-batch-48
       - feat/revenue-movement-cohort-intelligence-batch-39
+      - feat/verified-credit-pack-topups-batch-65-2026-11-22
   pull_request:
 
 permissions:
