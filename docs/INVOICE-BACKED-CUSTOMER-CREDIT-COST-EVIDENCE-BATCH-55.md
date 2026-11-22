@@ -14,7 +14,7 @@ For the selected reporting month:
 5. Include only USD invoice attribution amounts with valid invoice-import and invoice-line identifiers. No FX conversion is attempted.
 6. Sum invoice-confirmed USD cents and settled customer platform credits across complete jobs. Calculate `ceil(total invoice cents / total settled platform credits)`, conservatively rounding the blended cost per customer credit up to a whole USD cent.
 
-At least five fully reconciled jobs are required. This establishes a verified historical measurement, not a finance/product approval to publish allowances. The candidate-month query is bounded to 1,000 rows and the full-job event query to 5,000 rows. If either cap is exceeded, the sample is marked incomplete and no cost evidence is produced.
+At least five fully reconciled jobs are required. This establishes a verified historical measurement, not a finance/product approval to publish allowances. Each candidate-month and full-job event query is bounded to 1,000 rows. Because the database API may itself cap returned rows, a result containing 1,000 rows is treated as potentially truncated: the sample is marked incomplete and no cost evidence is produced.
 
 ## Exclusions
 
