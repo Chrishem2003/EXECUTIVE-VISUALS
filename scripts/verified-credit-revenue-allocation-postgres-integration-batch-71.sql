@@ -57,7 +57,7 @@ begin
   end if;
   select ledger_id into v_promo_grant
     from executive_visuals.grant_generation_credits(
-      v_owner,20,'batch71-wallet-promo','Promotional credits',
+      v_owner,10,'batch71-wallet-promo','Promotional credits',
       '{"sourceType":"promotional"}'
     );
 
@@ -94,6 +94,11 @@ begin
     v_pending_reservation,120,
     '{"provider":"runway","evidenceType":"provider_invoice","evidenceId":"batch71-pending-job-invoice"}'
   );
+  -- Move the second settled job into December to verify cumulative source rounding across reporting periods.
+  update executive_visuals.billing_credit_reservations
+     set settled_at='2026-12-01T00:00:00Z' where id=v_pending_reservation;
+  update executive_visuals.billing_credit_revenue_allocation_runs
+     set created_at='2026-12-01T00:00:00Z' where reservation_id=v_pending_reservation;
 
   if not exists(
     select 1 from executive_visuals.billing_credit_revenue_allocation_runs
@@ -179,7 +184,7 @@ begin
     v_owner,v_source,600,'Approved credit component of the verified subscription price',
     '{"review":"batch71_subscription_credit_component","approvedBy":"billing_admin"}'
   );
-  v_report:=executive_visuals.get_verified_job_cost_coverage(v_owner,'2026-11-01',100);
+  v_report:=executive_visuals.get_verified_job_cost_coverage(v_owner,'2026-12-01',100);
   select value into v_row from jsonb_array_elements(v_report->'rows')
     where value->>'job_id'='71717171-7171-4171-8171-717171717102';
   if v_row is null or (v_row->>'recognized_revenue_minor')::bigint<>1200
