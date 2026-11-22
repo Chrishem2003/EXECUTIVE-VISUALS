@@ -119,6 +119,8 @@ test("subscription allowance simulation derives measured cost only from invoice-
  assert.equal(result.body.costEvidenceSummary.totalProviderCostMinor,600);
  assert.equal(result.body.costEvidenceSummary.providerCostPerCustomerCreditMinor,1);
  assert.equal(result.body.simulation.creditAllowanceCalculated,true);
+ assert.equal(result.body.simulation.costEvidence.approved,false);
+ assert.equal(result.body.simulation.costEvidence.status,"verified_measured");
  assert.ok(result.body.simulation.plans.every(plan=>Number.isSafeInteger(plan.estimatedIncludedCredits)&&plan.publishable===false));
  assert.ok(calls.every(call=>call.method==="GET"));
  assert.ok(calls.some(call=>call.target.includes("period_month=eq.2026-11-01")));
