@@ -533,16 +533,19 @@ export function createRunwayCloudVideoAdapter({
               aspectRatio: input.aspectRatio || "16:9",
               resolution: input.resolution || "provider_default", draft: input.draft === true
             });
-            body = { ...body, duration: referencePayload.duration, ratio: referencePayload.ratio };\n            if (selectedModel === "seedance2_5_flash") body.resolution = "720p";
+            body = { ...body, duration: referencePayload.duration, ratio: referencePayload.ratio };
+            if (selectedModel === "seedance2_5_flash") body.resolution = "720p";
           } else if (mode === "extend") {
             const duration = input.duration !== undefined ? input.duration : input.durationSeconds === undefined ? "auto" : input.durationSeconds;
             if (duration !== "auto" && (!Number.isInteger(duration) || duration < 4 || duration > 30)) {
               throw fail("Seedance extend duration must be auto or 4–30 seconds.", "RUNWAY_INPUT_INVALID");
             }
-            body.duration = duration;\n            if (selectedModel === "seedance2_5_flash") body.resolution = "720p";
+            body.duration = duration;
+            if (selectedModel === "seedance2_5_flash") body.resolution = "720p";
           } else if (mode === "edit") {
             if (input.duration !== "auto") throw fail("Seedance edit mode requires duration='auto'.", "RUNWAY_INPUT_INVALID");
-            body.duration = "auto";\n            if (selectedModel === "seedance2_5_flash") body.resolution = "720p";
+            body.duration = "auto";
+            if (selectedModel === "seedance2_5_flash") body.resolution = "720p";
           } else throw fail("Seedance video mode must be reference, extend or edit.", "RUNWAY_INPUT_INVALID");
         } else if (selectedModel === "kling_4_flash") {
           const duration = input.durationSeconds === undefined ? 5 : input.durationSeconds;
