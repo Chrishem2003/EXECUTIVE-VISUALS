@@ -74,7 +74,7 @@ export function quoteCustomerCredits(providerQuote,rawPolicy){
   currency:providerQuote.currency,providerCostMinor:Number(minor),
   retryReserveMinor:Number(retry),infrastructureReserveMinor:Number(infrastructure),
   fullyLoadedCostMinor:Number(fullyLoaded),minimumRevenueMinor:Number(revenue),
-  creditValueMinor:policy.creditValueMinor,customerCredits:Number(credits),
+  creditValueMinor:policy.creditValueMinor,minorUnitsPerMajor:policy.minorUnitsPerMajor,customerCredits:Number(credits),
   customerPriceMinor:Number(customerPrice),estimatedPaymentFeeMinor:Number(paymentFee),
   estimatedContributionMinor:Number(contribution),estimatedMarginBps:grossMarginBps,
   pricingVersion:policy.pricingVersion,
