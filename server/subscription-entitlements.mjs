@@ -101,3 +101,50 @@ export function assertSubscriptionLimit(resolved,options){
  if(!result.allowed)throw fail("SUBSCRIPTION_LIMIT_EXCEEDED",result.reason,403);
  return result.value;
 }
+
+
+const OWNER_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Server-only reader for the current account subscription. It uses the
+ * Supabase service role and returns a resolved policy object, never raw
+ * browser-supplied entitlement data.
+ */
+export function createSubscriptionEntitlementReader({
+ supabaseUrl,serviceRoleKey,fetchImpl=globalThis.fetch,now=()=>new Date(),timeoutMs=10000
+}={}){
+ if(!supabaseUrl||!serviceRoleKey||typeof fetchImpl!=="function"||
+    !Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30000)
+  throw new Error("Subscription entitlement reader requires server credentials, fetch and a bounded timeout.");
+ let base;
+ try{const url=new URL(supabaseUrl);if(url.protocol!=="https:"&&!["localhost","127.0.0.1","[::1]"].includes(url.hostname))throw new Error();base=url.origin;}
+ catch{throw new Error("Subscription entitlement reader requires an HTTPS Supabase URL.");}
+ return async function readOwnerSubscriptionEntitlements({ownerId}={}){
+  if(typeof ownerId!=="string"||!OWNER_UUID.test(ownerId))
+   throw fail("SUBSCRIPTION_OWNER_INVALID","A verified account ID is required.",400);
+  const path="customer_subscriptions?select=status,plan_code,plan_version,current_period_end,cancel_at_period_end,entitlements_snapshot"+
+   "&owner_id=eq."+encodeURIComponent(ownerId)+"&status=eq.active&order=current_period_end.desc&limit=2";
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+   const response=await fetchImpl(base+"/rest/v1/"+path,{
+    method:"GET",
+    headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,accept:"application/json",
+     "accept-profile":"executive_visuals","content-profile":"executive_visuals"},
+    signal:controller.signal,redirect:"error"
+   });
+   const raw=await response.text();
+   if(Buffer.byteLength(raw,"utf8")>1024*1024)
+    throw fail("SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE","Subscription lookup response exceeded the size limit.",503);
+   let rows;
+   try{rows=raw?JSON.parse(raw):[];}catch{throw fail("SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE","Subscription lookup returned invalid data.",503);}
+   if(!response.ok)throw fail("SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE","Subscription access could not be verified.",503);
+   if(!Array.isArray(rows)||rows.length>1)
+    throw fail("SUBSCRIPTION_RECORD_AMBIGUOUS","The account has multiple active subscriptions; generation is blocked pending reconciliation.",409);
+   if(rows.length===0)return Object.freeze({active:false,reason:"An active subscription is required."});
+   return resolveSubscriptionEntitlements(rows[0],{now});
+  }catch(error){
+   if(error?.name==="AbortError")throw fail("SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE","Subscription verification timed out; generation was not submitted.",503);
+   throw error;
+  }finally{clearTimeout(timer);}
+ };
+}
