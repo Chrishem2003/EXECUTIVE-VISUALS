@@ -95,7 +95,7 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   if(draft&&id!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if(draft&&resolution!=="480p")throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   const kling3=id.startsWith("kling3.0_");
-  const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
+  const maxPrompt=["seedance2_5","seedance2_5_flash"].includes(id)?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
   const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
   const validUri = value => typeof value === "string" && (/^https:\/\//i.test(value) || /^runway:\/\//i.test(value));
   const imageLimit=id==="seedance2_5_flash"?10:30,videoLimit=id==="seedance2_5_flash"?5:10,audioLimit=id==="seedance2_5_flash"?5:10;
@@ -123,7 +123,7 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  if(draft&&id!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  if(draft&&resolution!=="480p")throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  const kling3=id.startsWith("kling3.0_");
- const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
+ const maxPrompt=["seedance2_5","seedance2_5_flash"].includes(id)?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
  const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
  const seedanceImageList=["seedance2_5","seedance2_5_flash"].includes(id)&&Array.isArray(promptImage);
  const referenceMode=seedanceImageList&&promptImage.every(item=>item&&!("position" in item));
