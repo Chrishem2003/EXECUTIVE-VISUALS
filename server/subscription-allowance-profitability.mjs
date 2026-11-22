@@ -29,8 +29,11 @@ function validateEvidence(evidence,costPerCreditMinor){
     evidence.status!=="verified_measured"||evidence.approved!==false||
     typeof evidence.source!=="string"||evidence.source.trim().length<3||
     typeof evidence.rateCardVersion!=="string"||evidence.rateCardVersion.trim().length<1||
-    !Number.isSafeInteger(evidence.sampleJobs)||evidence.sampleJobs<1)
-  fail("SUBSCRIPTION_ECONOMICS_EVIDENCE_INVALID","Credit allowances require server-verified measured provider-cost evidence; finance/product approval is a separate release gate. A source, calculation-method version and sample size are also required.");
+    !Number.isSafeInteger(evidence.sampleJobs)||evidence.sampleJobs<5||
+    !Number.isSafeInteger(evidence.sampleCredits)||evidence.sampleCredits<1||
+    !Number.isSafeInteger(evidence.totalProviderCostMinor)||evidence.totalProviderCostMinor<1||
+    typeof evidence.evidenceDigest!=="string"||!/^[a-f0-9]{64}$/.test(evidence.evidenceDigest))
+  fail("SUBSCRIPTION_ECONOMICS_EVIDENCE_INVALID","Credit allowances require at least five invoice-backed jobs, settled credits, total attributed cost and a valid digest of the exact source rows; finance/product approval remains a separate release gate.");
  const start=date(evidence.periodStart,"evidence periodStart");
  const end=date(evidence.periodEnd,"evidence periodEnd");
  if(end<=start)fail("SUBSCRIPTION_ECONOMICS_EVIDENCE_INVALID","Evidence periodEnd must follow periodStart.");
