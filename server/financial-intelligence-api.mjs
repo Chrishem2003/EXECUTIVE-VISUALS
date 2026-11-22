@@ -901,7 +901,7 @@ export function createFinancialIntelligenceApi({
         const periodMonth=query.periodMonth==null?"":String(query.periodMonth);
         if(!Number.isSafeInteger(limit)||limit<1||limit>100||
           !Number.isSafeInteger(offset)||offset<0||offset>100000||
-          (periodMonth&&(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||
+          (periodMonth&&(!/^\d{4}-\d{2}-01$/.test(periodMonth)||
             !Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
             new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)))
           return error(400,"AI_USAGE_RECONCILIATION_FILTER_INVALID","Provide a valid month and pagination limit (1–100) and offset (0–100,000).");
