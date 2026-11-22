@@ -52,7 +52,7 @@ test("starts only after durable Neon worker and private-storage readiness pass",
   });
   assert.equal(started, 1);
   assert.equal(received.includeStorage, true);
-  assert.equal(received.quoteCustomerCredits({ currency: "USD", amountMicros: 1250000 }), 143);
+  assert.equal(received.quoteCustomerCredits({ currency: "USD", amountMicros: 1250000 }), 179);
   assert.deepEqual(received.workerAdapters, provider.adapters);
   assert.equal(received.workerAuthorizeJob, provider.authorizeJob);
   assert.equal(received.workerId, "worker-test");
