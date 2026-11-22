@@ -105,3 +105,29 @@ test("applies input-image pricing and rounds fractional seconds upward in minor 
  assert.equal(result.costLines.find(x=>x.driver==="input_images").amountMinor,22);
  assert.equal(result.estimatedProviderCostMinor,26);
 });
+
+test("an explicit resolution capability matrix rejects unsupported and unverified output tiers",()=>{
+ const rateCard=card({pricingDimensions:{
+  resolutionSupported_720p:1,resolutionSupported_1080p:0,
+  videoSecondMinor_720p:30,videoSecondMinor_1080p:68,
+  minimumGenerationMinor:0
+ }});
+ const supported=estimateProviderVideoCost({rateCard,request:request({resolution:"720p"})});
+ assert.equal(supported.estimatedProviderCostMinor,150);
+ assert.throws(()=>estimateProviderVideoCost({
+  rateCard,request:request({resolution:"1080p"})
+ }),{code:"PROVIDER_VIDEO_RESOLUTION_UNSUPPORTED"});
+ assert.throws(()=>estimateProviderVideoCost({
+  rateCard:card({pricingDimensions:{resolutionSupported_720p:2,videoSecondMinor_720p:30}}),
+  request:request({resolution:"720p"})
+ }),{code:"PROVIDER_VIDEO_RATE_CARD_INVALID"});
+});
+
+test("a capability matrix cannot imply support for a tier whose flag is omitted",()=>{
+ const rateCard=card({pricingDimensions:{
+  resolutionSupported_720p:1,videoSecondMinor_720p:30,minimumGenerationMinor:0
+ }});
+ assert.throws(()=>estimateProviderVideoCost({
+  rateCard,request:request({resolution:"1080p"})
+ }),{code:"PROVIDER_VIDEO_RESOLUTION_UNSUPPORTED"});
+});
