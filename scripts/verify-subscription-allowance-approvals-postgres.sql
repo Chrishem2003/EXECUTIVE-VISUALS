@@ -33,7 +33,7 @@ begin
   'monthlyPriceMinor',900,'includedCredits',80,'providerCostPerCustomerCreditMinor',2,
   'costEvidence',jsonb_build_object('status','verified_measured','approved',false,
    'source','posted provider invoices','rateCardVersion','invoice-attribution-v1',
-   'sampleJobs',5,'sampleCredits',5000,'totalProviderCostMinor',500,
+   'sampleJobs',5,'sampleCredits',5000,'totalProviderCostMinor',10000,
    'evidenceDigest',repeat('a',64),
    'periodStart','2026-10-01T00:00:00.000Z','periodEnd','2026-11-01T00:00:00.000Z'),
   'assumptions',jsonb_build_object('targetGrossMarginBps',7000,'paymentFeeBps',350,
