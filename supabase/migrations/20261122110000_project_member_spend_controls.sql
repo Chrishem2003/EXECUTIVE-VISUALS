@@ -300,7 +300,7 @@ create or replace function executive_visuals.add_project_member(
 ) returns jsonb
 language plpgsql security definer
 set search_path=pg_catalog,executive_visuals
-as $
+as $project_member$
 declare target auth.users; membership project_members;
 begin
  if p_owner_id is null or p_project_id is null or p_email is null
@@ -320,14 +320,14 @@ begin
  returning * into membership;
  return jsonb_build_object('projectId',membership.project_id,'memberId',membership.member_id,
   'email',target.email,'role',membership.role,'createdAt',membership.created_at);
-end $;
+end $project_member$;
 
 create or replace function executive_visuals.remove_project_member(
  p_owner_id uuid,p_project_id uuid,p_member_id uuid
 ) returns boolean
 language plpgsql security definer
 set search_path=pg_catalog,executive_visuals
-as $
+as $project_member$
 declare removed uuid;
 begin
  if p_owner_id is null or p_project_id is null or p_member_id is null then
@@ -343,14 +343,14 @@ begin
  -- Keep the member policy and immutable spend history for audit; membership
  -- removal itself blocks all future shared-wallet reservations.
  return true;
-end $;
+end $project_member$;
 
 create or replace function executive_visuals.list_project_members(
  p_owner_id uuid,p_project_id uuid
 ) returns table(member_id uuid,email text,role text,created_at timestamptz)
 language plpgsql security definer
 set search_path=pg_catalog,executive_visuals
-as $
+as $project_member$
 begin
  if p_owner_id is null or p_project_id is null then
   raise exception 'PROJECT_MEMBER_ARGUMENTS_INVALID' using errcode='22023';
@@ -362,7 +362,7 @@ begin
  select m.member_id,u.email,m.role,m.created_at
  from project_members m join auth.users u on u.id=m.member_id
  where m.project_id=p_project_id order by m.created_at,m.member_id;
-end $;
+end $project_member$;
 
 revoke all on function executive_visuals.add_project_member(uuid,uuid,text,text) from public,anon,authenticated;
 revoke all on function executive_visuals.remove_project_member(uuid,uuid,uuid) from public,anon,authenticated;
