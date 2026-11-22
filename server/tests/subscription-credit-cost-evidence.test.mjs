@@ -37,7 +37,8 @@ test("excludes partial, ambiguous, non-USD and unsettled jobs instead of estimat
  const result=deriveInvoiceBackedCreditCostEvidence(data);
  assert.equal(result.sampleJobs,4);
  assert.equal(result.excludedJobs,5);
- assert.equal(result.providerCostPerCustomerCreditMinor,1);
+ assert.equal(result.status,"insufficient_sample");
+ assert.equal(result.providerCostPerCustomerCreditMinor,null);
 });
 
 test("requires at least five fully reconciled jobs before producing cost evidence",()=>{
