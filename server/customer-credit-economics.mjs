@@ -54,7 +54,8 @@ export function quoteCustomerCredits(providerQuote,rawPolicy){
     typeof providerQuote.amount!=="number"||!Number.isFinite(providerQuote.amount)||providerQuote.amount<0){
   return Object.freeze({available:false,reason:"A current, source-attributed provider estimate is required before customer credits can be quoted.",billable:false});
  }
- if(!policy)return Object.freeze({available:false,reason:"Customer credit pricing is not configured with a verified currency, credit value, fees, reserves and margin target.",billable:false});\n if(policy.currency!==providerQuote.currency)return Object.freeze({available:false,reason:"The customer credit policy currency does not match the provider quote; no FX conversion is configured.",billable:false});
+ if(!policy)return Object.freeze({available:false,reason:"Customer credit pricing is not configured with a verified currency, credit value, fees, reserves and margin target.",billable:false});
+ if(policy.currency!==providerQuote.currency)return Object.freeze({available:false,reason:"The customer credit policy currency does not match the provider quote; no FX conversion is configured.",billable:false});
  const scaledAmount=Math.round(providerQuote.amount*1e6);
  if(!Number.isSafeInteger(scaledAmount))return Object.freeze({available:false,reason:"The provider estimate exceeds supported monetary precision.",billable:false});
  const major=BigInt(scaledAmount);
