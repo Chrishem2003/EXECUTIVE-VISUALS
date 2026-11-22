@@ -8,7 +8,9 @@ const approval="323e4567-e89b-42d3-a456-426614174000";
 const budget="423e4567-e89b-42d3-a456-426614174000";
 const job="523e4567-e89b-42d3-a456-426614174000";
 const credit="623e4567-e89b-42d3-a456-426614174000";
-const snapshot={shots:[{id:"shot-1",provider:"runway",model:"gen4.5",prompt:"Sunrise",estimatedCostMicros:1250000}]};
+const snapshot={shots:[{id:"shot-1",provider:"runway",model:"gen4.5",prompt:"Sunrise",estimatedCostMicros:1250000}],
+ quote:{customerCreditQuote:{unit:"customer_credits",totalCredits:150,perShot:[{shotId:"shot-1",credits:150}],pricingBasis:"server-side cost, margin and fee policy"}},
+ customerCreditBudgetCredits:200};
 const base={id:approval,ownerId:owner,projectId:project,idempotencyKey:"approval-key-001",requestHash:"a".repeat(64),snapshotJson:snapshot,currency:"USD",quotedAmountMicros:1250000,budgetCeilingMicros:2000000};
 function fixture({failAt=null,quoteCustomerCredits=()=>150}={}){
  const calls=[];let released=false;let storedApproval=null;let storedShots=[];
@@ -47,6 +49,19 @@ test("register mirrors the immutable owner/project-scoped approval and every pri
  assert.ok(f.calls.some(x=>x.sql.includes("insert into executive_visuals.video_generation_approvals")));
  assert.ok(f.calls.some(x=>x.sql.includes("insert into executive_visuals.video_generation_approval_shots")));
  assert.equal(f.calls.at(-1).sql,"commit");assert.equal(f.released,true);
+});
+
+test("registration rejects a customer-credit ceiling below the immutable quote",async()=>{
+ const f=fixture();
+ await assert.rejects(()=>f.repos.approvals.register({...base,snapshotJson:{...snapshot,customerCreditBudgetCredits:149}}),/valid immutable customer-credit quote and explicit credit ceiling/);
+ assert.equal(f.calls.length,0);
+});
+
+test("durable enqueue re-quotes each shot and rejects drift from the customer-approved credit amount",async()=>{
+ const f=fixture({quoteCustomerCredits:()=>151});
+ await assert.rejects(()=>f.repos.approvals.enqueue(approval,owner),e=>e.code==="VIDEO_CUSTOMER_CREDIT_QUOTE_MISMATCH");
+ assert.ok(f.calls.some(x=>x.sql==="rollback"));
+ assert.equal(f.calls.some(x=>x.sql.includes("enqueue_video_generation_job_v1")),false);
 });
 
 test("enqueue quotes credits server-side and atomically admits the approved shot",async()=>{
