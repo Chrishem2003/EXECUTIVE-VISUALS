@@ -1,4 +1,5 @@
--- Batch 81: administrator credit adjustments preserve wallet and revenue provenance.do $batch81_seed$
+-- Batch 81: administrator credit adjustments preserve wallet and revenue provenance.
+do $batch81_seed$
 declare
   v_admin constant uuid:='81818181-8181-4181-8181-818181818001';
   v_customer constant uuid:='81818181-8181-4181-8181-818181818002';
