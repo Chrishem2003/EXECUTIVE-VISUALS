@@ -17,6 +17,7 @@ export function createProviderAwareCloudVideoWorker({
   ledger,
   adapters,
   customerCredits,
+  quoteCustomerCredits,
   authorizeSubscription,
   requireSubscription = false,
   deferSeconds = 30
@@ -38,6 +39,7 @@ export function createProviderAwareCloudVideoWorker({
     enqueue,
     ledger,
     customerCredits,
+    quoteCustomerCredits,
     authorizeSubscription,
     requireSubscription,
     resolveAdapter: router.resolveAdapter,
