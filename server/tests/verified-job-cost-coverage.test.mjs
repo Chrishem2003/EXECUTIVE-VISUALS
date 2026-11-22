@@ -8,6 +8,7 @@ function json(data,status=200){return new Response(JSON.stringify(data),{status,
 function api(fetchImpl){return createFinancialIntelligenceApi({
   supabaseUrl:"https://project.supabase.co",
   serviceRoleKey:"service-role-test",
+  billingEnabled:true,
   flutterwaveClientId:"client-test",
   flutterwaveClientSecret:"client-secret-test",
   fetchImpl
@@ -65,7 +66,7 @@ test("financial command centre renders invoice-backed job cost coverage and reve
   assert.match(app,/\/api\/admin\/finance\/job-cost-coverage/);
   assert.match(app,/Verified job cost & credit coverage/);
   assert.match(app,/Profitability: blocked pending revenue evidence/);
-  assert.match(app,/Recognized revenue and gross margin are deliberately not inferred from credits/);
+  assert.match(app,/Revenue and gross margin are deliberately not inferred from credits/);
 });
 
 test("coverage migration requires invoice-backed matches and never converts credits into revenue",async()=>{
