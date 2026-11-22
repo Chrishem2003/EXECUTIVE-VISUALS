@@ -80,7 +80,7 @@ export function estimateVideoGenerationCost({
       model, durationSeconds, outputFormat, resolution, audio, inputVideoSeconds,
       referenceVideoSeconds, referenceImageCount, referenceAudioCount, hasStartFrame,
       outputFrames, sourceWidth, sourceHeight, sourceDynamicRange, outputWidth,
-      outputHeight, targetFramerate, inputType, pricingDate
+      outputHeight, targetFramerate, inputType, hdr, pricingDate
     });
   } catch (error) {
     const durationInvalid = error?.message?.startsWith("durationSeconds");
