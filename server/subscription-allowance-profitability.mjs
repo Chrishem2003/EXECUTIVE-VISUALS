@@ -40,8 +40,9 @@ function validateEvidence(evidence,costPerCreditMinor){
  return Object.freeze({
   status:"verified_measured",approved:false,source:evidence.source.trim().slice(0,240),
   rateCardVersion:evidence.rateCardVersion.trim().slice(0,100),
-  sampleJobs:evidence.sampleJobs,periodStart:new Date(start).toISOString(),
-  periodEnd:new Date(end).toISOString()
+  sampleJobs:evidence.sampleJobs,sampleCredits:evidence.sampleCredits,
+  totalProviderCostMinor:evidence.totalProviderCostMinor,evidenceDigest:evidence.evidenceDigest,
+  periodStart:new Date(start).toISOString(),periodEnd:new Date(end).toISOString()
  });
 }
 function normalizePlan(plan){
