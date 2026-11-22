@@ -1362,7 +1362,7 @@ test("cloud workflow quote fails closed when customer-credit pricing is not conf
 test("generation quote previews the exact personal or project-pool balance without reserving credits",async()=>{
  const cases=[
   {name:"personal wallet can cover quote",balance:{ledger_balance:5000,reserved_credits:500,available_credits:4500,funding_source:"personal",pool_status:"active"},status:"sufficient",canCover:true},
-  {name:"project pool cannot cover quote",balance:{ledger_balance:3000,reserved_credits:250,available_credits:2750,funding_source:"project_pool",pool_status:"active"},status:"sufficient",canCover:true},
+  {name:"project pool can exactly cover quote",balance:{ledger_balance:3000,reserved_credits:250,available_credits:2750,funding_source:"project_pool",pool_status:"active"},status:"sufficient",canCover:true},
   {name:"insufficient project pool",balance:{ledger_balance:1000,reserved_credits:100,available_credits:900,funding_source:"project_pool",pool_status:"active"},status:"insufficient",canCover:false},
   {name:"suspended project pool",balance:{ledger_balance:9000,reserved_credits:0,available_credits:9000,funding_source:"project_pool",pool_status:"suspended"},status:"suspended",canCover:false},
   {name:"balance service unavailable",balance:null,status:"unavailable",canCover:null}
