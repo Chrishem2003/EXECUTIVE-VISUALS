@@ -56,7 +56,7 @@ test("invalid IDs, credit amounts, limits, statuses and idempotency keys fail be
 
 test("database failures retain safe status and machine-readable error codes",async()=>{
  const f=fixture({status:403,payload:{code:"42501",message:"PROJECT_CREDIT_POOL_OWNER_REQUIRED"}});
- await assert.rejects(()=>f.api.configure({ownerId:owner,projectId:project}),error=>error.status===403&&error.code==="42501");
+ await assert.rejects(()=>f.api.configure({ownerId:owner,projectId:project}),error=>error.status===403&&error.code==="PROJECT_CREDIT_POOL_OWNER_REQUIRED");
 });
 
 test("service rejects non-HTTPS Supabase origins and missing credentials",()=>{
