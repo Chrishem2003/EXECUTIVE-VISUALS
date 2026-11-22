@@ -27,13 +27,23 @@ begin
     raise exception 'Invalid job cost coverage period or limit' using errcode='22023';
   end if;
 
-  with invoice_cost_currency as (
+  with matched_imports as (
+    select i.id
+    from ai_provider_invoice_imports i
+    join ai_provider_invoice_lines l on l.import_id=i.id
+    join ai_provider_invoice_reconciliation_events r
+      on r.invoice_import_id=i.id and r.invoice_line_id=l.id
+    where i.reconciliation_status='pending'
+    group by i.id,i.imported_line_count
+    having count(r.id)=i.imported_line_count
+       and count(*) filter(where r.match_status<>'matched')=0
+  ),
+  invoice_cost_currency as (
     select u.job_id,u.owner_id,e.currency,
       sum(e.expected_amount_minor)::numeric as amount_minor,
       count(*)::integer as line_count
     from ai_provider_invoice_reconciliation_events e
-    join ai_provider_invoice_imports i
-      on i.id=e.invoice_import_id and i.reconciliation_status='matched'
+    join matched_imports mi on mi.id=e.invoice_import_id
     join ai_usage_cost_events u on u.id=e.usage_event_id
     where e.match_status='matched'
       and u.period_month=p_period_month
