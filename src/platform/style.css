@@ -1553,3 +1553,17 @@ body{
 .review-version-state.changed{color:#f6bd70}
 .review-version-state.unavailable{color:#f39a9a}
 .review-version-state.unbound{color:#a9a2b7}
+
+
+/* Customer credit spend and budget control — Batch 57 */
+.credit-usage-panel .section-title{align-items:flex-start;gap:14px}
+.credit-usage-budget{margin:18px 0;padding:18px;border:1px solid var(--line,#d8dce5);border-radius:12px;background:rgba(124,92,252,.07)}
+.credit-usage-budget .section-title{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.credit-usage-budget .section-title strong{font-size:18px;font-variant-numeric:tabular-nums}
+.credit-usage-budget progress{width:100%;height:12px;margin:12px 0;accent-color:#8b5cf6}
+.credit-usage-alerts{display:grid;gap:8px;margin-top:12px}
+.credit-usage-alerts .notice{margin:0}
+@media(max-width:760px){
+ .credit-usage-panel .section-title{flex-direction:column}
+ .credit-usage-budget .section-title{align-items:flex-start;flex-direction:column}
+}
