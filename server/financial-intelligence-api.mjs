@@ -938,7 +938,7 @@ export function createFinancialIntelligenceApi({
           // and settled reservations. It is intentionally separate from provider list-price forecasts.
           const periodMonth=body.periodMonth===undefined
             ?new Date().toISOString().slice(0,7)+"-01":String(body.periodMonth);
-          if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||
+          if(!/^\d{4}-\d{2}-01$/.test(periodMonth)||
              !Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
              new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
             return error(400,"SUBSCRIPTION_COST_EVIDENCE_PERIOD_INVALID","Choose a valid reporting month.");
