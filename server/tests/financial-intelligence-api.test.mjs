@@ -54,6 +54,38 @@ test("customer-success events and milestone summary are scoped to the authentica
  assert.equal(summary.body.success.progress[0].completed,false);
 });
 
+test("subscription allowance simulation is finance-admin-only and remains scenario-only without verified invoice evidence",async()=>{
+ const denied=api(async url=>{
+  if(String(url).includes("/platform_admins?"))return json([]);
+  throw new Error("Unauthorized simulation must not read financial records");
+ });
+ const deniedResult=await denied.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-simulation",ownerId:owner,body:{targetGrossMarginBps:6000,paymentFeeBps:300}});
+ assert.equal(deniedResult.status,403);
+ const allowed=api(async url=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  throw new Error("Read-only scenario must not write to the database");
+ });
+ const result=await allowed.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-simulation",ownerId:owner,
+  body:{targetGrossMarginBps:6000,paymentFeeBps:300,refundReserveBps:200,supportReserveMinor:50,infrastructureReserveMinor:50}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.simulation.estimateType,"scenario_forecast_not_actual");
+ assert.equal(result.body.simulation.plans.length,4);
+ assert.ok(result.body.simulation.plans.every(plan=>plan.publishable===false&&plan.estimatedIncludedCredits===null));
+ assert.equal(result.body.simulation.creditAllowanceCalculated,false);
+});
+
+test("subscription allowance simulation rejects browser-supplied provider cost evidence",async()=>{
+ const service=api(async url=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);
+  throw new Error("Untrusted evidence must be rejected before any other request");
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-simulation",ownerId:owner,
+  body:{targetGrossMarginBps:6000,paymentFeeBps:300,providerCostPerCustomerCreditMinor:1,
+   costEvidence:{status:"approved_measured",approved:true,source:"browser",rateCardVersion:"fake",sampleJobs:999,periodStart:"2026-11-01",periodEnd:"2026-11-22"}}});
+ assert.equal(result.status,400);
+ assert.equal(result.body.error.code,"SUBSCRIPTION_ECONOMICS_INPUT_INVALID");
+});
+
 test("customer-success admin overview requires an authorized admin role",async()=>{
  let overviewCalled=false;
  const denied=api(async(url)=>{
