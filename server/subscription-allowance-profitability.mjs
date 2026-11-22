@@ -33,7 +33,7 @@ function validateEvidence(evidence,costPerCreditMinor){
  const end=date(evidence.periodEnd,"evidence periodEnd");
  if(end<=start)fail("SUBSCRIPTION_ECONOMICS_EVIDENCE_INVALID","Evidence periodEnd must follow periodStart.");
  return Object.freeze({
-  status:"approved_measured",source:evidence.source.trim().slice(0,240),
+  status:"verified_measured",approved:false,source:evidence.source.trim().slice(0,240),
   rateCardVersion:evidence.rateCardVersion.trim().slice(0,100),
   sampleJobs:evidence.sampleJobs,periodStart:new Date(start).toISOString(),
   periodEnd:new Date(end).toISOString()
