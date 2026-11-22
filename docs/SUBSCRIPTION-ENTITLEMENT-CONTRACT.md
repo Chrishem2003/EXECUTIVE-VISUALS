@@ -70,3 +70,12 @@ The opt-in server API is guarded by `PROJECT_CREDIT_POOL_API_ENABLED=true`, veri
 - `PUT /api/cloud/projects/:projectId/credit-pool/members/:memberId/policy` sets a member monthly cap or pauses new spending.
 
 Every endpoint requires local project-owner access and repeats owner authorization in the database RPC. Member jobs remain owned by the initiating actor; only the owner-funded project pool pays. API enablement is not a production migration or deployment approval.
+
+
+Cloud team membership is managed through the same verified cloud-project boundary:
+
+- `GET /api/cloud/projects/:projectId/members` lists registered members and roles.
+- `POST /api/cloud/projects/:projectId/members` adds an existing account by email with the `editor`, `reviewer` or `viewer` role.
+- `DELETE /api/cloud/projects/:projectId/members/:memberId` removes future project access while preserving historical job and credit-ledger attribution.
+
+The recipient must already have an Executive Visuals account. This API does not send invitation emails. Membership and spend-policy changes are owner-only and rechecked by the database.
