@@ -51,10 +51,11 @@ test("billing workspace shows available, reserved and total customer credits", (
   assert.match(app, /separate from provider billing credits/);
 });
 
-test("storyboard preflight requires a configured customer quote before approval", () => {
-  assert.match(index, /Customer credit pricing is not configured\. No approval or paid submission is allowed\./);
+test("storyboard preflight exposes estimates but blocks approval until atomic customer-credit settlement exists", () => {
+  assert.match(index, /result\.status="customer_credit_settlement_pending"/);
+  assert.match(index, /result\.readyForApproval=false/);
+  assert.match(index, /Provider cost and customer credit estimates are available, but the direct storyboard shot queue is held/);
   assert.match(index, /Per-shot customer credit quote is outside safe bounds/);
-  assert.match(index, /customer_credit_settlement_pending/);
   assert.match(app, /Estimated customer credits:/);
 });
 
