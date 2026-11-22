@@ -13,8 +13,8 @@
 -- The legacy Flutterwave manual-renewal finalizer advances the paid period but
 -- did not create a matching credit_ledger purchase_grant. Ensure every verified
 -- activation/renewal event has one. Existing Paddle/Pesapal/Flutterwave purchase
--- grants are detected and left untouched; the credit-ledger trigger above then
--- bridges the source grant to the generation wallet.
+-- grants are detected and left untouched; the existing Batch 71 payment-ledger
+-- trigger then bridges any newly inserted source grant to the generation wallet.
 create or replace function executive_visuals.ensure_subscription_period_credit_grant()
 returns trigger
 language plpgsql
