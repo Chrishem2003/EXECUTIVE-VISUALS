@@ -9,6 +9,7 @@ import { normalizeWorkloadTelemetry } from "./ai-workload-telemetry.mjs";
 import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRoutingRequest } from "./ai-resource-economics.mjs";
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
 import { estimateProviderVideoCost } from "./provider-video-cost-estimator.mjs";
+import { quoteProviderVideoCustomerCredits } from "./provider-customer-credit-quote.mjs";
 import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
 import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.mjs";
 import { calculateSubscriptionPlanCreditEconomics } from "./subscription-plan-credit-economics.mjs";
@@ -56,6 +57,8 @@ export function createFinancialIntelligenceApi({
   resourceCostMeteringEnabled=process.env.RESOURCE_COST_METERING_ENABLED==="true",
   resourceCostCurrency=process.env.RESOURCE_COST_CURRENCY||null,
   pricingEnv=process.env,
+  customerCreditQuotePolicy=null,
+  customerCreditsPerUsd=Number(pricingEnv.NEON_CUSTOMER_CREDITS_PER_USD||0),
   fetchImpl=globalThis.fetch
 }={}){
   if(!supabaseUrl||!serviceRoleKey)throw new Error("Financial API requires server-side Supabase credentials.");
@@ -67,6 +70,10 @@ export function createFinancialIntelligenceApi({
   if(!isSandbox&&!isLive)throw new Error("Flutterwave v4 API base URL must be the documented sandbox or production host.");
   if(isLive&&!allowLive)throw new Error("Live Flutterwave API requires explicit FLW_ALLOW_LIVE=true.");
   const getAccessToken=createFlutterwaveAccessTokenProvider({clientId:flutterwaveClientId,clientSecret:flutterwaveClientSecret,fetchImpl});
+  let quoteCustomerCredits=typeof customerCreditQuotePolicy==="function"?customerCreditQuotePolicy:null;
+  if(!quoteCustomerCredits&&pricingEnv.NEON_CUSTOMER_CREDITS_PER_USD&&pricingEnv.NEON_CUSTOMER_TARGET_MARGIN_BPS){
+    try{quoteCustomerCredits=createCustomerCreditQuotePolicy({env:pricingEnv});}catch{quoteCustomerCredits=null;}
+  }
   const base=new URL(supabaseUrl).origin;
 
   async function dbRequest(path,{method="GET",body=null,prefer="return=representation",allowConflict=false}={}){
@@ -1122,7 +1129,16 @@ export function createFinancialIntelligenceApi({
         if(!row)return error(404,"PROVIDER_VIDEO_RATE_CARD_NOT_FOUND","The exact governed provider rate-card version was not found.");
         try{
           const estimate=estimateProviderVideoCost({rateCard:row,request:body.request,now:new Date()});
-          return response(200,{estimate});
+          let customerQuote=null;
+          let customerQuoteStatus="not_configured";
+          if(quoteCustomerCredits&&Number.isSafeInteger(customerCreditsPerUsd)&&customerCreditsPerUsd>0){
+            customerQuote=quoteProviderVideoCustomerCredits({
+              providerEstimate:estimate,quoteCustomerCredits,creditsPerUsd:customerCreditsPerUsd
+            });
+            customerQuoteStatus="available";
+          }
+          return response(200,{estimate,customerQuote,customerQuoteStatus,
+            quoteLimitations:["Forecast only; no provider task is submitted.","No customer credits are reserved or deducted.","A fresh quote and atomic generation approval are required before execution."]});
         }catch(err){
           return error(422,err.code||"PROVIDER_VIDEO_ESTIMATE_INVALID",err.message||"Provider video cost estimate could not be calculated.");
         }
