@@ -53,11 +53,12 @@ test("trusted quality evidence parser rejects client-shaped, duplicate, unverifi
   {provider:"runway",model:"model-a",verified:true,sampleCount:40,qualityScore:0.95,p95LatencyMs:400,evaluationVersion:"eval-1",evidenceReference:"https://evidence.example/eval-1",evidenceSha256:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
   {provider:"runway",model:"model-a",verified:true,sampleCount:40,qualityScore:0.95,p95LatencyMs:400,evaluationVersion:"eval-1",evidenceReference:"https://evidence.example/eval-1",evidenceSha256:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
   {provider:"runway",model:"model-b",verified:false,sampleCount:100,qualityScore:0.99,p95LatencyMs:100,evaluationVersion:"eval-2",evidenceReference:"https://evidence.example/eval-2",evidenceSha256:"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
-  {provider:"runway",model:"model-c",verified:true,sampleCount:4,qualityScore:0.99,p95LatencyMs:100,evaluationVersion:"eval-3",evidenceReference:"https://evidence.example/eval-3",evidenceSha256:"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
+  {provider:"runway",model:"model-c",verified:true,sampleCount:4,qualityScore:0.99,p95LatencyMs:100,evaluationVersion:"eval-3",evidenceReference:"https://evidence.example/eval-3",evidenceSha256:"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+  {provider:"runway",model:"model-d",verified:true,sampleCount:40,qualityScore:0.95,p95LatencyMs:100,evaluationVersion:"eval-4",evidenceReference:"http://insecure.example/eval-4",evidenceSha256:"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}
  ]));
  assert.equal(evidence.configured,true);
  assert.equal(evidence.records.length,1);
- assert.equal(evidence.rejectedCount,3);
+ assert.equal(evidence.rejectedCount,4);
  assert.equal(parseVideoModelQualityEvidence("not-json").configured,false);
 });
 
