@@ -1,7 +1,7 @@
 -- Runs after cloud-video-postgres-integration.sql and the unit-separation migration.
 set role service_role;
 
-select executive_visuals.record_video_workflow_quote(
+select executive_visuals.record_video_workflow_quote_with_customer_credits(
  '723e4567-e89b-42d3-a456-426614174001',
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
