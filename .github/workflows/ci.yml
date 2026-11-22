@@ -293,6 +293,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111260000_video_generation_shot_worker_lease_fencing.sql
       - name: Verify stale video workers cannot submit, record, defer or finalize
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-worker-lease-fencing-postgres-integration.sql
+      - name: Apply project shared credit pools and atomic project-wallet settlement
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122100000_project_shared_credit_pools.sql
+      - name: Verify project wallet funding, limits, idempotency and provider settlement
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/project-shared-credit-pool-postgres-integration.sql
 
   product-verification:
     name: Product verification ${{ matrix.batch }}
