@@ -243,6 +243,7 @@ export async function executeCloudVideoGenerationJob({
     throw fail("Actual provider cost does not match the approved reservation or lacks evidence.", "VIDEO_BUDGET_COST_UNRESOLVED");
   }
   let customerCreditSettlement = null;
+  let actualCustomerCredits = null;
   if (input.workflowQuoteId) {
     if (!customerCredits || typeof customerCredits.settleJob !== "function") {
       throw fail("Workflow generation completed without a customer-credit settlement service.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNAVAILABLE");
@@ -255,7 +256,6 @@ export async function executeCloudVideoGenerationJob({
         Math.abs(cost.amount * 1000000 - amountMicros) > 0.0001) {
       throw fail("Verified provider cost cannot be normalized to integer USD micro-units.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
     }
-    let actualCustomerCredits;
     try {
       actualCustomerCredits = quoteCustomerCredits({ currency: cost.currency, amountMicros });
     } catch {
