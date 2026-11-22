@@ -32,6 +32,10 @@ Provider credits are never used as customer credits. The client cannot submit a 
 
 The current cloud workflow quote path is USD-only. A non-USD provider quote is rejected until a sourced exchange-rate conversion and its version/effective time are implemented.
 
+## Direct storyboard shot queue
+
+The older `video.generate.shot` queue is deliberately held from cloud submission until it has an atomic per-shot customer-credit reservation and authoritative provider-usage settlement. Its durable worker currently records provider task estimates, but those estimates are not settlement evidence. Do not enable a bypass. Paid cloud video should use the customer-credit-gated workflow route until the shot worker is upgraded with the same reserve → execute → evidence-based settle/release lifecycle.
+
 ## Failure behavior
 
 If either required pricing variable is missing or invalid:
