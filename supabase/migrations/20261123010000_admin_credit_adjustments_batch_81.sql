@@ -77,7 +77,7 @@ begin
        or existing.owner_id is distinct from p_owner_id
        or existing.delta_credits is distinct from p_delta_credits
        or existing.reason is distinct from btrim(p_reason)
-       or existing.evidence is distinct from p_evidence then
+       or (existing.evidence-'adminAdjustmentId'-'actorId'-'sourceType'-'reason'-'batch') is distinct from p_evidence then
       raise exception 'ADMIN_CREDIT_ADJUSTMENT_IDEMPOTENCY_CONFLICT' using errcode='23505';
     end if;
     select coalesce(sum(l.amount),0)::bigint into v_balance
