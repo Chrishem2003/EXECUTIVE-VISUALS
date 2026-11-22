@@ -88,8 +88,8 @@ begin
        or existing.input is distinct from p_input
        or coalesce(existing.input ->> 'workflowQuoteId','') <> p_quote_id::text
        or coalesce(existing.input ->> 'workflowRequestId','') <> quote_row.request_id
-       or coalesce(existing.input ->> 'provider','') <> 'runway'
-       or coalesce(existing.input ->> 'model','') <> 'model-router'
+       or coalesce(existing.input ->> 'provider','') <> quote_row.provider
+       or coalesce(existing.input ->> 'model','') <> quote_row.model
        or quote_row.request_hash <> p_request_hash
        or quote_row.request_id <> p_idempotency_key
        or quote_row.config_id <> p_config_id
@@ -124,8 +124,9 @@ begin
 
   if quote_row.request_hash <> p_request_hash
      or quote_row.request_id <> p_idempotency_key
-     or quote_row.provider <> 'runway'
-     or quote_row.model <> 'model-router'
+     or not ((quote_row.provider='runway' and quote_row.model in ('model-router','gen4.5','seedance2_5','kling_4','kling_4_flash','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
+       or (quote_row.provider='google' and quote_row.model='gemini-omni-1.1-flash')
+       or (quote_row.provider='luma' and quote_row.model='ray-3.2'))
      or quote_row.config_id <> p_config_id
      or coalesce(p_input ->> 'provider','') <> quote_row.provider
      or coalesce(p_input ->> 'model','') <> quote_row.model
@@ -152,8 +153,8 @@ begin
   from executive_visuals.video_generation_budget_policies b
   where b.owner_id = p_owner_id
     and b.project_id = p_project_id
-    and b.provider = 'runway'
-    and b.model = 'model-router'
+    and b.provider = quote_row.provider
+    and b.model = quote_row.model
     and b.currency = quote_row.currency
     and b.enabled = true
   for update;
