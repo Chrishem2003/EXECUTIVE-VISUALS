@@ -53,6 +53,9 @@ test("fails closed when the reporting sample exceeds the bounded query window",(
  const result=deriveInvoiceBackedCreditCostEvidence({...fixture(5),sampleComplete:false});
  assert.equal(result.status,"sample_incomplete");
  assert.equal(result.providerCostPerCustomerCreditMinor,null);
+ assert.equal(result.sampleCredits,null);
+ assert.equal(result.totalProviderCostMinor,null);
+ assert.equal(result.excludedJobs,null);
  assert.equal(result.evidence,null);
 });
 
