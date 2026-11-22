@@ -33,14 +33,14 @@ export function estimateRunwayVideoCredits(options={}) {
   const allowed=new Set([
     "model","durationSeconds","resolution","audio","inputVideoSeconds","referenceVideoSeconds",
     "referenceImageCount","referenceAudioCount","hasStartFrame","outputFrames","sourceWidth",
-    "sourceHeight","sourceDynamicRange","outputWidth","outputHeight","outputFormat","targetFramerate","inputType","durationAuto","pricingDate"
+    "sourceHeight","sourceDynamicRange","outputWidth","outputHeight","outputFormat","targetFramerate","inputType","durationAuto","pricingDate","hdr"
   ]);
   const unknown=Object.keys(options).filter(key=>!allowed.has(key));
   if(unknown.length) {
     throw fail("Unsupported pricing options: "+unknown.join(", "),"RUNWAY_PRICE_UNSUPPORTED_OPTION");
   }
   const {
-    model,durationSeconds,resolution:outputResolution,audio:hasAudio,
+    model,durationSeconds,resolution:outputResolution,audio:hasAudio,hdr:hasHdr=false,
     inputVideoSeconds:requestedInputVideoSeconds,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
     hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,sourceDynamicRange,outputWidth,outputHeight,outputFormat:requestedOutputFormat,targetFramerate,inputType="text",durationAuto=false,pricingDate
   }=options;
@@ -52,6 +52,9 @@ export function estimateRunwayVideoCredits(options={}) {
   const duration=durationAuto?15:finiteDuration(durationSeconds,"durationSeconds",{max:durationLimit});
   const inputVideoLimit=model==="enhance_frame_rate"?300:30;
   const inputVideo=finiteDuration(requestedInputVideoSeconds??(model==="enhance_frame_rate"?durationSeconds:0),"inputVideoSeconds",{allowZero:true,max:inputVideoLimit});
+  if(hasHdr!==false&&typeof hasHdr!=="boolean")throw fail("hdr must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
+  if(hasHdr===true&&model!=="kling_4")throw fail("The hdr flag is priced only for Kling 4.0; use the documented outputFormat for other models.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  if(["kling_4","kling_4_flash"].includes(model)&&hasAudio===false)throw fail("Kling 4.0 always generates audio; audio cannot be disabled.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
   if(model==="gen4.5"&&(duration<2||duration>10))throw fail("durationSeconds must be between 2 and 10 for Gen-4.5.","RUNWAY_PRICE_INVALID_INPUT");
   if(["kling_4_flash","gemini_omni_flash_1.2"].includes(model)&&duration<3) {
     throw fail("durationSeconds must be at least 3 for "+model+".","RUNWAY_PRICE_INVALID_INPUT");
@@ -227,18 +230,23 @@ export function estimateRunwayVideoCredits(options={}) {
       break;
     }
     case "kling_4": {
-      const tier=resolution(outputResolution,["720p","1080p"]);
-      const promo=pricingDate<="2026-11-30";
-      const listRate=tier==="720p"?15.7:23.5;
-      const listInputRate=tier==="720p"?9.4:14.1;
+      if(typeof hasHdr!=="boolean")throw fail("hdr must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
+      const tier=resolution(outputResolution,["720p","1080p","4k"]);
+      const outputRate=tier==="720p"?15.7:tier==="1080p"?23.5:54.9;
+      const inputRate=tier==="720p"?9.4:tier==="1080p"?14.1:32.9;
       const billableInputVideo=Math.min(30,inputVideo+referenceVideo);
-      const listCharge=Math.ceil(billableInputVideo>0
-        ? duration*listInputRate+Math.max(billableInputVideo,duration)*listInputRate
-        : duration*listRate);
-      credits=promo?Math.ceil(listCharge*0.8):listCharge;
-      formula=billableInputVideo>0
-        ? "ceil(list price: "+duration+"s output + max("+billableInputVideo+"s combined input/reference video, "+duration+"s output), each × "+listInputRate+"); then "+(promo?"ceil(80% of list charge)":"list charge")
-        : "ceil("+duration+"s × "+listRate+" list credits/s)"+(promo?"; then ceil(80% of list charge)":"");
+      const baseListCharge=billableInputVideo>0
+        ? (duration+Math.max(billableInputVideo,duration))*inputRate
+        : duration*outputRate;
+      const promo=pricingDate<="2026-11-30"&&tier!=="4k";
+      const baseCharge=promo?baseListCharge*0.8:baseListCharge;
+      const hdrRate=tier==="1080p"?4.7:tier==="4k"?7.8:0;
+      const hdrCharge=hasHdr?duration*hdrRate:0;
+      credits=Math.ceil(baseCharge+hdrCharge);
+      formula="ceil("+duration+"s output"+(billableInputVideo>0
+        ?" + max("+billableInputVideo+"s combined input/reference video, "+duration+"s output), each × "+inputRate+" list credits/s"
+        :" × "+outputRate+" list credits/s")+")"+(promo?" × 80% promotional rate through 2026-11-30 UTC":"")+
+        (hasHdr?" + "+duration+"s HDR surcharge × "+hdrRate+" credits/s":"");
       if(promo)discount="20% promotion through 2026-11-30 UTC";
       break;
     }

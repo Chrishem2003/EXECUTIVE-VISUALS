@@ -88,7 +88,7 @@ The pricing engine must use the exact provider/model/operation formula, supporte
 - Runway Dev Kling 4.0 API billing details: https://dev.runwayml.com/learn/kling-4-0-api
 - Runway API pricing guide: https://docs.dev.runwayml.com/guides/pricing/
 
-The previous temporary Kling 4.0 promotional-rate row has been removed from the current baseline snapshot. Promotions must be represented as explicit dated price-card versions, never silently treated as the permanent list rate.
+The current Runway Dev pricing page also shows a **20% Kling 4.0 promotion through November 30, 2026 for 720p and 1080p only**. The 4K tier remains at list price. Keep the table above as the list-rate baseline; apply the promotion only as a dated pricing overlay for eligible HD scenarios. After November 30, the estimator must revert to list pricing automatically. Promotions must never be silently treated as permanent rates.
 
 ## Required billing domain model
 

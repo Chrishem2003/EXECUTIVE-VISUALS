@@ -45,7 +45,7 @@ export function createNeonCustomerCreditQuotePolicy({ env = process.env } = {}) 
     fixedPaymentFeeMinor: Number(fixedPaymentFeeMicros)
   });
 
-  return Object.freeze(({ currency, amountMicros } = {}) => {
+  const quoteCustomerCredits = ({ currency, amountMicros } = {}) => {
     if (currency !== "USD" || !Number.isSafeInteger(amountMicros) || amountMicros < 1) {
       const error = new Error("Customer-credit pricing requires a verified positive USD provider cost.");
       error.code = "VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID";
@@ -70,7 +70,18 @@ export function createNeonCustomerCreditQuotePolicy({ env = process.env } = {}) 
     }
 
     return Number(credits);
+  };
+  Object.defineProperty(quoteCustomerCredits, "assumptions", {
+    value: Object.freeze({
+      creditsPerUsd: Number(rate),
+      targetMarginBps: Number(targetMarginBps),
+      paymentFeeBps: Number(paymentFeeBps),
+      supportReserveBps: Number(supportReserveBps),
+      fixedPaymentFeeMicros: Number(fixedPaymentFeeMicros)
+    }),
+    enumerable: true
   });
+  return Object.freeze(quoteCustomerCredits);
 }
 
 // Generic alias shared by Supabase cloud quotes and the isolated Neon staging path.

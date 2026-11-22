@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { estimateVideoGenerationCost } from "../video-generation-cost-estimator.mjs";
+import { estimateRunwayVideoCredits } from "../runway-video-pricing.mjs";
 
 test("shared preflight estimates Runway using the existing dated credit contract", () => {
   const result = estimateVideoGenerationCost({ provider: "runway", model: "gen4.5", durationSeconds: 5 });
@@ -26,6 +27,33 @@ test("Kling 4.0 Flash estimates published 720p rates and its 29-credit minimum",
   });
   assert.equal(edit.credits, 82);
   assert.equal(edit.amount, 0.82);
+});
+
+test("shared preflight applies the dated Kling 4.0 promotion, input billing and HDR",()=>{
+  const pricingDate=new Date().toISOString().slice(0,10);
+  const text=estimateVideoGenerationCost({
+    provider:"runway",model:"kling_4",durationSeconds:10,resolution:"1080p"
+  });
+  const expectedText=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",pricingDate});
+  assert.equal(text.credits,expectedText.estimatedCredits);
+  assert.equal(text.amount,expectedText.estimatedUsd);
+  assert.equal(text.billable,false);
+  assert.equal(text.settlementEligible,false);
+  const edit=estimateVideoGenerationCost({
+    provider:"runway",model:"kling_4",durationSeconds:10,resolution:"1080p",
+    inputType:"video",inputVideoSeconds:6
+  });
+  const expectedEdit=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",inputType:"video",inputVideoSeconds:6,pricingDate});
+  assert.equal(edit.credits,expectedEdit.estimatedCredits);
+  assert.equal(edit.amount,expectedEdit.estimatedUsd);
+  const hdr=estimateVideoGenerationCost({
+    provider:"runway",model:"kling_4",durationSeconds:10,resolution:"4k",hdr:true
+  });
+  const expectedHdr=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"4k",hdr:true,pricingDate});
+  assert.equal(hdr.credits,expectedHdr.estimatedCredits);
+  assert.equal(hdr.amount,expectedHdr.estimatedUsd);
+  assert.equal(hdr.billable,false);
+  assert.equal(hdr.settlementEligible,false);
 });
 
 test("shared preflight supports Luma Ray 3.2 published generation and edit prices", () => {

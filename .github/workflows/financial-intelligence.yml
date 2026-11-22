@@ -17,6 +17,7 @@ on:
       - feat/verified-job-profitability-batch-43-2026-11-22
       - feat/verified-job-cost-coverage-batch-70-2026-11-22
       - feat/verified-credit-revenue-allocation-batch-71-2026-11-22
+      - feat/subscription-plan-economics-batch-72-2026-11-22
       - feat/live-workload-telemetry-batch-36
       - feat/subscription-customer-economics-batch-37
       - feat/financial-governance-batch-48
@@ -46,6 +47,9 @@ jobs:
           node --check server/ai-workload-telemetry.mjs
           node --check server/ai-workload-economics.mjs
           node --check server/provider-video-cost-estimator.mjs
+          node --check server/video-generation-cost-estimator.mjs
+          node --check server/runway-video-pricing.mjs
+          node --check server/subscription-plan-credit-economics.mjs
           node --check server/workload-cost-variance.mjs
           node --check server/verified-job-profitability.mjs
           node --check server/financial-intelligence-api.mjs
@@ -58,5 +62,9 @@ jobs:
           node --check server/payment-intelligence.mjs
       - name: Run financial intelligence tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/workload-cost-variance.test.mjs server/tests/verified-job-profitability.test.mjs server/tests/verified-job-cost-coverage.test.mjs server/tests/provider-rate-cards.test.mjs server/tests/provider-video-cost-estimator.test.mjs server/tests/provider-video-cost-estimator-api.test.mjs server/tests/ai-workload-telemetry.test.mjs server/tests/subscription-customer-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+      - name: Test subscription plan economics and current provider pricing
+        run: |
+          npm run verify:subscription-plan-economics
+          node --test server/tests/runway-video-pricing.test.mjs server/tests/video-generation-cost-estimator.test.mjs
       - name: Test Batch 48 financial governance rules and UI integration
         run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs
