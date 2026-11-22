@@ -3,12 +3,25 @@
 set role service_role;
 
 reset role;
-insert into executive_visuals.project_members(project_id,member_id,role,invited_by)
-values('323e4567-e89b-42d3-a456-426614174000',
- '223e4567-e89b-42d3-a456-426614174000','editor',
- '123e4567-e89b-42d3-a456-426614174000')
-on conflict(project_id,member_id) do update set role='editor';
+update auth.users set email='editor@example.test'
+ where id='223e4567-e89b-42d3-a456-426614174000';
 set role service_role;
+select executive_visuals.add_project_member(
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000','editor@example.test','editor'
+);
+do $member_directory$
+declare member record;
+begin
+ select * into member from executive_visuals.list_project_members(
+  '123e4567-e89b-42d3-a456-426614174000',
+  '323e4567-e89b-42d3-a456-426614174000'
+ ) where member_id='223e4567-e89b-42d3-a456-426614174000';
+ if member.email<>'editor@example.test' or member.role<>'editor' then
+  raise exception 'Owner-managed cloud project member directory did not return the registered editor';
+ end if;
+end
+$member_directory$;
 
 select * from executive_visuals.configure_project_credit_pool(
  '123e4567-e89b-42d3-a456-426614174000',
@@ -187,6 +200,26 @@ begin
  end;
 end
 $member_policy_owner_scope$;
+
+select executive_visuals.remove_project_member(
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ '223e4567-e89b-42d3-a456-426614174000'
+);
+do $member_removal$
+begin
+ if exists(select 1 from executive_visuals.project_members
+  where project_id='323e4567-e89b-42d3-a456-426614174000'
+   and member_id='223e4567-e89b-42d3-a456-426614174000') then
+  raise exception 'Removed project member retained cloud project access';
+ end if;
+ if not exists(select 1 from executive_visuals.project_credit_pool_ledger
+  where project_id='323e4567-e89b-42d3-a456-426614174000'
+   and actor_id='223e4567-e89b-42d3-a456-426614174000') then
+  raise exception 'Member removal deleted or lost historical credit attribution';
+ end if;
+end
+$member_removal$;
 
 reset role;
 select 'project member spend controls PostgreSQL integration checks passed' as result;
