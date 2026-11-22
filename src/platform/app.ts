@@ -1951,7 +1951,7 @@ document.addEventListener("click",event=>{
   const providerCost=new Intl.NumberFormat(undefined,{style:"currency",currency:quote.currency,maximumFractionDigits:4}).format(Number(quote.amount));
   const customer=quote.customerCreditQuote;
   if(customer?.available===true){
-   result.textContent="Estimated provider cost: "+providerCost+" · Customer price: "+new Intl.NumberFormat(undefined,{style:"currency",currency:customer.currency,maximumFractionDigits:2}).format(customer.customerPriceMinor/(customer.currency==="UGX"?1:100))+" · "+Number(customer.customerCredits).toLocaleString()+" credits · Estimated margin "+(Number(customer.estimatedMarginBps)/100).toFixed(1)+"%. Preview only; credits are not reserved and generation has not started.";
+   result.textContent="Estimated provider cost: "+providerCost+" · Customer price: "+new Intl.NumberFormat(undefined,{style:"currency",currency:customer.currency,maximumFractionDigits:2}).format(customer.customerPriceMinor/customer.minorUnitsPerMajor)+" · "+Number(customer.customerCredits).toLocaleString()+" credits · Estimated margin "+(Number(customer.estimatedMarginBps)/100).toFixed(1)+"%. Preview only; credits are not reserved and generation has not started.";
   }else{
    result.textContent="Estimated provider cost: "+providerCost+". Customer credit pricing is not configured or validated yet ("+String(customer?.reason||"unavailable")+"). No customer credit amount will be guessed. No generation was submitted.";
   }
