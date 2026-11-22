@@ -1833,7 +1833,9 @@ export function createAppServer() {
             if(access?.access_role!=="owner"||!run.project_id||!cloudTimelineApi){fail(res,403,"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED","Only the project owner with an authenticated cloud workspace can approve this paid generation quote.");return;}
             const quote=waitingOutput.videoQuote;
             if(!quote||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(quote.quoteId||""))||!/^[A-Za-z0-9._:-]{1,160}$/.test(String(quote.requestId||""))||!/^[a-f0-9]{64}$/.test(String(quote.requestHash||""))||
-               !Number.isFinite(Number(quote.estimatedAmount))||Number(quote.estimatedAmount)<=0||!quote.cloudNode||!quote.cloudValues){
+               !Number.isFinite(Number(quote.estimatedAmount))||Number(quote.estimatedAmount)<=0||
+               !Number.isSafeInteger(Number(quote.estimatedCustomerCredits))||Number(quote.estimatedCustomerCredits)<=0||
+               !quote.cloudNode||!quote.cloudValues){
               fail(res,409,"VIDEO_WORKFLOW_QUOTE_NOT_PENDING","This workflow has no valid pending cloud video quote. Refresh the workflow and request a new quote.");return;
             }
             const approvalBody=await readJson(req,32*1024);
@@ -1852,7 +1854,9 @@ export function createAppServer() {
             const cloudJobId=String(approval.body?.job?.id||"");
             if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cloudJobId)){fail(res,502,"VIDEO_WORKFLOW_JOB_RECEIPT_INVALID","Cloud approval did not return a valid durable job receipt.");return;}
             const receipt={cloudJobId,quoteId:quote.quoteId,requestId:quote.requestId,requestHash:quote.requestHash,
-              routedModel:quote.routedModel,approvedMaxAmount,status:approval.body?.job?.status||"queued",approvedBy:user.id,approvedAt:now()};
+              routedModel:quote.routedModel,estimatedProviderCredits:Number(quote.estimatedProviderCredits||quote.estimatedCredits),
+              estimatedCustomerCredits:Number(quote.estimatedCustomerCredits),approvedMaxAmount,
+              status:approval.body?.job?.status||"queued",approvedBy:user.id,approvedAt:now()};
             const enqueueApprovedRun=db.transaction(()=>{
               const claimed=db.prepare("UPDATE workflow_node_runs SET status='blocked',output_json=?,error_json=NULL,completed_at=NULL WHERE id=? AND status='awaiting_approval'").run(json(receipt),waiting.id);
               if(claimed.changes!==1)return null;
