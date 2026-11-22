@@ -205,7 +205,7 @@ begin
   from reserve_generation_credits_without_entitlement(p_owner_id,p_job_id,p_credits,p_idempotency_key) r;
  return;
 
-end $;
+end $$;
 
 create or replace function executive_visuals.settle_project_credit_pool_reservation(
  p_reservation_id uuid,p_actual_credits bigint,p_evidence jsonb
