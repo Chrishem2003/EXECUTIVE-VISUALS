@@ -450,7 +450,7 @@ test("cloud workflow approval requires confirmation, revalidates inputs and atom
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
   confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",
   requestId:"workflow-1:video-node:1",node,values:{prompt:"A cinematic product launch"},
-  approvedMaxAmount:2.75,approvalNote:"Approved for the exact quoted video workflow"
+  approvedMaxAmount:2.75,customerCreditBudgetCredits:3000,approvalNote:"Approved for the exact quoted video workflow"
  }});
  assert.equal(result.status,202);
  assert.equal(result.body.job.status,"queued");
@@ -466,6 +466,10 @@ test("cloud workflow approval requires confirmation, revalidates inputs and atom
  assert.equal(args.p_config_id,"studio-video");
  assert.equal(args.p_idempotency_key,"workflow-1:video-node:1");
  assert.equal(args.p_approved_max_amount,2.75);
+ assert.equal(args.p_customer_credit_budget_credits,3000);
+ assert.equal(args.p_required_customer_credits,2750);
+ assert.equal(args.p_input.customerCreditBudgetCredits,3000);
+ assert.equal(args.p_input.requiredCustomerCredits,2750);
  assert.equal(args.p_input.workflowQuoteId,args.p_quote_id);
  assert.equal(args.p_input.workflowRequestId,args.p_idempotency_key);
  assert.equal(args.p_input.requestHash,args.p_request_hash);
@@ -906,7 +910,7 @@ test("Luma source-video edit approval revalidates private source metadata before
   confirmed:true,projectId:project,quoteId:"b23e4567-e89b-42d3-a456-426614174016",
   requestId:"luma-edit-approval-1",
   node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p",aspectRatio:"16:9",sourceVideoAssetId:sourceId,editStrength:"flex_2",rightsConfirmed:true}},
-  values:{prompt:"Replace the background"},approvedMaxAmount:2,approvalNote:"Approved source-video edit"
+  values:{prompt:"Replace the background"},approvedMaxAmount:2,customerCreditBudgetCredits:2200,approvalNote:"Approved source-video edit"
  }});
  assert.equal(result.status,202,JSON.stringify(result.body));
  assert.equal(metadataCalls,1);
@@ -978,7 +982,7 @@ test("Luma approval uses the same governed quote adapter and stable config ID",a
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
   confirmed:true,projectId:project,quoteId:lumaQuote,requestId:"luma-ui-approval-001",
   node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,resolution:"720p",aspectRatio:"16:9"}},
-  values:{prompt:"A cinematic product reveal"},approvedMaxAmount:0.5,approvalNote:"Approve this exact Luma generation."
+  values:{prompt:"A cinematic product reveal"},approvedMaxAmount:0.5,customerCreditBudgetCredits:600,approvalNote:"Approve this exact Luma generation."
  }});
  assert.equal(result.status,202);
  assert.equal(approvalArgs.p_config_id,"luma-ray32");
@@ -1158,7 +1162,7 @@ test("Seedance draft enhancement approval revalidates the source and atomically 
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
   confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",requestId:"seedance-enhance-approve-001",
   node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId}},
-  values:{},approvedMaxAmount:7.48,approvalNote:"Approve this separately priced Seedance draft enhancement."
+  values:{},approvedMaxAmount:7.48,customerCreditBudgetCredits:7500,approvalNote:"Approve this separately priced Seedance draft enhancement."
  }});
  assert.equal(result.status,202,JSON.stringify(result.body));
  assert.equal(approvalArgs.p_input.resolution,"1080p");
@@ -1187,7 +1191,7 @@ test("direct Runway approval uses the exact worker allowlist and stable model co
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
   confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",requestId:"seedance-direct-approve-001",
   node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",draft:true,durationSeconds:8,resolution:"1080p",aspectRatio:"16:9"}},
-  values:{prompt:"A cinematic product reveal"},approvedMaxAmount:1.6,approvalNote:"Approve this exact Seedance draft."
+  values:{prompt:"A cinematic product reveal"},approvedMaxAmount:1.6,customerCreditBudgetCredits:1700,approvalNote:"Approve this exact Seedance draft."
  }});
  assert.equal(result.status,202,JSON.stringify(result.body));
  assert.equal(approvalArgs.p_config_id,"runway-direct-seedance2-5");
@@ -1234,7 +1238,7 @@ test("unreleased direct Runway models are rejected by quote and approval APIs ev
         quoteId: "723e4567-e89b-42d3-a456-426614174000",
         requestId: "blocked-approval-" + model, node,
         values: { prompt: "A cinematic product launch" },
-        approvedMaxAmount: 2.75, approvalNote: "Test release gate"
+        approvedMaxAmount: 2.75, customerCreditBudgetCredits: 3000, approvalNote: "Test release gate"
       }
     });
     assert.equal(approval.status, 422, model);
@@ -1273,8 +1277,15 @@ test("Neon workflow approval validates the persisted exact quote before durable 
    RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
    RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
  });
+ const insufficient=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
+  confirmed:true,projectId:project,quoteId,requestId,node,values,approvedMaxAmount:3.25,customerCreditBudgetCredits:3249
+ }});
+ assert.equal(insufficient.status,409);
+ assert.equal(insufficient.body.error.code,"VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED");
+ assert.equal(insufficient.body.error.requiredCustomerCreditBudgetCredits,3250);
+ assert.equal(dispatched.length,0,"an insufficient credit ceiling must not reach Neon dispatch");
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
-  confirmed:true,projectId:project,quoteId,requestId,node,values,approvedMaxAmount:3.25,
+  confirmed:true,projectId:project,quoteId,requestId,node,values,approvedMaxAmount:3.25,customerCreditBudgetCredits:3500,
   approvalNote:"Approved for the exact quoted workflow"
  }});
  assert.equal(result.status,202);
@@ -1283,6 +1294,8 @@ test("Neon workflow approval validates the persisted exact quote before durable 
  assert.equal(dispatched[0].requestHash,contract.requestHash);
  assert.equal(dispatched[0].estimatedAmount,2.75);
  assert.equal(dispatched[0].approvedMaxAmount,3.25);
+ assert.equal(dispatched[0].customerCreditBudgetCredits,3500);
+ assert.equal(dispatched[0].requiredCustomerCredits,3250);
  assert.equal(dispatched[0].expiresAt,expiresAt);
  assert.equal(calls.some(call=>call.url.endsWith("/rpc/approve_and_enqueue_video_workflow")),false);
  assert.ok(calls.some(call=>call.options.method==="PATCH"&&call.url.includes("video_workflow_quotes")));
@@ -1310,7 +1323,7 @@ test("Neon workflow approval rejects a mismatched quote and delegates expiry rep
     RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
   });
   const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
-   confirmed:true,projectId:project,quoteId,requestId,node,values,approvedMaxAmount:1.5
+   confirmed:true,projectId:project,quoteId,requestId,node,values,approvedMaxAmount:1.5,customerCreditBudgetCredits:1600
   }});
   if(quote.request_hash==="f".repeat(64)){
    assert.equal(result.status,409);

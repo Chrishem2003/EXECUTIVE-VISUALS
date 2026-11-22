@@ -38,7 +38,7 @@ function fixture({status=local.status,allowed=true,registerError=null,enqueueErr
       budgetCeilingMicros:input.budgetCeilingMicros,status:"approved_pending_submission"
     };},
     async enqueue(id,ownerId){calls.push(["enqueue",id,ownerId]);if(enqueueError)throw enqueueError;return receipts;},
-    async enqueueWorkflowNode(input){calls.push(["enqueueWorkflowNode",input]);return{
+    async enqueueWorkflowNode(input){calls.push(["enqueueWorkflowNode",input]);if(enqueueError)throw enqueueError;return{
       backend:"neon-postgres",approvalId:input.quoteId,jobId:job,status:"queued",idempotentReplay:false,providerRequestsSubmitted:false
     };}
   }}};
@@ -163,6 +163,19 @@ test("submits one quote-bound workflow node through the Neon ledger after projec
  assert.equal(result.body.providerRequestsSubmitted,false);
  assert.ok(f.calls.some(x=>x[0]==="enqueueWorkflowNode"&&x[1].requestHash===quote.requestHash));
  assert.ok(f.calls.some(x=>x[0]==="audit"&&x[2]==="workflow.video_generation.neon_job_enqueued"),"audit receives ownerId before event name");
+});
+
+test("workflow-node dispatch returns a bounded client conflict when the customer credit ceiling is insufficient",async()=>{
+ const f=fixture({enqueueError:Object.assign(new Error("Credit ceiling must cover 3,250 credits."),{code:"VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED"})});
+ const quote={quoteId:approval,ownerId:owner,projectId:project,requestId:"workflow-request-credit-001",
+  requestHash:"e".repeat(64),provider:"runway",model:"model-router",operation:"text-to-video",
+  input:{prompt:"A cinematic sunrise"},estimatedAmount:1.25,approvedMaxAmount:2.5,
+  customerCreditBudgetCredits:3000,expiresAt:new Date(Date.now()+60000).toISOString()};
+ const result=await f.dispatch.submitWorkflowNode(quote);
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED");
+ assert.equal(result.body.queueState,"not-queued");
+ assert.equal(f.calls.some(x=>x[0]==="audit"),false);
 });
 
 test("workflow-node dispatch rejects unauthorized projects before contacting the Neon queue",async()=>{

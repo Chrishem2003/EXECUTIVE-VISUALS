@@ -253,6 +253,7 @@ export async function executeCloudVideoWorkflowNode({
    routedProvider:String(quote.body.quote.routedProvider||""),
    routedModel,configId:String(quote.body.quote.configId||""),
    estimatedCredits:Number(quote.body.quote.estimatedCredits||0),
+   estimatedCustomerCredits:Number(quote.body.quote.estimatedCustomerCredits||0),
    estimatedAmount:Number(quote.body.quote.estimatedAmount),currency:String(quote.body.quote.currency||"USD"),
    pricingSource:String(quote.body.quote.pricingSource||""),
    pricingUrl:String(quote.body.quote.pricingUrl||""),

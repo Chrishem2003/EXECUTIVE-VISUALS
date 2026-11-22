@@ -103,7 +103,7 @@ test("workflow-node enqueue binds the exact request to one Neon job and reserves
   quoteId:approval,ownerId:owner,projectId:project,requestId:"workflow-approval-001",
   requestHash:"c".repeat(64),provider:"runway",model:"model-router",operation:"text-to-video",
   input:{prompt:"A cinematic sunrise",durationSeconds:5,resolution:"1080p"},
-  estimatedAmount:1.25,approvedMaxAmount:2.5,expiresAt:new Date(Date.now()+60000).toISOString(),
+  estimatedAmount:1.25,approvedMaxAmount:2.5,customerCreditBudgetCredits:350,requiredCustomerCredits:300,expiresAt:new Date(Date.now()+60000).toISOString(),
   estimatedCredits:125,routedProvider:"runway",routedModel:"seedance2_5"
  });
  assert.equal(result.backend,"neon-postgres");
@@ -111,8 +111,14 @@ test("workflow-node enqueue binds the exact request to one Neon job and reserves
  const approvalInsert=f.calls.find(x=>x.sql.includes("insert into executive_visuals.video_generation_approvals"));
  assert.equal(approvalInsert.values[3],"workflow-approval-001:"+approval,"a fresh quote gets its own idempotency key while retries reuse that quote");
  assert.equal(result.queuedForWorker,true);assert.equal(result.providerCallMadeByApi,false);
- assert.equal(quotes.length,1);
+ assert.equal(quotes.length,2,"the USD ceiling is quoted before registration and independently re-quoted inside durable enqueue");
  assert.equal(quotes[0].amountMicros,2500000,"customer credits must reserve against the approved ceiling, not the estimate");
+ assert.equal(quotes[1].amountMicros,2500000);
+ const approvalSnapshot=JSON.parse(f.calls.find(x=>x.sql.includes("insert into executive_visuals.video_generation_approvals")).values[5]);
+ assert.equal(approvalSnapshot.shots[0].id,approval);
+ assert.equal(approvalSnapshot.quote.customerCreditQuote.totalCredits,300);
+ assert.deepEqual(approvalSnapshot.quote.customerCreditQuote.perShot,[{shotId:approval,credits:300}]);
+ assert.equal(approvalSnapshot.customerCreditBudgetCredits,350);
  const budget=f.calls.find(x=>x.sql.includes("insert into executive_visuals.video_generation_budget_approvals"));
  assert.equal(budget.values[7],2.5);
  const enqueue=f.calls.find(x=>x.sql.includes("enqueue_video_generation_job_v1"));
@@ -124,15 +130,18 @@ test("workflow-node enqueue binds the exact request to one Neon job and reserves
 });
 
 test("workflow-node enqueue rejects expired quotes, changed model families and ceilings below the quote before database writes",async()=>{
- const f=fixture();
+ const f=fixture({quoteCustomerCredits:()=>300});
  const baseQuote={quoteId:approval,ownerId:owner,projectId:project,requestId:"workflow-approval-002",
   requestHash:"d".repeat(64),provider:"runway",model:"model-router",operation:"text-to-video",
-  input:{prompt:"A cinematic sunrise"},estimatedAmount:1.25,approvedMaxAmount:1.5,
+  input:{prompt:"A cinematic sunrise"},estimatedAmount:1.25,approvedMaxAmount:1.5,customerCreditBudgetCredits:300,
   expiresAt:new Date(Date.now()+60000).toISOString()};
  await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,expiresAt:new Date(Date.now()-1000).toISOString()}),e=>e.code==="VIDEO_WORKFLOW_QUOTE_EXPIRED");
  await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,model:"kling_4"}),e=>e.code==="VIDEO_WORKFLOW_MODEL_UNSUPPORTED");
  await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,approvedMaxAmount:1.2}),e=>e.code==="VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID");
  await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,quoteState:"consumed"}),e=>e.code==="VIDEO_WORKFLOW_APPROVAL_RECEIPT_INVALID");
+ await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,customerCreditBudgetCredits:299}),e=>e.code==="VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED");
+ await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,requiredCustomerCredits:151}),e=>e.code==="VIDEO_CUSTOMER_CREDIT_QUOTE_MISMATCH");
+ await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,customerCreditBudgetCredits:undefined}),e=>e.code==="VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED");
  assert.equal(f.calls.length,0);
 });
 

@@ -95,7 +95,7 @@ test("model-specific forecast returns a separate governed customer-credit quote 
  const service=createFinancialIntelligenceApi({
   supabaseUrl:"https://project.supabase.co",serviceRoleKey:"service-role-test",
   flutterwaveClientId:"client-test",flutterwaveClientSecret:"client-secret-test",
-  webhookSecretHash:"webhook-secret",customerCreditQuotePolicy:quotePolicy,customerCreditsPerUsd:100,
+  webhookSecretHash:"webhook-secret",billingEnabled:true,customerCreditQuotePolicy:quotePolicy,customerCreditsPerUsd:100,
   fetchImpl:async(url)=>{
    if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
    if(String(url).includes("/ai_model_price_catalog?"))return json([hdrRow]);

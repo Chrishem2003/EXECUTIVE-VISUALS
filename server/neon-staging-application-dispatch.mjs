@@ -28,6 +28,7 @@ function safeError(error){
     "VIDEO_REPOSITORY_TIMEOUT","VIDEO_TASK_RESERVATION_FAILED",
     "VIDEO_WORKFLOW_APPROVAL_INVALID","VIDEO_WORKFLOW_MODEL_UNSUPPORTED","VIDEO_WORKFLOW_INPUT_INVALID",
     "VIDEO_WORKFLOW_QUOTE_EXPIRED","VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID",
+    "VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED",
     "VIDEO_WORKFLOW_APPROVAL_RECEIPT_INVALID","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID"
   ]);
   return {
@@ -188,15 +189,17 @@ export function createNeonStagingApplicationDispatch({
       audit(ownerId,"workflow.video_generation.neon_job_enqueued","workflow_video_quote",quoteId,
         {projectId,jobId:receipt.jobId,requestHash:input.requestHash,providerRequestsSubmitted:false},projectId);
       return {status:receipt.idempotentReplay?200:202,body:{
-        job:{id:receipt.jobId,status:receipt.status},approval:{id:quoteId,approvedMaxAmount:input.approvedMaxAmount,currency:"USD"},
+        job:{id:receipt.jobId,status:receipt.status},approval:{id:quoteId,approvedMaxAmount:input.approvedMaxAmount,
+          customerCreditBudgetCredits:input.customerCreditBudgetCredits,requiredCustomerCredits:input.requiredCustomerCredits,currency:"USD"},
         backend:"neon-postgres",idempotentReplay:receipt.idempotentReplay,queuedForWorker:true,providerCallMadeByApi:false,providerRequestsSubmitted:false
       }};
     }catch(error){
       const detail=safeError(error);
       const status=detail.code==="VIDEO_WORKFLOW_APPROVAL_INVALID"?400:
-        detail.code==="VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT"?409:
+        detail.code==="VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT"||detail.code==="VIDEO_CUSTOMER_CREDIT_QUOTE_MISMATCH"?409:
         detail.code==="VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID"||detail.code==="VIDEO_WORKFLOW_MODEL_UNSUPPORTED"||
-        detail.code==="VIDEO_WORKFLOW_INPUT_INVALID"||detail.code==="VIDEO_WORKFLOW_QUOTE_EXPIRED"?422:
+        detail.code==="VIDEO_WORKFLOW_INPUT_INVALID"||detail.code==="VIDEO_WORKFLOW_QUOTE_EXPIRED"||
+        detail.code==="VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED"?422:
         detail.code==="VIDEO_REPOSITORY_TIMEOUT"?503:502;
       return {status,body:{error:detail,backend:"neon-postgres",queueState,providerCallMadeByApi:false}};
     }
