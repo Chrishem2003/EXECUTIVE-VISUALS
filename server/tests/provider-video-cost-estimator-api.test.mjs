@@ -82,3 +82,48 @@ test("requested audio without explicit inclusion or surcharge is rejected by the
  assert.equal(audio.status,422);
  assert.equal(audio.body.error.code,"PROVIDER_VIDEO_AUDIO_PRICING_UNRESOLVED");
 });
+
+test("model-specific forecast returns a separate governed customer-credit quote without reserving credits",async()=>{
+ const {createCustomerCreditQuotePolicy}=await import("../customer-credit-quote-policy.mjs");
+ const quotePolicy=createCustomerCreditQuotePolicy({env:{
+  NEON_CUSTOMER_CREDITS_PER_USD:"100",NEON_CUSTOMER_TARGET_MARGIN_BPS:"3000",
+  NEON_CUSTOMER_PAYMENT_FEE_BPS:"0",NEON_CUSTOMER_SUPPORT_RESERVE_BPS:"0",
+  NEON_CUSTOMER_FIXED_PAYMENT_FEE_MICROS:"0"
+ }});
+ const hdrRow={...row,video_second_minor:24,rate_card_version:"2026-11-hdr",
+  pricing_dimensions:{hdrSurchargeSecondMinor_1080p:5}};
+ const service=createFinancialIntelligenceApi({
+  supabaseUrl:"https://project.supabase.co",serviceRoleKey:"service-role-test",
+  flutterwaveClientId:"client-test",flutterwaveClientSecret:"client-secret-test",
+  webhookSecretHash:"webhook-secret",customerCreditQuotePolicy:quotePolicy,customerCreditsPerUsd:100,
+  fetchImpl:async(url)=>{
+   if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+   if(String(url).includes("/ai_model_price_catalog?"))return json([hdrRow]);
+   throw new Error("Unexpected request: "+String(url));
+  }
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/model-rate-card-estimates",ownerId:owner,
+  body:{provider:"runway",model:"seedance-2.5",currency:"USD",rateCardVersion:"2026-11-hdr",
+   request:{outputSeconds:10,resolution:"1080p",hdr:true}}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.estimate.estimatedProviderCostMinor,290);
+ assert.equal(result.body.customerQuote.providerCostMinor,290);
+ assert.equal(result.body.customerQuote.customerCredits,377);
+ assert.equal(result.body.customerQuote.rateCardVersion,"2026-11-hdr");
+ assert.equal(result.body.customerQuote.reservesCredits,false);
+ assert.equal(result.body.customerQuote.usesActualInvoice,false);
+ assert.equal(result.body.customerQuoteStatus,"available");
+});
+
+test("provider forecast remains available but customer quote is unavailable when pricing policy is missing",async()=>{
+ const service=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(String(url).includes("/ai_model_price_catalog?"))return json([row]);
+  throw new Error("Unexpected request: "+String(url));
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/model-rate-card-estimates",ownerId:owner,body:request});
+ assert.equal(result.status,200);
+ assert.equal(result.body.customerQuote,null);
+ assert.equal(result.body.customerQuoteStatus,"not_configured");
+ assert.equal(result.body.estimate.estimateType,"provider_cost_forecast_not_actual");
+});
