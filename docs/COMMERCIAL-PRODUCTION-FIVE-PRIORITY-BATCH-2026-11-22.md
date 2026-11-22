@@ -99,13 +99,14 @@ Do not hardcode a single generic per-second formula for all models. Provider-spe
 ## Verification added
 
 - `server/tests/customer-credit-economics.test.mjs`
+- `scripts/subscription-pricing-hypotheses-postgres-integration.sql` — validates the private plan catalog and proves draft plans are rejected by the existing provider checkout reservation RPC.
 - `server/tests/customer-credit-economics-api.test.mjs`
 - Existing `server/tests/provider-subscription-billing.test.mjs`
 - Existing `server/tests/unified-subscription-billing.test.mjs`
 - Existing `server/tests/provider-rate-cards.test.mjs`
 - Updated `server/tests/subscription-pricing-hypotheses.test.mjs`
 
-The connector can commit source and open a PR, but it cannot run the repository's Node test suite in the GitHub runner from this session. CI results must be checked on the PR before merging.
+The main-targeting PR runs the release integration build and `npm run verify:commercial-economics`; the billing self-service workflow applies the draft plan migration in a disposable PostgreSQL database and verifies checkout exclusion. CI results must be checked on the PR before merging.
 
 ## Launch gates still required
 
