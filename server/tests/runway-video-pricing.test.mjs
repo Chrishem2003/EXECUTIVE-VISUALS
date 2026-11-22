@@ -45,23 +45,24 @@ test("accounts for reference media charges on Grok and Hailuo models",()=>{
   assert.equal(estimateRunwayVideoCredits({model:"hailuo3",durationSeconds:5,resolution:"768p",referenceImageCount:2,inputVideoSeconds:5,pricingDate:date}).estimatedCredits,104);
 });
 
-test("prices Kling 4.0 at the current dated list rates without an unverified promotion",()=>{
+test("prices Kling 4.0 with the published 20% promotion through November 30, 2026",()=>{
   const november=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-11-04"});
+  const lastDay=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:"2026-11-30"});
   const december=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-12-01"});
-  assert.equal(november.estimatedCredits,79);
-  assert.equal(november.discount,null);
+  assert.equal(november.estimatedCredits,63);
+  assert.equal(november.discount,"20% promotion through 2026-11-30 UTC");
+  assert.equal(lastDay.estimatedCredits,94);
   assert.equal(december.estimatedCredits,79);
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:date}).estimatedCredits,118);
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",pricingDate:date}).estimatedCredits,235);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",pricingDate:date}).estimatedCredits,188);
   const referenced=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,referenceVideoSeconds:10,resolution:"720p",pricingDate:date});
-  assert.equal(referenced.estimatedCredits,173);
+  assert.equal(referenced.estimatedCredits,189);
 });
 
-test("Kling 4.0 input video adds its lower input rate to the output rate and HDR is itemized",()=>{
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,inputVideoSeconds:6,resolution:"1080p",pricingDate:date}).estimatedCredits,376);
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"4k",pricingDate:date}).estimatedCredits,549);
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"4k",hdr:true,pricingDate:date}).estimatedCredits,627);
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",hdr:true,pricingDate:date}).estimatedCredits,282);
+test("Kling 4.0 input video uses the published combined-duration formula and HDR surcharge",()=>{
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,inputVideoSeconds:6,resolution:"1080p",pricingDate:date}).estimatedCredits,226);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"4k",pricingDate:date}).estimatedCredits,440);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"4k",hdr:true,pricingDate:date}).estimatedCredits,518);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",hdr:true,pricingDate:date}).estimatedCredits,235);
   assert.throws(()=>estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",audio:false,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
   assert.throws(()=>estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",hdr:"yes",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
 });
