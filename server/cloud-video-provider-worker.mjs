@@ -17,6 +17,8 @@ export function createProviderAwareCloudVideoWorker({
   ledger,
   adapters,
   customerCredits,
+  authorizeSubscription,
+  requireSubscription = false,
   deferSeconds = 30
 } = {}) {
   if (!Array.isArray(adapters) || adapters.length < 1 || adapters.length > 100) {
@@ -36,6 +38,8 @@ export function createProviderAwareCloudVideoWorker({
     enqueue,
     ledger,
     customerCredits,
+    authorizeSubscription,
+    requireSubscription,
     resolveAdapter: router.resolveAdapter,
     deferSeconds
   });
