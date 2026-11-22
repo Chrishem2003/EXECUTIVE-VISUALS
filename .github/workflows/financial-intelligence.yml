@@ -19,6 +19,7 @@ on:
       - feat/verified-credit-revenue-allocation-batch-71-2026-11-22
       - feat/subscription-plan-economics-batch-72-2026-11-22
       - feat/mixed-workload-subscription-economics-batch-73-rebased-2026-11-22
+      - feat/mixed-workload-subscription-economics-batch-73-2026-11-22
       - feat/live-workload-telemetry-batch-36
       - feat/subscription-customer-economics-batch-37
       - feat/financial-governance-batch-48
