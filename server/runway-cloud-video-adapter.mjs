@@ -62,7 +62,7 @@ export function createRunwayCloudVideoAdapter({
   timeoutMs = 30000
 } = {}) {
   const selectedModel = String(model || "").trim();
-  if (!["gen4.5", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "gemini_omni_flash_1.2", "aleph2", "magnific_video_upscaler_creative", "ruby", "veo3.1", "veo3.1_fast"].includes(selectedModel)) {
+  if (!["gen4.5", "seedance2_5", "seedance2_5_flash", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "gemini_omni_flash_1.2", "aleph2", "magnific_video_upscaler_creative", "ruby", "veo3.1", "veo3.1_fast"].includes(selectedModel)) {
     throw fail("This Runway cloud adapter supports only verified Gen-4.5, Seedance, Kling, Gemini Omni, Veo 3.1, Aleph2, Magnific and Ruby profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
   }
   const key = String(apiKey || "").trim();
@@ -294,18 +294,18 @@ export function createRunwayCloudVideoAdapter({
         return input;
       }
       if (isImageToVideo) {
-        if (!["gen4.5", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "gemini_omni_flash_1.2"].includes(selectedModel)) throw fail("The selected Runway model does not support the verified first-frame generation path.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
-        if (selectedModel === "seedance2_5" && prepared.imageReferenceMode === true) {
+        if (!["gen4.5", "seedance2_5", "seedance2_5_flash", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "gemini_omni_flash_1.2"].includes(selectedModel)) throw fail("The selected Runway model does not support the verified first-frame generation path.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+        if (["seedance2_5", "seedance2_5_flash"].includes(selectedModel) && prepared.imageReferenceMode === true) {
           const images = Array.isArray(prepared.referenceImages) ? prepared.referenceImages : [];
           const audio = Array.isArray(prepared.referenceAudio) ? prepared.referenceAudio : [];
-          if (images.length < 1 || images.length > 30 || audio.length > 10) throw fail("Seedance image-to-video reference collections exceed the documented limits.", "RUNWAY_INPUT_INVALID");
+          if (images.length < 1 || images.length > (selectedModel === "seedance2_5_flash" ? 10 : 30) || audio.length > (selectedModel === "seedance2_5_flash" ? 5 : 10)) throw fail("Seedance image-to-video reference collections exceed the documented limits.", "RUNWAY_INPUT_INVALID");
           const promptImageReferences = [];
           const referenceAudio = [];
           for (const item of images) promptImageReferences.push({ uri: await uploadEphemeral(item) });
           for (const item of audio) referenceAudio.push({ uri: await uploadEphemeral(item) });
           return { ...input, promptImageReferences, referenceAudio };
         }
-        if (selectedModel === "seedance2_5" && prepared.firstFrame) {
+        if (["seedance2_5", "seedance2_5_flash"].includes(selectedModel) && prepared.firstFrame) {
           const promptImageKeyframes = [{ uri: await uploadEphemeral(prepared.firstFrame), position: "first" }];
           if (prepared.lastFrame) promptImageKeyframes.push({ uri: await uploadEphemeral(prepared.lastFrame), position: "last" });
           return { ...input, promptImageKeyframes };
@@ -322,7 +322,7 @@ export function createRunwayCloudVideoAdapter({
         if (!isRunwayUri(videoUri)) throw fail("HDR conversion requires a Runway ephemeral URI resolved from the authorized source asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
         return { ...input, videoUri };
       }
-      if (selectedModel === "seedance2_5" && input.operation === "text-to-video" &&
+      if (["seedance2_5", "seedance2_5_flash"].includes(selectedModel) && input.operation === "text-to-video" &&
           (Array.isArray(prepared.referenceImages) || Array.isArray(prepared.referenceVideos) || Array.isArray(prepared.referenceAudio))) {
         const references = [];
         const referenceVideos = [];
@@ -330,7 +330,7 @@ export function createRunwayCloudVideoAdapter({
         const images = Array.isArray(prepared.referenceImages) ? prepared.referenceImages : [];
         const videos = Array.isArray(prepared.referenceVideos) ? prepared.referenceVideos : [];
         const audio = Array.isArray(prepared.referenceAudio) ? prepared.referenceAudio : [];
-        if (images.length > 30 || videos.length > 10 || audio.length > 10) {
+        if (images.length > (selectedModel === "seedance2_5_flash" ? 10 : 30) || videos.length > (selectedModel === "seedance2_5_flash" ? 5 : 10) || audio.length > (selectedModel === "seedance2_5_flash" ? 5 : 10)) {
           throw fail("Seedance reference collections exceed the documented limits.", "RUNWAY_INPUT_INVALID");
         }
         for (const item of images) references.push({ uri: await uploadEphemeral(item) });
@@ -368,7 +368,7 @@ export function createRunwayCloudVideoAdapter({
           !Number.isInteger(metadata.height) || !Number.isFinite(metadata.frameRate)) {
         throw fail("Seedance and Kling video edits require probed source metadata before submission.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
       }
-      if (selectedModel === "seedance2_5") {
+      if (["seedance2_5", "seedance2_5_flash"].includes(selectedModel)) {
         if (metadata.durationSeconds > 30 || Math.min(metadata.width, metadata.height) < 480) {
           throw fail("Seedance 2.5 source video must be at most 30 seconds and at least 480p.", "RUNWAY_INPUT_INVALID");
         }
@@ -502,8 +502,8 @@ export function createRunwayCloudVideoAdapter({
         });
         return { taskId: taskId(submitted.id), status: "queued" };
       }
-      if (input.operation === "video-to-video" && ["aleph2", "seedance2_5", "kling_4", "kling_4_flash", "gemini_omni_flash_1.2"].includes(selectedModel)) {
-        const promptLimit = selectedModel === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
+      if (input.operation === "video-to-video" && ["aleph2", "seedance2_5", "seedance2_5_flash", "kling_4", "kling_4_flash", "gemini_omni_flash_1.2"].includes(selectedModel)) {
+        const promptLimit = ["seedance2_5", "seedance2_5_flash"].includes(selectedModel) ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
         const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
         if ((!hasMultiPrompt && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
           throw fail("Video-edit prompt is empty or exceeds the selected model's limit.", "RUNWAY_INPUT_INVALID");
@@ -519,7 +519,7 @@ export function createRunwayCloudVideoAdapter({
           }
           body = { model: selectedModel, videoUri: input.videoUri, promptText: input.prompt.trim(),
             ...(keyframes.length ? { keyframes } : {}), outputFormat: "mp4" };
-        } else if (selectedModel === "seedance2_5") {
+        } else if (["seedance2_5", "seedance2_5_flash"].includes(selectedModel)) {
           const mode = input.mode || "reference";
           if (input.draft === true && mode !== "reference") throw fail("Seedance draft previews are supported only in reference mode, not extend or edit mode.", "RUNWAY_INPUT_INVALID");
           if (input.draft === true && input.resolution !== "480p") throw fail("Seedance draft previews are fixed at 480p.", "RUNWAY_INPUT_INVALID");
@@ -592,9 +592,9 @@ export function createRunwayCloudVideoAdapter({
       if (input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) {
         throw fail("The selected Runway model does not support this operation.", "RUNWAY_INPUT_INVALID");
       }
-      const promptLimit = selectedModel === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
+      const promptLimit = ["seedance2_5", "seedance2_5_flash"].includes(selectedModel) ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
       const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
-      const hasSeedanceReferences = selectedModel === "seedance2_5" &&
+      const hasSeedanceReferences = ["seedance2_5", "seedance2_5_flash"].includes(selectedModel) &&
         (Array.isArray(input.references) && input.references.length > 0 ||
          Array.isArray(input.referenceVideos) && input.referenceVideos.length > 0 ||
          Array.isArray(input.promptImageReferences) && input.promptImageReferences.length > 0 ||
@@ -602,7 +602,7 @@ export function createRunwayCloudVideoAdapter({
       if ((!hasMultiPrompt && !hasSeedanceReferences && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
         throw fail("Runway prompt is empty or exceeds the selected model's limit.", "VIDEO_JOB_INPUT_MISMATCH");
       }
-      if (selectedModel !== "seedance2_5" && (
+      if (!["seedance2_5", "seedance2_5_flash"].includes(selectedModel) && (
         input.referenceAssetIds?.length || input.referenceImageAssetIds?.length ||
         input.referenceAudioAssetIds?.length || input.referenceVideoAssetIds?.length || input.referenceImageDataUrl
       )) {
@@ -611,9 +611,9 @@ export function createRunwayCloudVideoAdapter({
       const imageToVideo = input.operation === "image-to-video" || Boolean(input.startFrameAssetId);
       let payload;
       if (imageToVideo) {
-        const seedanceReferenceMode = selectedModel === "seedance2_5" &&
+        const seedanceReferenceMode = ["seedance2_5", "seedance2_5_flash"].includes(selectedModel) &&
           Array.isArray(input.promptImageReferences) && input.promptImageReferences.length > 0;
-        const seedanceKeyframeMode = selectedModel === "seedance2_5" &&
+        const seedanceKeyframeMode = ["seedance2_5", "seedance2_5_flash"].includes(selectedModel) &&
           Array.isArray(input.promptImageKeyframes) && input.promptImageKeyframes.length > 0;
         if (!seedanceReferenceMode && !seedanceKeyframeMode && !isRunwayUri(input.promptImageUri)) {
           throw fail("Image-to-video requires a prepared Runway first-frame upload or verified Seedance reference collection.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
@@ -651,7 +651,7 @@ export function createRunwayCloudVideoAdapter({
           referenceAudio: input.referenceAudio
         });
       }
-      if (typeof input.audio === "boolean" && ["seedance2_5", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(selectedModel)) {
+      if (typeof input.audio === "boolean" && ["seedance2_5", "seedance2_5_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(selectedModel)) {
         payload = { ...payload, audio: input.audio };
       }
       const submitted = await request(imageToVideo ? "/image_to_video" : "/text_to_video", {

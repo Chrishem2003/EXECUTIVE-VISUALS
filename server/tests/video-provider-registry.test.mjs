@@ -198,6 +198,25 @@ test("Seedance 2.5 catalogue exposes the private source-edit worker and 4K price
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
 
+test("Seedance 2.5 Flash is catalogued with the documented lower-cost profile while execution remains disabled",()=>{
+ const model=getVideoProviderModel("runway","seedance2_5_flash");
+ assert.ok(model);
+ assert.equal(model.availability,"disabled");
+ assert.equal(model.executionAdapter,"runway-cloud-worker");
+ assert.deepEqual(model.executionCapabilities,["textToVideo","imageToVideo","videoToVideo","videoEdit","videoExtend"]);
+ assert.deepEqual(model.capabilities.resolutions,["480p","720p"]);
+ assert.equal(model.capabilities.minDurationSeconds,4);
+ assert.equal(model.capabilities.maxDurationSeconds,30);
+ assert.equal(model.capabilities.maxReferenceImages,10);
+ assert.equal(model.capabilities.maxReferenceVideos,5);
+ assert.equal(model.capabilities.maxReferenceAudio,5);
+ assert.deepEqual(model.constraints.outputCreditsPerSecondByResolution,{"480p":13,"720p":20});
+ assert.deepEqual(model.constraints.inputVideoCreditsPerSecondByResolution,{"480p":7,"720p":10});
+ assert.equal(model.constraints.minimumCredits,52);
+ assert.equal(model.constraints.videoToVideoReservesSourceVideoSlot,true);
+ assert.deepEqual(model.constraints.outputFormats,["mp4"]);
+ assert.equal(listSelectableVideoProviderModels().length,0);
+});
 test("Veo 3.1 and Fast catalogue enforce duration, resolution, audio and tier-specific pricing boundaries", () => {
   const standard = getVideoProviderModel("runway", "veo3.1");
   const fast = getVideoProviderModel("runway", "veo3.1_fast");

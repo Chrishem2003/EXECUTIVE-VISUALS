@@ -29,6 +29,45 @@ test("Seedance 2.5 payload maps documented duration, ratio and resolution",()=>{
   model:"seedance2_5",promptText:"A coastal sunrise",ratio:"1280:720",duration:8
  });
 });
+test("Seedance 2.5 Flash exposes only 480p and 720p with its documented ratio mappings",()=>{
+ assert.deepEqual(buildRunwayVideoPayload({model:"seedance2_5_flash",prompt:"A cinematic sunrise",durationSeconds:5,aspectRatio:"16:9",resolution:"720p"}),{
+  model:"seedance2_5_flash",promptText:"A cinematic sunrise",ratio:"1280:720",duration:5
+ });
+ assert.deepEqual(buildRunwayVideoPayload({model:"seedance2_5_flash",prompt:"A cinematic sunrise",durationSeconds:5,aspectRatio:"9:16",resolution:"480p"}),{
+  model:"seedance2_5_flash",promptText:"A cinematic sunrise",ratio:"480:854",duration:5
+ });
+ assert.throws(()=>buildRunwayVideoPayload({model:"seedance2_5_flash",prompt:"A cinematic sunrise",durationSeconds:5,resolution:"1080p"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ const caps=getRunwayVideoCapabilities("seedance2_5_flash");
+ assert.equal(caps.maxDurationSeconds,30);
+ assert.equal(caps.maxReferenceImages,10);
+ assert.equal(caps.maxReferenceVideos,5);
+ assert.equal(caps.maxReferenceAudio,5);
+});
+test("Seedance 2.5 Flash text and image generation enforce model-specific reference limits",()=>{
+ const uri="https://example.com/reference.png";
+ const video="https://example.com/reference.mp4";
+ const audio="https://example.com/reference.wav";
+ const textPayload=buildRunwayVideoPayload({
+  model:"seedance2_5_flash",prompt:"A cinematic sunrise",durationSeconds:5,
+  references:Array.from({length:10},()=>({uri})),
+  referenceVideos:Array.from({length:5},()=>({uri:video})),
+  referenceAudio:Array.from({length:5},()=>({uri:audio}))
+ });
+ assert.equal(textPayload.references.length,10);
+ assert.equal(textPayload.referenceVideos.length,5);
+ assert.equal(textPayload.referenceAudio.length,5);
+ assert.throws(()=>buildRunwayVideoPayload({
+  model:"seedance2_5_flash",prompt:"A cinematic sunrise",durationSeconds:5,
+  references:Array.from({length:11},()=>({uri}))
+ }),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.deepEqual(buildRunwayImageToVideoPayload({
+  model:"seedance2_5_flash",prompt:"Animate the reference",promptImage:[{uri},{uri}],
+  durationSeconds:5,aspectRatio:"16:9",resolution:"720p"
+ }),{
+  model:"seedance2_5_flash",promptText:"Animate the reference",promptImage:[{uri},{uri}],
+  duration:5,ratio:"1280:720"
+ });
+});
 test("Seedance 2.5 draft previews are explicitly fixed to 480p",()=>{
  assert.deepEqual(buildRunwayVideoPayload({model:"seedance2_5",prompt:"A coastal sunrise",durationSeconds:8,aspectRatio:"16:9",resolution:"480p",draft:true}),{
   model:"seedance2_5",promptText:"A coastal sunrise",ratio:"1280:720",duration:8,draft:true

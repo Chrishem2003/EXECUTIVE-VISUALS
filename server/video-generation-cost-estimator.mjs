@@ -15,7 +15,7 @@ function priceError(message, code = "VIDEO_PRICE_INPUT_INVALID") {
  */
 export function estimateVideoGenerationCost({
   provider, model, operation = "video", durationSeconds, outputFormat,
-  resolution, audio, inputVideoSeconds, referenceVideoSeconds, referenceImageCount,
+  resolution, audio, inputVideoSeconds, referenceVideoSeconds, referenceVideoCount, referenceImageCount,
   referenceAudioCount, hasStartFrame, outputFrames, sourceWidth, sourceHeight,
   sourceDynamicRange, outputWidth, outputHeight, targetFramerate, inputType,
   hdr = false, exrExport = false
@@ -78,7 +78,7 @@ export function estimateVideoGenerationCost({
   try {
     estimate = estimateRunwayVideoCredits({
       model, durationSeconds, outputFormat, resolution, audio, inputVideoSeconds,
-      referenceVideoSeconds, referenceImageCount, referenceAudioCount, hasStartFrame,
+      referenceVideoSeconds, referenceVideoCount, referenceImageCount, referenceAudioCount, hasStartFrame,
       outputFrames, sourceWidth, sourceHeight, sourceDynamicRange, outputWidth,
       outputHeight, targetFramerate, inputType, pricingDate
     });

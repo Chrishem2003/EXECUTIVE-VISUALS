@@ -31,7 +31,7 @@ export function estimateRunwayVideoCredits(options={}) {
     throw fail("Pricing options must be an object.","RUNWAY_PRICE_INVALID_INPUT");
   }
   const allowed=new Set([
-    "model","durationSeconds","resolution","audio","inputVideoSeconds","referenceVideoSeconds",
+    "model","durationSeconds","resolution","audio","inputVideoSeconds","referenceVideoSeconds","referenceVideoCount",
     "referenceImageCount","referenceAudioCount","hasStartFrame","outputFrames","sourceWidth",
     "sourceHeight","sourceDynamicRange","outputWidth","outputHeight","outputFormat","targetFramerate","inputType","durationAuto","pricingDate"
   ]);
@@ -41,7 +41,7 @@ export function estimateRunwayVideoCredits(options={}) {
   }
   const {
     model,durationSeconds,resolution:outputResolution,audio:hasAudio,
-    inputVideoSeconds:requestedInputVideoSeconds,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
+    inputVideoSeconds:requestedInputVideoSeconds,referenceVideoSeconds=0,referenceVideoCount:requestedReferenceVideoCount=0,referenceImageCount=0,referenceAudioCount=0,
     hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,sourceDynamicRange,outputWidth,outputHeight,outputFormat:requestedOutputFormat,targetFramerate,inputType="text",durationAuto=false,pricingDate
   }=options;
   const outputFormat=requestedOutputFormat??(model==="ruby"?"hdr10":"mp4");
@@ -57,6 +57,7 @@ export function estimateRunwayVideoCredits(options={}) {
     throw fail("durationSeconds must be at least 3 for "+model+".","RUNWAY_PRICE_INVALID_INPUT");
   }
   const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
+  const referenceVideoCount=count(requestedReferenceVideoCount,"referenceVideoCount",{max:10});
   if(!["text","image","video"].includes(inputType))throw fail("inputType must be text, image or video.","RUNWAY_PRICE_INVALID_INPUT");
   if(model==="ruby"&&sourceDynamicRange!=="sdr")throw fail("Ruby requires an explicitly verified SDR source video.","RUNWAY_PRICE_INPUT_REQUIRED");
   if(model!=="ruby"&&sourceDynamicRange!==undefined)throw fail("sourceDynamicRange is supported only by Ruby HDR pricing.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
@@ -71,9 +72,10 @@ export function estimateRunwayVideoCredits(options={}) {
   if(typeof hasStartFrame!=="boolean")throw fail("hasStartFrame must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
   const hasImageStartFrame=hasStartFrame||inputType==="image";
   const billableImageReferences=imageCount+(hasImageStartFrame?1:0);
-  if(audioCount>0&&!["grok_imagine_1_5","seedance2_5"].includes(model))throw fail("Reference audio pricing is only verified for Grok Imagine Video 1.5 and Seedance 2.5.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  if(audioCount>0&&!["grok_imagine_1_5","seedance2_5","seedance2_5_flash"].includes(model))throw fail("Reference audio pricing is only verified for Grok Imagine Video 1.5 and Seedance 2.5.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
   if(model==="seedance2_5"&&audioCount>10)throw fail("Seedance 2.5 accepts at most 10 reference audio clips.","RUNWAY_PRICE_INVALID_INPUT");
   if(model==="seedance2_5"&&imageCount>30)throw fail("Seedance 2.5 accepts at most 30 reference images.","RUNWAY_PRICE_INVALID_INPUT");
+  if(model==="seedance2_5_flash"&&(audioCount>5||imageCount>10||referenceVideoCount>5||inputType==="video"&&referenceVideoCount>4))throw fail("Seedance 2.5 Flash accepts at most 10 image, 5 audio and 5 video references; video-to-video reserves one video slot for the source clip.","RUNWAY_PRICE_INVALID_INPUT");
   if(model==="grok_imagine_1_5") {
     if(imageCount>7||audioCount>3||billableImageReferences>7)throw fail("Grok Imagine Video 1.5 accepts at most 7 image and 3 audio references.","RUNWAY_PRICE_INVALID_INPUT");
     if(audioCount>0&&billableImageReferences===0)throw fail("Grok Imagine Video 1.5 audio references require at least one image reference or start frame.","RUNWAY_PRICE_INPUT_REQUIRED");
@@ -156,6 +158,14 @@ export function estimateRunwayVideoCredits(options={}) {
       minimum(resolutionRate({"480p":11,"720p":24}),44); break;
     case "seedance2_mini":
       minimum(resolutionRate({"480p":7,"720p":15}),28); break;
+    case "seedance2_5_flash": {
+      const rates={ "480p":{output:13,input:7}, "720p":{output:20,input:10} };
+      const rate=rates[resolution(outputResolution,Object.keys(rates))];
+      const billableInput=Math.min(30,inputVideo+referenceVideo);
+      credits=Math.max(52,duration*rate.output+billableInput*rate.input);
+      formula="max(52 credit minimum, "+duration+"s × "+rate.output+" + min(30s, input+reference video) × "+rate.input+")";
+      break;
+    }
     case "seedance2_5": {
       const rates={
         "480p":{output:20,input:10}, "720p":{output:30,input:15}, "1080p":{output:68,input:34}, "4k":{output:110,input:57}

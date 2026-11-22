@@ -180,6 +180,38 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         }
       },
       {
+        id: "seedance2_5_flash",
+        name: "Seedance 2.5 Flash",
+        availability: "disabled",
+        executionAdapter: "runway-cloud-worker",
+        executionCapabilities: ["textToVideo", "imageToVideo", "videoToVideo", "videoEdit", "videoExtend"],
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: true,
+          videoEdit: true, videoExtend: true, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: true, motionReference: false,
+          referenceImages: true, referenceVideos: true, referenceAudio: true,
+          maxReferenceImages: 10, maxReferenceVideos: 5, maxReferenceAudio: 5,
+          audioModes: ["generated", "none", "reference"],
+          aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+          resolutions: ["480p", "720p"],
+          minDurationSeconds: 4, maxDurationSeconds: 30
+        },
+        constraints: {
+          maxPromptCharacters: 15000, durationAuto: true,
+          minimumCredits: 52,
+          inputVideoCreditsPerSecondByResolution: { "480p": 7, "720p": 10 },
+          outputCreditsPerSecondByResolution: { "480p": 13, "720p": 20 },
+          maxCombinedInputVideoSeconds: 30, outputFormats: ["mp4"],
+          videoToVideoReservesSourceVideoSlot: true,
+          videoEditRequiresAutoDuration: true,
+          pricingSnapshotDate: "2026-11-16", creditUsdValue: 0.01,
+          asynchronousTaskPolling: true, outputUrlTemporary: true,
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
         id: "veo3.1",
         name: "Veo 3.1",
         availability: "disabled",

@@ -36,6 +36,27 @@ test("accounts for Seedance 2.5 input and reference video duration with a 30-sec
   assert.equal(estimate.settlementEligible,false);
 });
 
+test("prices Seedance 2.5 Flash at its dated 480p and 720p rates with a 52-credit minimum",()=>{
+ const low=estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:4,resolution:"480p",pricingDate:date});
+ const high=estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"720p",pricingDate:date});
+ assert.equal(low.estimatedCredits,52);
+ assert.equal(high.estimatedCredits,100);
+ assert.equal(high.estimatedUsd,1);
+ assert.equal(high.settlementEligible,false);
+ assert.throws(()=>estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"1080p",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT"||e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
+ assert.throws(()=>estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"4k",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT"||e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
+});
+test("Seedance 2.5 Flash includes video input and reference seconds and enforces the 30-second cap",()=>{
+ const estimate=estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"720p",inputVideoSeconds:20,referenceVideoSeconds:20,referenceVideoCount:4,inputType:"video",pricingDate:date});
+ assert.equal(estimate.estimatedCredits,400);
+ assert.throws(()=>estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"720p",inputVideoSeconds:20,referenceVideoCount:5,inputType:"video",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+});
+test("Seedance 2.5 Flash accepts only documented image, video and audio reference counts",()=>{
+ assert.equal(estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"720p",referenceImageCount:10,referenceAudioCount:5,referenceVideoCount:5,pricingDate:date}).estimatedCredits,100);
+ assert.throws(()=>estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"720p",referenceImageCount:11,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+ assert.throws(()=>estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"720p",referenceAudioCount:6,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+ assert.throws(()=>estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"720p",referenceVideoCount:6,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+});
 test("accounts for reference media charges on Grok and Hailuo models",()=>{
   assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5",durationSeconds:5,resolution:"720p",referenceImageCount:2,referenceAudioCount:1,pricingDate:date}).estimatedCredits,83);
   assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5",durationSeconds:5,resolution:"720p",hasStartFrame:true,referenceImageCount:2,pricingDate:date}).estimatedCredits,83);
