@@ -424,3 +424,15 @@ test("registers Kling 3.0 4K in the durable Runway worker allowlist",()=>{
  });
  assert.ok(worker.listSupported().includes("runway:kling3.0_4k"));
 });
+
+
+test("provider-aware worker can construct the opt-in server-side subscription reader without network activity",()=>{
+ let networkCalls=0;
+ const worker=createProviderAwareCloudVideoWorkerComposition({
+  ...base,
+  env:{...env,CLOUD_VIDEO_SUBSCRIPTION_ENTITLEMENTS_REQUIRED:"true"},
+  fetchImpl:async()=>{networkCalls++;throw new Error("network must not run during composition");}
+ });
+ assert.deepEqual(worker.listSupported(),["fal:fal-ai/wan/v2.7/text-to-video"]);
+ assert.equal(networkCalls,0);
+});
