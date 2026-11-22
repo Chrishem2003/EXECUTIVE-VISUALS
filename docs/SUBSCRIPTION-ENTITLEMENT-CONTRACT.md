@@ -58,3 +58,15 @@ Project owners can set an individual member policy with an active/paused state a
 Usage counts reserved credits immediately, replaces that amount with provider-verified actual credits at settlement, and excludes released reservations. The append-only project ledger records the paying owner and the initiating actor separately. Existing job ownership and billing reservation identity remain the initiating actor so worker settlement, retries and cancellation continue to use the established job contract.
 
 This increment adds database controls and an owner-scoped usage RPC. It does not yet expose member controls in the customer UI or add invitation email delivery; those are separate application-surface tasks. It does not change live production migrations or activate payment collection.
+
+
+### Owner-only project credit pool API
+
+The opt-in server API is guarded by `PROJECT_CREDIT_POOL_API_ENABLED=true`, verified Supabase authentication and server-side Supabase credentials. It is disabled by default and must only be enabled after the corresponding migrations are applied to the intended Supabase environment.
+
+- `POST /api/projects/:projectId/credit-pool` configures the pool monthly spend ceiling.
+- `POST /api/projects/:projectId/credit-pool/fund` transfers existing personal credits into the project pool and requires an idempotency key.
+- `GET /api/projects/:projectId/credit-pool/members` returns owner-scoped member usage, limits and remaining monthly allowance.
+- `PUT /api/projects/:projectId/credit-pool/members/:memberId/policy` sets a member monthly cap or pauses new spending.
+
+Every endpoint requires local project-owner access and repeats owner authorization in the database RPC. Member jobs remain owned by the initiating actor; only the owner-funded project pool pays. API enablement is not a production migration or deployment approval.
