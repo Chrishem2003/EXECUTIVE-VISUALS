@@ -350,6 +350,26 @@ test("Uganda mobile-money checkout uses server-priced active catalogue and idemp
 });
 
 
+test("credit checkout retry with the same idempotency key returns the original pending payment without a second provider charge",async()=>{
+ let providerCalls=0;
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
+   return json([{id:paymentId,customer_email:"buyer@example.com",tx_ref:"EV-original",status:"pending",provider_transaction_id:"chg_original",
+    metadata:{product_code:"creator_credits",mobile_money_network:"MTN",next_action:{type:"payment_instruction"}}}]);
+  if(target.includes("flutterwave")||target.includes("/orchestration/direct-charges"))providerCalls++;
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/billing/checkout",ownerId:owner,
+  idempotencyKey:"credit-topup-recovery-01",
+  body:{productCode:"creator_credits",network:"MTN",email:"buyer@example.com",firstName:"Test",lastName:"Buyer",phoneNumber:"0771234567"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.idempotentReplay,true);
+ assert.equal(result.body.payment.reference,"EV-original");
+ assert.equal(result.body.payment.status,"pending");
+ assert.equal(providerCalls,0);
+});
+
 test("credit checkout idempotency key cannot replay for a different customer email",async()=>{
  let providerCalled=false;
  const service=api(async url=>{
