@@ -115,6 +115,289 @@ begin
   or coalesce((p_proposal->'costEvidence'->>'sampleCredits')::bigint,0)<1
   or coalesce((p_proposal->'costEvidence'->>'totalProviderCostMinor')::bigint,0)<1
   or p_proposal->'costEvidence'->>'evidenceDigest' !~ '^[a-f0-9]{64}
+  or nullif(p_proposal->'costEvidence'->>'periodStart','') is null
+  or nullif(p_proposal->'costEvidence'->>'periodEnd','') is null
+  or (p_proposal->'costEvidence'->>'periodEnd')::timestamptz <= (p_proposal->'costEvidence'->>'periodStart')::timestamptz then
+  raise exception using errcode='22023',message='subscription_allowance_invoice_evidence_required';
+ end if;
+ select * into v_existing from executive_visuals.subscription_allowance_proposals
+  where proposal_hash=p_proposal_hash;
+ if found then
+  if v_existing.canonical_proposal<>p_canonical_proposal then
+   raise exception using errcode='23505',message='subscription_allowance_proposal_hash_conflict';
+  end if;
+  return jsonb_build_object('duplicate',true,'proposalId',v_existing.id,'proposalHash',v_existing.proposal_hash);
+ end if;
+ if p_event_envelope->>'eventType' is distinct from 'subscription_allowance.proposal_created'
+  or p_event_envelope->>'actorId' is distinct from p_actor_id::text
+  or p_event_envelope->'payload'->>'proposalHash' is distinct from p_proposal_hash then
+  raise exception using errcode='22023',message='subscription_allowance_proposal_audit_mismatch';
+ end if;
+ v_event:=executive_visuals.append_financial_audit_event(
+  p_actor_id,p_actor_id,p_event_envelope->>'idempotencyKey',
+  p_event_envelope,p_canonical_event,p_event_hash
+ );
+ if coalesce((v_event->>'duplicate')::boolean,false) then
+  return jsonb_build_object('duplicate',true,'audit',v_event);
+ end if;
+ insert into executive_visuals.subscription_allowance_proposals(
+  proposal_hash,plan_code,plan_version,currency,monthly_price_minor,
+  included_credits,provider_cost_per_credit_minor,proposal,canonical_proposal,created_by
+ ) values(
+  p_proposal_hash,p_proposal->>'planCode',(p_proposal->>'planVersion')::integer,
+  p_proposal->>'currency',(p_proposal->>'monthlyPriceMinor')::bigint,
+  (p_proposal->>'includedCredits')::bigint,
+  (p_proposal->>'providerCostPerCustomerCreditMinor')::bigint,
+  p_proposal,p_canonical_proposal,p_actor_id
+ ) returning id into v_id;
+ return jsonb_build_object('duplicate',false,'proposalId',v_id,'proposalHash',p_proposal_hash,
+  'status','awaiting_dual_approval','publishable',false,'audit',v_event);
+end $$;
+revoke all on function executive_visuals.create_subscription_allowance_proposal(uuid,jsonb,text,text,jsonb,text,text) from public,anon,authenticated;
+grant execute on function executive_visuals.create_subscription_allowance_proposal(uuid,jsonb,text,text,jsonb,text,text) to service_role;
+
+create or replace function executive_visuals.record_subscription_allowance_approval(
+ p_actor_id uuid,p_proposal_id uuid,p_stage text,p_decision text,p_decision_note text,
+ p_event_envelope jsonb,p_canonical_event text,p_event_hash text
+) returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,public
+as $$
+declare
+ v_role text;
+ v_expected_role text;
+ v_proposal executive_visuals.subscription_allowance_proposals%rowtype;
+ v_other executive_visuals.subscription_allowance_approvals%rowtype;
+ v_event jsonb;
+ v_approval executive_visuals.subscription_allowance_approvals%rowtype;
+ v_status text;
+begin
+ if p_actor_id is null or p_proposal_id is null
+  or p_stage not in('finance','product') or p_decision not in('approved','rejected')
+  or length(coalesce(p_decision_note,''))>1000 then
+  raise exception using errcode='22023',message='subscription_allowance_approval_input_invalid';
+ end if;
+ v_expected_role:=case p_stage when 'finance' then 'billing_admin' when 'product' then 'platform_admin' end;
+ select role into v_role from executive_visuals.platform_admins where user_id=p_actor_id;
+ if v_role is distinct from v_expected_role then
+  raise exception using errcode='42501',message='subscription_allowance_approval_role_required';
+ end if;
+ select * into v_proposal from executive_visuals.subscription_allowance_proposals
+  where id=p_proposal_id for update;
+ if not found then raise exception using errcode='P0002',message='subscription_allowance_proposal_not_found'; end if;
+ if p_actor_id=v_proposal.created_by then
+  raise exception using errcode='42501',message='subscription_allowance_creator_cannot_approve';
+ end if;
+ if p_event_envelope->>'eventType' is distinct from 'subscription_allowance.approval_recorded'
+  or p_event_envelope->>'actorId' is distinct from p_actor_id::text
+  or p_event_envelope->'payload'->>'proposalId' is distinct from p_proposal_id::text
+  or p_event_envelope->'payload'->>'stage' is distinct from p_stage
+  or p_event_envelope->'payload'->>'decision' is distinct from p_decision then
+  raise exception using errcode='22023',message='subscription_allowance_approval_audit_mismatch';
+ end if;
+ v_event:=executive_visuals.append_financial_audit_event(
+  p_actor_id,p_actor_id,p_event_envelope->>'idempotencyKey',
+  p_event_envelope,p_canonical_event,p_event_hash
+ );
+ if coalesce((v_event->>'duplicate')::boolean,false) then
+  return jsonb_build_object('duplicate',true,'audit',v_event);
+ end if;
+ select * into v_other from executive_visuals.subscription_allowance_approvals
+  where proposal_id=p_proposal_id and stage<>p_stage;
+ if found and v_other.actor_id=p_actor_id then
+  raise exception using errcode='42501',message='subscription_allowance_approvers_must_be_distinct';
+ end if;
+ if exists(select 1 from executive_visuals.subscription_allowance_approvals
+  where proposal_id=p_proposal_id and decision='rejected') then
+  raise exception using errcode='22023',message='subscription_allowance_proposal_already_rejected';
+ end if;
+ if exists(select 1 from executive_visuals.subscription_allowance_approvals
+  where proposal_id=p_proposal_id and stage=p_stage) then
+  raise exception using errcode='23505',message='subscription_allowance_stage_already_decided';
+ end if;
+ insert into executive_visuals.subscription_allowance_approvals(
+  proposal_id,stage,actor_id,actor_role,decision,decision_note,audit_event_id
+ ) values(p_proposal_id,p_stage,p_actor_id,v_role,p_decision,
+  nullif(btrim(p_decision_note),''),(v_event->>'eventId')::uuid)
+ returning * into v_approval;
+ select case
+  when bool_or(decision='rejected') then 'rejected'
+  when count(*)=2 and count(distinct actor_id)=2 then 'approved'
+  else 'awaiting_dual_approval' end into v_status
+ from executive_visuals.subscription_allowance_approvals where proposal_id=p_proposal_id;
+ return jsonb_build_object('duplicate',false,'approval',to_jsonb(v_approval),
+  'status',v_status,'eligibleToPublish',v_status='approved','publishable',false,'audit',v_event);
+end $$;
+revoke all on function executive_visuals.record_subscription_allowance_approval(uuid,uuid,text,text,text,jsonb,text,text) from public,anon,authenticated;
+grant execute on function executive_visuals.record_subscription_allowance_approval(uuid,uuid,text,text,text,jsonb,text,text) to service_role;
+
+create or replace function executive_visuals.get_subscription_allowance_approval_status(p_proposal_id uuid)
+returns jsonb language plpgsql stable security definer
+set search_path=pg_catalog,executive_visuals
+as $$
+declare v_proposal executive_visuals.subscription_allowance_proposals%rowtype; v_approvals jsonb; v_status text;
+begin
+ select * into v_proposal from executive_visuals.subscription_allowance_proposals where id=p_proposal_id;
+ if not found then return null; end if;
+ select coalesce(jsonb_agg(to_jsonb(a) order by a.created_at),'[]'::jsonb) into v_approvals
+ from executive_visuals.subscription_allowance_approvals a where a.proposal_id=p_proposal_id;
+ select case
+  when bool_or(decision='rejected') then 'rejected'
+  when count(*)=2 and count(distinct actor_id)=2 then 'approved'
+  else 'awaiting_dual_approval' end into v_status
+ from executive_visuals.subscription_allowance_approvals where proposal_id=p_proposal_id;
+ return jsonb_build_object('proposal',to_jsonb(v_proposal),'approvals',v_approvals,
+  'status',coalesce(v_status,'awaiting_dual_approval'),'eligibleToPublish',coalesce(v_status='approved',false),
+  'publishable',false);
+end $$;
+revoke all on function executive_visuals.get_subscription_allowance_approval_status(uuid) from public,anon,authenticated;
+grant execute on function executive_visuals.get_subscription_allowance_approval_status(uuid) to service_role;
+
+  or p_proposal->'costEvidence'->>'approved' is distinct from 'false'
+  or nullif(p_proposal->'costEvidence'->>'source','') is null
+  or nullif(p_proposal->'costEvidence'->>'rateCardVersion','') is null
+  or nullif(p_proposal->'costEvidence'->>'periodStart','') is null
+  or nullif(p_proposal->'costEvidence'->>'periodEnd','') is null
+  or (p_proposal->'costEvidence'->>'periodEnd')::timestamptz <= (p_proposal->'costEvidence'->>'periodStart')::timestamptz then
+  raise exception using errcode='22023',message='subscription_allowance_invoice_evidence_required';
+ end if;
+ select * into v_existing from executive_visuals.subscription_allowance_proposals
+  where proposal_hash=p_proposal_hash;
+ if found then
+  if v_existing.canonical_proposal<>p_canonical_proposal then
+   raise exception using errcode='23505',message='subscription_allowance_proposal_hash_conflict';
+  end if;
+  return jsonb_build_object('duplicate',true,'proposalId',v_existing.id,'proposalHash',v_existing.proposal_hash);
+ end if;
+ if p_event_envelope->>'eventType' is distinct from 'subscription_allowance.proposal_created'
+  or p_event_envelope->>'actorId' is distinct from p_actor_id::text
+  or p_event_envelope->'payload'->>'proposalHash' is distinct from p_proposal_hash then
+  raise exception using errcode='22023',message='subscription_allowance_proposal_audit_mismatch';
+ end if;
+ v_event:=executive_visuals.append_financial_audit_event(
+  p_actor_id,p_actor_id,p_event_envelope->>'idempotencyKey',
+  p_event_envelope,p_canonical_event,p_event_hash
+ );
+ if coalesce((v_event->>'duplicate')::boolean,false) then
+  return jsonb_build_object('duplicate',true,'audit',v_event);
+ end if;
+ insert into executive_visuals.subscription_allowance_proposals(
+  proposal_hash,plan_code,plan_version,currency,monthly_price_minor,
+  included_credits,provider_cost_per_credit_minor,proposal,canonical_proposal,created_by
+ ) values(
+  p_proposal_hash,p_proposal->>'planCode',(p_proposal->>'planVersion')::integer,
+  p_proposal->>'currency',(p_proposal->>'monthlyPriceMinor')::bigint,
+  (p_proposal->>'includedCredits')::bigint,
+  (p_proposal->>'providerCostPerCustomerCreditMinor')::bigint,
+  p_proposal,p_canonical_proposal,p_actor_id
+ ) returning id into v_id;
+ return jsonb_build_object('duplicate',false,'proposalId',v_id,'proposalHash',p_proposal_hash,
+  'status','awaiting_dual_approval','publishable',false,'audit',v_event);
+end $$;
+revoke all on function executive_visuals.create_subscription_allowance_proposal(uuid,jsonb,text,text,jsonb,text,text) from public,anon,authenticated;
+grant execute on function executive_visuals.create_subscription_allowance_proposal(uuid,jsonb,text,text,jsonb,text,text) to service_role;
+
+create or replace function executive_visuals.record_subscription_allowance_approval(
+ p_actor_id uuid,p_proposal_id uuid,p_stage text,p_decision text,p_decision_note text,
+ p_event_envelope jsonb,p_canonical_event text,p_event_hash text
+) returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,public
+as $$
+declare
+ v_role text;
+ v_expected_role text;
+ v_proposal executive_visuals.subscription_allowance_proposals%rowtype;
+ v_other executive_visuals.subscription_allowance_approvals%rowtype;
+ v_event jsonb;
+ v_approval executive_visuals.subscription_allowance_approvals%rowtype;
+ v_status text;
+begin
+ if p_actor_id is null or p_proposal_id is null
+  or p_stage not in('finance','product') or p_decision not in('approved','rejected')
+  or length(coalesce(p_decision_note,''))>1000 then
+  raise exception using errcode='22023',message='subscription_allowance_approval_input_invalid';
+ end if;
+ v_expected_role:=case p_stage when 'finance' then 'billing_admin' when 'product' then 'platform_admin' end;
+ select role into v_role from executive_visuals.platform_admins where user_id=p_actor_id;
+ if v_role is distinct from v_expected_role then
+  raise exception using errcode='42501',message='subscription_allowance_approval_role_required';
+ end if;
+ select * into v_proposal from executive_visuals.subscription_allowance_proposals
+  where id=p_proposal_id for update;
+ if not found then raise exception using errcode='P0002',message='subscription_allowance_proposal_not_found'; end if;
+ if p_actor_id=v_proposal.created_by then
+  raise exception using errcode='42501',message='subscription_allowance_creator_cannot_approve';
+ end if;
+ if p_event_envelope->>'eventType' is distinct from 'subscription_allowance.approval_recorded'
+  or p_event_envelope->>'actorId' is distinct from p_actor_id::text
+  or p_event_envelope->'payload'->>'proposalId' is distinct from p_proposal_id::text
+  or p_event_envelope->'payload'->>'stage' is distinct from p_stage
+  or p_event_envelope->'payload'->>'decision' is distinct from p_decision then
+  raise exception using errcode='22023',message='subscription_allowance_approval_audit_mismatch';
+ end if;
+ v_event:=executive_visuals.append_financial_audit_event(
+  p_actor_id,p_actor_id,p_event_envelope->>'idempotencyKey',
+  p_event_envelope,p_canonical_event,p_event_hash
+ );
+ if coalesce((v_event->>'duplicate')::boolean,false) then
+  return jsonb_build_object('duplicate',true,'audit',v_event);
+ end if;
+ select * into v_other from executive_visuals.subscription_allowance_approvals
+  where proposal_id=p_proposal_id and stage<>p_stage;
+ if found and v_other.actor_id=p_actor_id then
+  raise exception using errcode='42501',message='subscription_allowance_approvers_must_be_distinct';
+ end if;
+ if exists(select 1 from executive_visuals.subscription_allowance_approvals
+  where proposal_id=p_proposal_id and decision='rejected') then
+  raise exception using errcode='22023',message='subscription_allowance_proposal_already_rejected';
+ end if;
+ if exists(select 1 from executive_visuals.subscription_allowance_approvals
+  where proposal_id=p_proposal_id and stage=p_stage) then
+  raise exception using errcode='23505',message='subscription_allowance_stage_already_decided';
+ end if;
+ insert into executive_visuals.subscription_allowance_approvals(
+  proposal_id,stage,actor_id,actor_role,decision,decision_note,audit_event_id
+ ) values(p_proposal_id,p_stage,p_actor_id,v_role,p_decision,
+  nullif(btrim(p_decision_note),''),(v_event->>'eventId')::uuid)
+ returning * into v_approval;
+ select case
+  when bool_or(decision='rejected') then 'rejected'
+  when count(*)=2 and count(distinct actor_id)=2 then 'approved'
+  else 'awaiting_dual_approval' end into v_status
+ from executive_visuals.subscription_allowance_approvals where proposal_id=p_proposal_id;
+ return jsonb_build_object('duplicate',false,'approval',to_jsonb(v_approval),
+  'status',v_status,'eligibleToPublish',v_status='approved','publishable',false,'audit',v_event);
+end $$;
+revoke all on function executive_visuals.record_subscription_allowance_approval(uuid,uuid,text,text,text,jsonb,text,text) from public,anon,authenticated;
+grant execute on function executive_visuals.record_subscription_allowance_approval(uuid,uuid,text,text,text,jsonb,text,text) to service_role;
+
+create or replace function executive_visuals.get_subscription_allowance_approval_status(p_proposal_id uuid)
+returns jsonb language plpgsql stable security definer
+set search_path=pg_catalog,executive_visuals
+as $$
+declare v_proposal executive_visuals.subscription_allowance_proposals%rowtype; v_approvals jsonb; v_status text;
+begin
+ select * into v_proposal from executive_visuals.subscription_allowance_proposals where id=p_proposal_id;
+ if not found then return null; end if;
+ select coalesce(jsonb_agg(to_jsonb(a) order by a.created_at),'[]'::jsonb) into v_approvals
+ from executive_visuals.subscription_allowance_approvals a where a.proposal_id=p_proposal_id;
+ select case
+  when bool_or(decision='rejected') then 'rejected'
+  when count(*)=2 and count(distinct actor_id)=2 then 'approved'
+  else 'awaiting_dual_approval' end into v_status
+ from executive_visuals.subscription_allowance_approvals where proposal_id=p_proposal_id;
+ return jsonb_build_object('proposal',to_jsonb(v_proposal),'approvals',v_approvals,
+  'status',coalesce(v_status,'awaiting_dual_approval'),'eligibleToPublish',coalesce(v_status='approved',false),
+  'publishable',false);
+end $$;
+revoke all on function executive_visuals.get_subscription_allowance_approval_status(uuid) from public,anon,authenticated;
+grant execute on function executive_visuals.get_subscription_allowance_approval_status(uuid) to service_role;
+
+  or (p_proposal->>'providerCostPerCustomerCreditMinor')::bigint <>
+     ((coalesce((p_proposal->'costEvidence'->>'totalProviderCostMinor')::bigint,0)
+       + coalesce((p_proposal->'costEvidence'->>'sampleCredits')::bigint,0)-1)
+       / greatest(coalesce((p_proposal->'costEvidence'->>'sampleCredits')::bigint,0),1))
   or nullif(p_proposal->'costEvidence'->>'rateCardVersion','') is null
   or nullif(p_proposal->'costEvidence'->>'periodStart','') is null
   or nullif(p_proposal->'costEvidence'->>'periodEnd','') is null
