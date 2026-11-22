@@ -1,28 +1,37 @@
-# Subscription entitlement contract
+# Subscription entitlement and catalogue contract
 
-This module is the fail-closed application policy layer for subscription access. It consumes a **server-read** subscription row and its immutable `entitlements_snapshot`; it never accepts plan identity, limits, model access, credit amounts or prices from a browser request.
+This branch adds a fail-closed subscription policy and a read-only plan-catalogue normalizer. Both consume trusted server/database records; neither accepts plan, price, credit or entitlement claims from browser input.
 
-## Current implementation slice
+## Entitlement policy
 
-- Requires subscription status `active`, a valid plan code/version, a verifiable future billing-period end and a bounded JSON entitlement snapshot.
+- Requires an active subscription, valid plan code/version, a verifiable future billing-period end and a bounded immutable entitlement snapshot.
 - Preserves access through the paid period when cancellation is scheduled at period end; access ends when the period expires.
-- Evaluates boolean capabilities, allowlisted providers/models/options, numeric limits and usage counters.
-- Rejects missing/unknown entitlements and prototype-path traversal.
-- Exposes assertion helpers with stable authorization error codes.
+- Evaluates boolean capabilities, provider/model allowlists, numeric entitlements and usage limits.
+- Rejects missing entitlements, malformed snapshots and prototype-path traversal.
+- Exposes stable assertion helpers for server-side authorization.
 
-## Financial and commercial boundaries
+## Catalogue behavior
 
-- This module does not create balances, grants, reservations, checkout sessions or ledger entries. Reuse the existing subscription ledger, Paddle/Pesapal adapters and Neon financial ledger.
-- Provider cost estimates remain quote inputs only. Only authoritative provider usage evidence can settle actual cost.
-- Do not publish monthly credit quantities until representative model/resolution mixes, retries, failed-but-billable tasks, storage, egress, rendering, payment fees and FX have been costed.
-- Plan prices ($9, $29, $79 and $199) are experiments, not fixed entitlements or a guarantee of included generation volume.
-- Paddle remains the primary international subscription provider. Pesapal remains the Uganda/East Africa secondary provider; manual renewal stays in place unless automatic recurring acceptance is completed.
-- This policy module is not yet a public-release approval. The route/worker composition must call the same server-side entitlement service before quote approval, reservation and enqueue, and isolated staging acceptance is still required.
+- Publishes only active, public plans within optional effective-from/effective-until windows.
+- Requires versioned plan identity and bounded immutable entitlement JSON.
+- Validates Paddle price identifiers and USD/EUR/GBP mapping; validates Pesapal UGX mapping without a provider price ID.
+- Exposes checkout provider options only where an active provider-price mapping exists.
+- Never publishes an included-credit allowance unless the trusted plan record carries an explicit `credit_allowance_published=true` flag and a positive configured allowance.
+- This catalogue is read-only. Checkout still uses the existing provider billing reservation RPC and remains gated by sandbox readiness.
 
-## Next integration steps
+## Credit and margin policy
 
-1. Load active plan/subscription snapshots through the existing trusted billing repository.
-2. Inject this policy into API quote/approval and durable worker admission paths; never duplicate checks only in the UI.
-3. Add the versioned plan catalogue and provider-price mapping with audited effective dates.
-4. Add idempotent monthly credit grants from verified renewal events, then run margin and FX scenario tests.
-5. Complete isolated Paddle/Pesapal sandbox and Neon/PostgreSQL staging acceptance before enabling checkout or paid generation.
+- Keep provider cost forecast, budget reservation, realized provider cost, customer credit reservation, settled credits and refunds distinct.
+- Reuse the existing workload economics rate-card engine and margin policy; do not add a second pricing formula.
+- Do not configure plan credit quantities until model/resolution/audio mixes, retakes, billable failures, FX, payment fees, storage, egress and rendering are costed.
+- The suggested $9/$29/$79/$199 amounts remain experiments. Provider price rows remain operator-controlled and are not seeded by this change.
+
+## Remaining integration work
+
+1. Wire the catalogue to a read-only authenticated plans endpoint and the billing workspace UI.
+2. Inject the entitlement resolver into quote approval and durable worker admission, backed by the same trusted subscription repository.
+3. Add verified-renewal idempotent credit grants, lifecycle semantics and agency shared pools.
+4. Add margin-floor scenarios using the existing dated provider rate cards and measured usage telemetry.
+5. Complete isolated Paddle/Pesapal sandbox and Neon/PostgreSQL acceptance before enabling checkout or paid generation.
+
+No migrations, credentials, live checkout, production configuration or deployments are changed by this slice.
