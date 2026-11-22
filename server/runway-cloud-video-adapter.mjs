@@ -294,7 +294,7 @@ export function createRunwayCloudVideoAdapter({
         return input;
       }
       if (isImageToVideo) {
-        if (!["gen4.5", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "gemini_omni_flash_1.2"].includes(selectedModel)) throw fail("The selected Runway model does not support the verified first-frame generation path.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+        if (!["gen4.5", "seedance2_5", "seedance2_5_flash", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "gemini_omni_flash_1.2"].includes(selectedModel)) throw fail("The selected Runway model does not support the verified first-frame generation path.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
         if (["seedance2_5", "seedance2_5_flash"].includes(selectedModel) && prepared.imageReferenceMode === true) {
           const images = Array.isArray(prepared.referenceImages) ? prepared.referenceImages : [];
           const audio = Array.isArray(prepared.referenceAudio) ? prepared.referenceAudio : [];
