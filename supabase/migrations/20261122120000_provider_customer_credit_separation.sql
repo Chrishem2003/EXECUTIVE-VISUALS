@@ -15,7 +15,36 @@ begin
       add constraint video_workflow_quotes_customer_credits_check
       check(estimated_customer_credits is null or estimated_customer_credits between 1 and 100000000);
   end if;
-end $$;
+end $;
+
+-- Read the same append-only wallet used by cloud generation reservations.
+-- billing_credit_ledger already records active reservations as negative entries;
+-- add active reservations back only for the gross balance display.
+create or replace function executive_visuals.get_generation_credit_balance(p_owner_id uuid)
+returns table(ledger_balance bigint,reserved_credits bigint,available_credits bigint)
+language plpgsql
+security definer
+set search_path=pg_catalog,executive_visuals
+as $get_generation_credit_balance$
+declare
+  net_balance bigint;
+  active_reserved bigint;
+begin
+  if p_owner_id is null then
+    raise exception 'BILLING_CREDIT_BALANCE_OWNER_REQUIRED';
+  end if;
+  select coalesce(sum(l.amount),0)::bigint into net_balance
+    from executive_visuals.billing_credit_ledger l where l.owner_id=p_owner_id;
+  select coalesce(sum(r.reserved_credits),0)::bigint into active_reserved
+    from executive_visuals.billing_credit_reservations r
+   where r.owner_id=p_owner_id and r.state='reserved';
+  return query select net_balance+active_reserved,active_reserved,net_balance;
+end;
+$get_generation_credit_balance$;
+revoke all on function executive_visuals.get_generation_credit_balance(uuid)
+  from public,anon,authenticated;
+grant execute on function executive_visuals.get_generation_credit_balance(uuid)
+  to service_role;
 
 -- The original quote recorder retains provider-specific validation (Runway,
 -- Luma, Google and future adapters). This wrapper adds customer credits without
