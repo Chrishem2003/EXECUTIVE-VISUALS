@@ -109,7 +109,7 @@ declare pool project_credit_pools; existing project_credit_pool_ledger;
  current_personal bigint; current_pool bigint;
 begin
  if p_owner_id is null or p_project_id is null or p_credits is null or p_credits<1 or p_credits>100000000
-    or p_idempotency_key is null or char_length(p_idempotency_key) not between 8 and 200 then
+    or p_idempotency_key is null or char_length(p_idempotency_key) not between 8 and 160 then
   raise exception 'PROJECT_CREDIT_POOL_FUND_ARGUMENTS_INVALID' using errcode='22023';
  end if;
  if not exists(select 1 from projects where id=p_project_id and owner_id=p_owner_id and archived_at is null) then
@@ -133,7 +133,7 @@ begin
  select coalesce(sum(amount),0) into current_personal from billing_credit_ledger where owner_id=p_owner_id;
  if current_personal<p_credits then raise exception 'BILLING_INSUFFICIENT_CREDITS'; end if;
  insert into billing_credit_ledger(owner_id,amount,event_type,idempotency_key,description,evidence)
- values(p_owner_id,-p_credits,'admin_adjustment','project-pool-fund:'||p_idempotency_key,
+ values(p_owner_id,-p_credits,'admin_adjustment','project-pool-fund:'||md5(p_idempotency_key),
   'Transfer to project shared credit pool',jsonb_build_object('projectId',p_project_id,'transferKey',p_idempotency_key));
  insert into project_credit_pool_ledger(project_id,owner_id,actor_id,amount,event_type,idempotency_key,description,evidence)
  values(p_project_id,p_owner_id,p_owner_id,p_credits,'top_up',p_idempotency_key,
@@ -190,7 +190,7 @@ begin
   values(job_row.project_id,p_owner_id,p_job_id,p_idempotency_key,p_credits) returning id into new_id;
   insert into project_credit_pool_ledger(project_id,owner_id,actor_id,amount,event_type,reference_id,idempotency_key,description)
   values(job_row.project_id,p_owner_id,p_owner_id,-p_credits,'generation_reserve',p_job_id,
-   'project-credit-reserve:'||p_idempotency_key,'Project shared credit reservation');
+   'project-credit-reserve:'||md5(p_idempotency_key),'Project shared credit reservation');
   return query select new_id,current_balance-p_credits,false; return;
  end if;
 
