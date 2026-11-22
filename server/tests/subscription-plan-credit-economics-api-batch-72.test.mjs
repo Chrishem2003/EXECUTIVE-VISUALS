@@ -356,3 +356,43 @@ test("plan economics fails closed when HDR is requested without a governed surch
  assert.equal(result.status,422);
  assert.equal(result.body.error.code,"PROVIDER_VIDEO_HDR_PRICING_UNRESOLVED");
 });
+
+test("plan economics rejects string and numeric HDR flags instead of silently pricing SDR",async()=>{
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.includes("/subscription_plans?"))return json(plans);
+  if(target.includes("/ai_model_price_catalog?"))return json([{
+   provider:"runway",model:"kling-4.0",currency:"USD",video_second_minor:24,
+   rate_card_version:"2026-11-23.strict-flags",billing_unit:"mixed",
+   verification_status:"source_linked",source_url:"https://dev.runwayml.com/learn/kling-4-0-api",
+   source_checked_at:"2026-11-22T00:00:00Z",source_fingerprint:"d".repeat(64),
+   effective_from:"2026-11-22T00:00:00Z",effective_to:null,
+   pricing_dimensions:{hdrSurchargeSecondMinor_1080p:5}
+  }]);
+  if(target.includes("ai_usage_cost_events?"))return json([]);
+  throw new Error("Unexpected request: "+target);
+ });
+ for(const hdr of ["true",1,0]){
+  const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
+   body:{creditBudgetShareBps:7000,scenarios:[{
+    provider:"runway",model:"kling-4.0",currency:"USD",rateCardVersion:"2026-11-23.strict-flags",
+    durationSeconds:10,resolution:"1080p",audio:false,hdr
+   }]}});
+  assert.equal(result.status,422);
+  assert.equal(result.body.error.code,"SUBSCRIPTION_ECONOMICS_MEDIA_FLAG_INVALID");
+ }
+});
+
+test("plan economics rejects non-boolean audio selections instead of silently changing provider pricing",async()=>{
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.includes("/subscription_plans?"))return json(plans);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
+  body:{creditBudgetShareBps:7000,scenarios:[{...scenario,audio:"false"}]}});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"SUBSCRIPTION_ECONOMICS_MEDIA_FLAG_INVALID");
+});
