@@ -14,6 +14,7 @@ test("only subscription allowances inherit a verified billing-period expiry; top
  assert.match(migration,/source_type<>'subscription_allowance'/);
  assert.match(migration,/legacyCreditLedgerId/);
  assert.match(migration,/metadata->>'period_end'/);
+ assert.match(migration,/try_parse_credit_period_end\(metadata->>'period_end'\)/);
  assert.match(migration,/new\.expires_at:=period_end/);
  assert.match(migration,/Purchased packs and non-subscription grants do not expire/);
  assert.match(revenueAllocation,/paid_credit_pack/);
@@ -34,6 +35,7 @@ test("expiry is append-only, idempotent and limited to the unconsumed source rem
 test("open generation reservations defer expiry instead of invalidating in-flight work",()=>{
  assert.match(migration,/r\.state='reserved'/);
  assert.match(migration,/accountsDeferredForOpenReservations/);
+ assert.match(migration,/BILLING_CREDIT_EXPIRY_DEFERRED_OPEN_RESERVATION/);
  assert.match(migration,/defer all expiry for this owner/);
 });
 
