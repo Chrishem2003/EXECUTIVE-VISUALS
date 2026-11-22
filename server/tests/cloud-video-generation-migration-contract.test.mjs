@@ -250,3 +250,45 @@ test("shared project wallet PostgreSQL integration is wired into the cloud-video
  assert.ok(entitlement>=0&&cancellation>=0&&migration>entitlement&&migration>cancellation&&integration>migration);
  assert.doesNotMatch(projectPoolSql,/\b(drop\s+table|truncate\s+table|delete\s+from)\b/i);
 });
+
+
+const projectMemberPolicySql=await readFile(resolve(root,"supabase/migrations/20261122110000_project_member_spend_controls.sql"),"utf8");
+const projectMemberPolicyIntegration=await readFile(resolve(root,"scripts/project-member-spend-controls-postgres-integration.sql"),"utf8");
+const memberPolicyCi=await readFile(resolve(root,".github/workflows/ci.yml"),"utf8");
+
+test("project shared wallet records the initiating member separately from the paying owner",()=>{
+ assert.match(projectMemberPolicySql,/add column if not exists actor_id uuid references auth\.users\(id\)/i);
+ assert.match(projectMemberPolicySql,/values\(job_row\.project_id,pool\.owner_id,p_owner_id,-p_credits,'generation_reserve'/i);
+ assert.match(projectMemberPolicySql,/values\(reservation\.project_id,pool_owner,reservation\.actor_id,delta/i);
+ assert.match(projectMemberPolicySql,/values\(pool_reservation\.project_id,pool_owner,pool_reservation\.actor_id/i);
+ assert.match(projectMemberPolicyIntegration,/member generation was not attributed to the actor and charged to the project owner pool/i);
+});
+
+test("project owners can pause editors and set hard monthly spend limits without granting viewer generation access",()=>{
+ assert.match(projectMemberPolicySql,/project_credit_pool_member_policies/);
+ assert.match(projectMemberPolicySql,/configure_project_credit_pool_member_policy/);
+ assert.match(projectMemberPolicySql,/PROJECT_CREDIT_POOL_MEMBER_PAUSED/);
+ assert.match(projectMemberPolicySql,/PROJECT_CREDIT_POOL_MEMBER_LIMIT_REACHED/);
+ assert.match(projectMemberPolicySql,/PROJECT_CREDIT_POOL_MEMBER_NOT_ALLOWED/);
+ assert.match(projectMemberPolicySql,/list_project_credit_pool_member_usage/);
+ assert.match(projectMemberPolicyIntegration,/monthly spend limit unexpectedly allowed 110 credits/i);
+ assert.match(projectMemberPolicyIntegration,/paused project member unexpectedly reserved credits/i);
+ assert.match(projectMemberPolicyIntegration,/viewer unexpectedly reserved project credits/i);
+});
+
+test("member limits count settled actual usage, ignore released reservations, and preserve idempotent retries",()=>{
+ assert.match(projectMemberPolicySql,/case when r\.state='settled' then r\.actual_credits else r\.reserved_credits end/i);
+ assert.match(projectMemberPolicySql,/r\.state<>'released'/i);
+ assert.match(projectMemberPolicySql,/for update/i);
+ assert.match(projectMemberPolicyIntegration,/member reservation replay charged the shared wallet twice/i);
+ assert.match(projectMemberPolicyIntegration,/member settlement, release or usage reporting did not reconcile/i);
+});
+
+test("project member spend policy migration and PostgreSQL integration are sequenced after shared wallet foundation",()=>{
+ const poolMigration=memberPolicyCi.indexOf("20261122100000_project_shared_credit_pools.sql");
+ const poolIntegration=memberPolicyCi.indexOf("scripts/project-shared-credit-pool-postgres-integration.sql");
+ const memberMigration=memberPolicyCi.indexOf("20261122110000_project_member_spend_controls.sql");
+ const memberIntegration=memberPolicyCi.indexOf("scripts/project-member-spend-controls-postgres-integration.sql");
+ assert.ok(poolMigration>=0&&poolIntegration>poolMigration&&memberMigration>poolIntegration&&memberIntegration>memberMigration);
+ assert.doesNotMatch(projectMemberPolicySql,/\b(drop\s+table|truncate\s+table|delete\s+from)\b/i);
+});
