@@ -43,7 +43,8 @@ test("admin-only plan economics uses persisted draft hypotheses and server-owned
  const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
   body:{creditBudgetShareBps:7000,scenarios:[
    scenario,
-   {provider:"runway",model:"seedance2_5",durationSeconds:10,resolution:"1080p",audio:true}
+   {provider:"runway",model:"seedance2_5",durationSeconds:10,resolution:"1080p",audio:true},
+   {provider:"runway",model:"kling_4",durationSeconds:10,resolution:"1080p"}
   ]}});
  assert.equal(result.status,200,JSON.stringify(result.body));
  const economics=result.body.economics;
@@ -53,6 +54,10 @@ test("admin-only plan economics uses persisted draft hypotheses and server-owned
  assert.equal(economics.scenarios[0].customerCreditsPerGeneration,394);
  assert.equal(economics.scenarios[1].providerCostUsd,6.8);
  assert.equal(economics.scenarios[1].customerCreditsPerGeneration,2232);
+ assert.equal(economics.scenarios[2].providerCostUsd,1.88);
+ assert.equal(economics.scenarios[2].customerCreditsPerGeneration,617);
+ assert.equal(economics.scenarios[2].discount,"20% promotion through 2026-11-30 UTC");
+ assert.equal(economics.plans[0].modelCoverage[2].discount,"20% promotion through 2026-11-30 UTC");
  assert.equal(economics.plans[0].modelCoverage[0].maximumWholeGenerations,1);
  assert.equal(economics.plans[0].modelCoverage[1].maximumWholeGenerations,0);
  assert.equal(economics.plans[4].modelCoverage[0].maximumWholeGenerations,0);
