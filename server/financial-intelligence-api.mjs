@@ -1332,7 +1332,10 @@ export function createFinancialIntelligenceApi({
               rateCardVersion:costEvidence.evidence?.rateCardVersion||null,
               limitations:["Only complete jobs with exactly one immutable USD invoice attribution per usage event and one settled customer-credit reservation are included.","At least five verified jobs are required; partial, ambiguous, non-USD and unsettled records are excluded.","The blended cost per platform credit is rounded upward to the next USD cent, intentionally conservative.","This is a measured historical sample, not a guarantee of future provider cost; allowances remain unpublished pending approval."]}});
         }catch(err){
-          return error(400,err.code||"SUBSCRIPTION_ECONOMICS_INPUT_INVALID",err.message||"Subscription allowance scenario could not be calculated from verified invoice evidence.");
+          const code=String(err?.code||"");
+          const status=code.startsWith("SUBSCRIPTION_")?400:503;
+          return error(status,code||"SUBSCRIPTION_COST_EVIDENCE_UNAVAILABLE",
+            err.message||"Verified invoice cost evidence is temporarily unavailable; no allowance has been calculated.");
         }
       }
       if(path==="/api/admin/finance/scenario-baseline"&&method==="GET"){
