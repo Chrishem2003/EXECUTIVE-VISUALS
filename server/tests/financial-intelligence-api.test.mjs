@@ -1838,6 +1838,78 @@ test("billing plans endpoint does not publish a plan with an invalid provider pr
 });
 
 
+test("administrator credit adjustments require billing-admin access and append an idempotent ledger adjustment",async()=>{
+ let rpcCalled=false;
+ const denied=api(async url=>{
+  if(String(url).includes("/platform_admins?"))return json([]);
+  throw new Error("Denied admin request must not reach credit adjustment RPC");
+ });
+ const blocked=await denied.handle({method:"POST",path:"/api/admin/billing/credit-adjustments",ownerId:owner,
+  body:{targetOwnerId:paymentId,deltaCredits:250,reason:"Customer support goodwill",idempotencyKey:"admin-credit-01"}});
+ assert.equal(blocked.status,403);
+
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url),body=options.body?JSON.parse(options.body):null;calls.push({target,body});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/apply_admin_credit_adjustment")){
+   rpcCalled=true;
+   assert.equal(body.p_actor_id,owner);
+   assert.equal(body.p_owner_id,paymentId);
+   assert.equal(body.p_delta_credits,250);
+   assert.equal(body.p_idempotency_key,"admin-credit-01");
+   assert.equal(body.p_reason,"Customer support goodwill");
+   assert.equal(body.p_evidence.source,"admin_console");
+   return json({adjustmentId:refundId,ownerId:paymentId,deltaCredits:250,balanceAfter:750,idempotentReplay:false});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/billing/credit-adjustments",ownerId:owner,
+  body:{targetOwnerId:paymentId,deltaCredits:250,reason:"Customer support goodwill",idempotencyKey:"admin-credit-01"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.adjustment.deltaCredits,250);
+ assert.equal(rpcCalled,true);
+});
+
+test("administrator credit adjustment history is bounded and rejects malformed targets before querying",async()=>{
+ let rpcBody=null;
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/list_admin_credit_adjustments")){
+   rpcBody=JSON.parse(options.body);
+   return json([{id:refundId,delta_credits:100,reason:"Approved support compensation"}]);
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"GET",path:"/api/admin/billing/credit-adjustments",ownerId:owner,query:{ownerId:"not-a-uuid"}});
+ assert.equal(invalid.status,400);
+ assert.equal(rpcBody,null);
+ const result=await service.handle({method:"GET",path:"/api/admin/billing/credit-adjustments",ownerId:owner,query:{ownerId:paymentId,limit:"25"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.adjustments.length,1);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_owner_id,paymentId);
+ assert.equal(rpcBody.p_limit,25);
+});
+
+test("administrator credit adjustment endpoint rejects zero, fractional and oversized debits",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"platform_admin"}]);
+  if(target.endsWith("/rpc/apply_admin_credit_adjustment"))rpcCalled=true;
+  throw new Error("Unexpected request: "+target);
+ });
+ for(const deltaCredits of [0,1.5,1000000001]){
+  const result=await service.handle({method:"POST",path:"/api/admin/billing/credit-adjustments",ownerId:owner,
+   body:{targetOwnerId:paymentId,deltaCredits,reason:"Manual balance correction",idempotencyKey:"admin-credit-invalid"}});
+  assert.equal(result.status,400);
+  assert.equal(result.body.error.code,"ADMIN_CREDIT_ADJUSTMENT_INPUT_INVALID");
+ }
+ assert.equal(rpcCalled,false);
+});
+
 test("provider invoice history is admin-only, bounded and returns a safe import summary",async()=>{
  let invoiceUrl="";
  const imports=[{
