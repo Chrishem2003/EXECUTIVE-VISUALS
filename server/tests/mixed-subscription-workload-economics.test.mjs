@@ -61,6 +61,24 @@ test("rejects non-Batch-72 inputs and excessive workload counts",()=>{
  assert.throws(()=>calculateMixedSubscriptionWorkloadEconomics({planEconomics:economics,workloads:[]}));
 });
 
+test("rejects non-finite or negative provider costs instead of emitting misleading economics",()=>{
+ for(const providerCostUsd of [NaN,Infinity,-0.01]){
+  const invalid={...economics,scenarios:economics.scenarios.map((item,index)=>index===0?{...item,providerCostUsd}:item)};
+  assert.throws(()=>calculateMixedSubscriptionWorkloadEconomics({planEconomics:invalid,workloads:[{name:"Invalid cost",items:[{scenarioIndex:0,quantity:1}]}]}));
+ }
+});
+
+test("rejects malformed draft plan prices and allowances",()=>{
+ for(const plan of [
+  {...economics.plans[0],amountMinor:-1},
+  {...economics.plans[0],amountMinor:Infinity},
+  {...economics.plans[0],proposedMonthlyCreditAllowance:-1}
+ ]){
+  const invalid={...economics,plans:[plan]};
+  assert.throws(()=>calculateMixedSubscriptionWorkloadEconomics({planEconomics:invalid,workloads:[{name:"Plan validation",items:[{scenarioIndex:0,quantity:1}]}]}));
+ }
+});
+
 test("Financial Command Centre exposes editable mixed monthly workload scenarios and renders their results",()=>{
  const app=readFileSync(new URL("../../src/platform/app.ts",import.meta.url),"utf8");
  assert.match(app,/finance-plan-workload-mixes/);
