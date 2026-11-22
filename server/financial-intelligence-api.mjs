@@ -1089,6 +1089,17 @@ export function createFinancialIntelligenceApi({
         });
         return response(200,{usage:result});
       }
+      if(path==="/api/admin/finance/job-cost-coverage"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const periodMonth=String(query.periodMonth||new Date().toISOString().slice(0,7)+"-01");
+        const validMonth=/^\d{4}-\d{2}-01$/.test(periodMonth)&&Number.isFinite(Date.parse(periodMonth+"T00:00:00.000Z"))&&new Date(periodMonth+"T00:00:00.000Z").toISOString().slice(0,10)===periodMonth;
+        if(!validMonth)return error(400,"JOB_COST_COVERAGE_PERIOD_INVALID","Provide the first day of a valid reporting month (YYYY-MM-01).");
+        const limit=query.limit==null?50:Number(query.limit);
+        if(!Number.isSafeInteger(limit)||limit<1||limit>100)
+          return error(400,"JOB_COST_COVERAGE_LIMIT_INVALID","Job cost coverage limit must be an integer between 1 and 100.");
+        const result=await rpc("get_verified_job_cost_coverage",{p_actor_id:ownerId,p_period_month:periodMonth,p_limit:limit});
+        return response(200,{coverage:result});
+      }
       if(path==="/api/admin/finance/ai-invoices"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const limit=query.limit==null?50:Number(query.limit);
