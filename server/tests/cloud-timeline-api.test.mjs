@@ -7,7 +7,7 @@ import { createVideoWorkflowCloudRequest } from "../video-workflow-cloud-contrac
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
 const timelineDoc={width:1280,height:720,frameRate:{numerator:24,denominator:1},tracks:[],markers:[]};
-function setup({canWrite=true,projectId=project,existing=[],assetMediaType="video/mp4",timelineCreditsPerSecond=0,timelineDocument=timelineDoc,reserveResponse={reservation_id:"923e4567-e89b-42d3-a456-426614174000",status:"reserved",credit_units:24},quotaError=null,env={},workflowNodeDispatch=null,workflowNodeDispatchEnabled=()=>false,workflowJobLookup=null,workflowJobCancel=null}={}){
+function setup({canWrite=true,projectOwnerId=owner,projectId=project,existing=[],assetMediaType="video/mp4",timelineCreditsPerSecond=0,timelineDocument=timelineDoc,reserveResponse={reservation_id:"923e4567-e89b-42d3-a456-426614174000",status:"reserved",credit_units:24},quotaError=null,env={},workflowNodeDispatch=null,workflowNodeDispatchEnabled=()=>false,workflowJobLookup=null,workflowJobCancel=null}={}){
  const calls=[],created=[];
  const timeline={id:timelineId,ownerId:owner,projectId,name:"Test timeline",revision:2,timeline:timelineDocument,otio:null};
  const timelines={
@@ -16,10 +16,41 @@ function setup({canWrite=true,projectId=project,existing=[],assetMediaType="vide
   async list(input){calls.push(["timeline-list",input]);return[{...timeline}];},
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
- const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.endsWith("/rpc/reserve_credit_units"))return{ok:true,status:200,async text(){return JSON.stringify(reserveResponse);}};if(url.endsWith("/rpc/release_credit_reservation"))return{ok:true,status:200,async text(){return"true";}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){const posted=JSON.parse(options.body);return JSON.stringify([{...posted,progress:0,created_at:"2026-11-11T00:00:00.000Z",updated_at:"2026-11-11T00:00:00.000Z"}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const route=new URL(url).searchParams,id=route.get("id")?.slice(3),expected=route.get("status")?.slice(3),row=existing.find(item=>item.id===id&&item.status===expected);if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return{id:input.assetId,ownerId:input.ownerId,projectId,name:"clip.mp4",mediaType:assetMediaType};},async getStorageUsage(input){calls.push(["asset-usage",input]);return{globalBytes:4,globalAssetCount:1,ownerBytes:4,ownerAssetCount:1,maxTotalBytes:786432000,maxOwnerBytes:536870912,remainingTotalBytes:786431996,remainingOwnerBytes:536870908};},async createFromFile(input){calls.push(["asset-create-from-file",input]);if(quotaError)throw Object.assign(new Error(quotaError),{code:quotaError});return{id:"asset-uploaded",ownerId:input.ownerId,projectId:input.projectId,name:input.originalName,size:4};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite),timelineCreditsPerSecond,env,workflowNodeDispatch,workflowNodeDispatchEnabled,workflowJobLookup,workflowJobCancel});
+ const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.endsWith("/rpc/configure_project_credit_pool"))return{ok:true,status:200,async text(){return JSON.stringify({projectId,status:"active",monthlySpendLimitCredits:500});}};if(url.endsWith("/rpc/fund_project_credit_pool"))return{ok:true,status:200,async text(){return JSON.stringify([{pool_balance:1000,personal_balance:900,replayed:false}]);}};if(url.endsWith("/rpc/list_project_credit_pool_member_usage"))return{ok:true,status:200,async text(){return JSON.stringify([{member_id:editor,role:"editor",status:"active",monthly_limit_credits:250,used_this_month:50,remaining_this_month:200}]);}};if(url.endsWith("/rpc/configure_project_credit_pool_member_policy"))return{ok:true,status:200,async text(){return JSON.stringify({projectId,memberId:editor,status:"paused",monthlyLimitCredits:100});}};if(url.endsWith("/rpc/reserve_credit_units"))return{ok:true,status:200,async text(){return JSON.stringify(reserveResponse);}};if(url.endsWith("/rpc/release_credit_reservation"))return{ok:true,status:200,async text(){return"true";}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){const posted=JSON.parse(options.body);return JSON.stringify([{...posted,progress:0,created_at:"2026-11-11T00:00:00.000Z",updated_at:"2026-11-11T00:00:00.000Z"}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const route=new URL(url).searchParams,id=route.get("id")?.slice(3),expected=route.get("status")?.slice(3),row=existing.find(item=>item.id===id&&item.status===expected);if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return{id:input.assetId,ownerId:input.ownerId,projectId,name:"clip.mp4",mediaType:assetMediaType};},async getStorageUsage(input){calls.push(["asset-usage",input]);return{globalBytes:4,globalAssetCount:1,ownerBytes:4,ownerAssetCount:1,maxTotalBytes:786432000,maxOwnerBytes:536870912,remainingTotalBytes:786431996,remainingOwnerBytes:536870908};},async createFromFile(input){calls.push(["asset-create-from-file",input]);if(quotaError)throw Object.assign(new Error(quotaError),{code:quotaError});return{id:"asset-uploaded",ownerId:input.ownerId,projectId:input.projectId,name:input.originalName,size:4};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input,ownerId:projectOwnerId};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite),timelineCreditsPerSecond,env,workflowNodeDispatch,workflowNodeDispatchEnabled,workflowJobLookup,workflowJobCancel});
  return{api,calls,created};
 }
+test("project shared credit routes require the feature flag and cloud project owner",async()=>{
+ const disabled=setup();
+ const off=await disabled.api.handle({method:"GET",path:"/api/cloud/projects/"+project+"/credit-pool/members",ownerId:owner});
+ assert.equal(off.status,503);
+ const enabled=setup({env:{PROJECT_CREDIT_POOL_API_ENABLED:"true"},projectOwnerId:editor});
+ const denied=await enabled.api.handle({method:"GET",path:"/api/cloud/projects/"+project+"/credit-pool/members",ownerId:owner});
+ assert.equal(denied.status,403);
+ assert.equal(denied.body.error.code,"PROJECT_CREDIT_POOL_OWNER_REQUIRED");
+});
+
+test("project owner can configure and fund a cloud shared credit pool with idempotent transfer identity",async()=>{
+ const f=setup({env:{PROJECT_CREDIT_POOL_API_ENABLED:"true"}});
+ const configured=await f.api.handle({method:"POST",path:"/api/cloud/projects/"+project+"/credit-pool",ownerId:owner,body:{monthlySpendLimitCredits:500}});
+ assert.equal(configured.status,200);
+ assert.equal(configured.body.result.status,"active");
+ const funded=await f.api.handle({method:"POST",path:"/api/cloud/projects/"+project+"/credit-pool/fund",ownerId:owner,idempotencyKey:"cloud-topup-0001",body:{credits:100}});
+ assert.equal(funded.status,200);
+ assert.equal(funded.body.result[0].pool_balance,1000);
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].endsWith("/rpc/fund_project_credit_pool")),true);
+});
+
+test("project owner can read member usage and pause or cap a specific editor",async()=>{
+ const f=setup({env:{PROJECT_CREDIT_POOL_API_ENABLED:"true"}});
+ const usage=await f.api.handle({method:"GET",path:"/api/cloud/projects/"+project+"/credit-pool/members",ownerId:owner});
+ assert.equal(usage.status,200);
+ assert.equal(usage.body.result[0].remaining_this_month,200);
+ const policy=await f.api.handle({method:"PUT",path:"/api/cloud/projects/"+project+"/credit-pool/members/"+editor+"/policy",ownerId:owner,body:{monthlyLimitCredits:100,status:"paused"}});
+ assert.equal(policy.status,200);
+ assert.equal(policy.body.result.status,"paused");
+});
+
 test("cloud asset usage endpoint returns only the verified owner's quota snapshot",async()=>{
  const f=setup();
  const result=await f.api.handle({method:"GET",path:"/api/cloud/assets/usage",ownerId:owner});
