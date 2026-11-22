@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
 import {createProjectCreditPoolApi} from "../project-credit-pool-api.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000";
@@ -62,4 +63,17 @@ test("database failures retain safe status and machine-readable error codes",asy
 test("service rejects non-HTTPS Supabase origins and missing credentials",()=>{
  assert.throws(()=>createProjectCreditPoolApi({url:"http://example.supabase.co",serviceRoleKey:"secret"}));
  assert.throws(()=>createProjectCreditPoolApi({url:"https://example.supabase.co"}));
+});
+
+test("cloud project routes parse mutation bodies and expose the guarded shared credit controls to the cloud workspace",async()=>{
+ const index=await readFile(new URL("../index.mjs",import.meta.url),"utf8");
+ const cloudApi=await readFile(new URL("../cloud-timeline-api.mjs",import.meta.url),"utf8");
+ const app=await readFile(new URL("../../src/platform/app.ts",import.meta.url),"utf8");
+ assert.match(index,/path\.includes\("\/credit-pool"\).*req\.method==="POST"\|\|req\.method==="PUT"/);
+ assert.match(index,/PROJECT_CREDIT_POOL_API_ENABLED/);
+ assert.match(cloudApi,/\/api\/cloud\/projects\/\(\[0-9a-f-\]\+\)\/credit-pool/);
+ assert.match(cloudApi,/project\.ownerId!==ownerId/);
+ assert.match(app,/project-credit-pool-configure/);
+ assert.match(app,/project-credit-pool-fund/);
+ assert.match(app,/data-project-credit-member-policy/);
 });
