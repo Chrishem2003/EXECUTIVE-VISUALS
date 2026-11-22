@@ -15,7 +15,7 @@ const local={
   request_hash:"a".repeat(64),snapshot_json:JSON.stringify(snapshot),currency:"USD",
   quoted_amount_micros:2000000,budget_ceiling_micros:2500000,status:"approved_pending_submission"
 };
-function fixture({status=local.status,allowed=true,registerError=null,jobs=null,cancelReceipt={cancelled:true,status:"cancelled",balance:900,creditAdjustment:100,replayed:false,reason:"cancelled_before_submission"},jobStatus="queued"}={}){
+function fixture({status=local.status,allowed=true,registerError=null,enqueueError=null,jobs=null,cancelReceipt={cancelled:true,status:"cancelled",balance:900,creditAdjustment:100,replayed:false,reason:"cancelled_before_submission"},jobStatus="queued"}={}){
   const calls=[];
   const row={...local,status};
   const db={prepare(sql){return{
@@ -37,7 +37,7 @@ function fixture({status=local.status,allowed=true,registerError=null,jobs=null,
       currency:input.currency,quotedAmountMicros:input.quotedAmountMicros,
       budgetCeilingMicros:input.budgetCeilingMicros,status:"approved_pending_submission"
     };},
-    async enqueue(id,ownerId){calls.push(["enqueue",id,ownerId]);return receipts;},
+    async enqueue(id,ownerId){calls.push(["enqueue",id,ownerId]);if(enqueueError)throw enqueueError;return receipts;},
     async enqueueWorkflowNode(input){calls.push(["enqueueWorkflowNode",input]);return{
       backend:"neon-postgres",approvalId:input.quoteId,jobId:job,status:"queued",idempotentReplay:false,providerRequestsSubmitted:false
     };}
@@ -85,6 +85,15 @@ test("keeps the local approval pending when Neon registration fails",async()=>{
  assert.equal(result.status,409);assert.equal(f.row.status,"approved_pending_submission");
  assert.equal(result.body.providerRequestsSubmitted,false);
  assert.equal(f.calls.some(x=>x[0]==="run"),false);
+});
+
+test("returns a conflict and preserves the pending approval when the durable credit quote exceeds the approved ceiling",async()=>{
+ const f=fixture({enqueueError:Object.assign(new Error("credit ceiling exceeded"),{code:"VIDEO_CUSTOMER_CREDIT_BUDGET_EXCEEDED"})});
+ const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,409);
+ assert.equal(f.row.status,"approved_pending_submission");
+ assert.equal(result.body.providerRequestsSubmitted,false);
+ assert.equal(f.calls.some(x=>x[0]==="audit"),false);
 });
 
 test("does not consume a local approval unless every approved shot has a durable job receipt",async()=>{
