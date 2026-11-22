@@ -34,7 +34,8 @@ export function resolveCustomerCreditPolicy(env=process.env){
  for(const [field,key] of Object.entries(names)){
   const raw=env?.[key];
   if(raw===undefined||raw===null||String(raw).trim()==="")return Object.freeze({configured:false,missing:[key]});
-  if(field==="pricingVersion")parsed[field]=String(raw).trim();\n  else if(field==="currency")parsed[field]=String(raw).trim().toUpperCase();
+  if(field==="pricingVersion")parsed[field]=String(raw).trim();
+  else if(field==="currency")parsed[field]=String(raw).trim().toUpperCase();
   else if(!/^[0-9]+$/.test(String(raw)))return Object.freeze({configured:false,invalid:[key]});
   else parsed[field]=Number(raw);
  }
