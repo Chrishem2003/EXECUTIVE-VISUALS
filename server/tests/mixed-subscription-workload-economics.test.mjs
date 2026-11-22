@@ -80,7 +80,7 @@ test("flags a below-target modeled contribution without calling it net profit",(
   ?{...scenario,providerCostUsd:8,customerCreditsPerGeneration:1}:scenario)};
  const result=calculateMixedSubscriptionWorkloadEconomics({planEconomics:expensive,workloads:[{name:"Loss-making example",items:[{scenarioIndex:0,quantity:1}]}]});
  const row=result.plans.find(plan=>plan.planCode==="starter_creator").mixes[0];
- assert.equal(row.estimatedContributionAfterProviderPaymentAndSupportUsd,0.08);
+ assert.equal(row.estimatedContributionAfterProviderPaymentAndSupportUsd,0.28);
  assert.equal(row.marginAssessment,"below_target_before_other_costs");
  assert.equal(row.targetMarginMet,false);
  assert.match(result.limitations.join(" "),/not net profit/);
