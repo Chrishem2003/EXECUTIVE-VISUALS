@@ -147,21 +147,6 @@ begin
   perform 1 from billing_credit_accounts where owner_id=p_owner_id and status='active' for update;
   if not found then raise exception 'BILLING_ACCOUNT_NOT_ACTIVE'; end if;
 
-  if p_owner_id<>pool.owner_id then
-   select * into policy from project_credit_pool_member_policies
-    where project_id=job_row.project_id and member_id=p_owner_id for update;
-   if policy.status='paused' then raise exception 'PROJECT_CREDIT_POOL_MEMBER_PAUSED'; end if;
-   if policy.monthly_limit_credits>0 then
-    select coalesce(sum(case when state='settled' then actual_credits else reserved_credits end),0)
-     into member_used_this_month from project_credit_pool_reservations
-     where project_id=job_row.project_id and actor_id=p_owner_id and state<>'released'
-      and created_at>=date_trunc('month',clock_timestamp());
-    if member_used_this_month+p_credits>policy.monthly_limit_credits then
-     raise exception 'PROJECT_CREDIT_POOL_MEMBER_LIMIT_REACHED';
-    end if;
-   end if;
-  end if;
-
   select * into existing from project_credit_pool_reservations where job_id=p_job_id;
   if existing.id is null then
    select * into existing from project_credit_pool_reservations where idempotency_key=p_idempotency_key;
@@ -174,6 +159,21 @@ begin
    end if;
    select coalesce(sum(amount),0) into current_balance from project_credit_pool_ledger where project_id=job_row.project_id;
    return query select existing.id,current_balance,true; return;
+  end if;
+
+    if p_owner_id<>pool.owner_id then
+   select * into policy from project_credit_pool_member_policies
+    where project_id=job_row.project_id and member_id=p_owner_id for update;
+   if policy.status='paused' then raise exception 'PROJECT_CREDIT_POOL_MEMBER_PAUSED'; end if;
+   if policy.monthly_limit_credits>0 then
+    select coalesce(sum(case when state='settled' then actual_credits else reserved_credits end),0)
+     into member_used_this_month from project_credit_pool_reservations
+     where project_id=job_row.project_id and actor_id=p_owner_id and state<>'released'
+      and created_at>=date_trunc('month',clock_timestamp());
+    if member_used_this_month+p_credits>policy.monthly_limit_credits then
+     raise exception 'PROJECT_CREDIT_POOL_MEMBER_LIMIT_REACHED';
+    end if;
+   end if;
   end if;
 
   select coalesce(sum(case when state='settled' then actual_credits else reserved_credits end),0)
