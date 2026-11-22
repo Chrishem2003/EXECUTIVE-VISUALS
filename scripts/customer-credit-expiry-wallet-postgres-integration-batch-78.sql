@@ -31,11 +31,23 @@ begin
   select reservation_id into v_reservation
     from executive_visuals.reserve_generation_credits(v_owner,v_job,25,'batch78-open-reservation');
 
+  -- Make the paid period due while the first generation job is still reserved.
+  update executive_visuals.billing_credit_revenue_sources
+     set expires_at='2026-11-22T00:00:00Z'
+   where id=v_source;
+
   v_result:=executive_visuals.expire_due_subscription_credits(v_owner,'2027-01-01T00:00:00Z');
   if (v_result->>'accountsDeferredForOpenReservations')::bigint<>1
      or (v_result->>'creditsExpired')::bigint<>0 then
     raise exception 'Expiry must defer while a generation reservation remains open';
   end if;
+
+  begin
+    perform * from executive_visuals.reserve_generation_credits(v_owner,v_job_after_expiry,1,'batch78-blocked-during-deferred-expiry');
+    raise exception 'New work must not spend subscription credits awaiting expiry';
+  exception when others then
+    if sqlerrm not like '%BILLING_CREDIT_EXPIRY_DEFERRED_OPEN_RESERVATION%' then raise; end if;
+  end;
 
   perform * from executive_visuals.settle_generation_credit_reservation(
     v_reservation,20,
