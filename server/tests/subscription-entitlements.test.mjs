@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
  resolveSubscriptionEntitlements,evaluateSubscriptionEntitlement,evaluateSubscriptionLimit,
- assertSubscriptionEntitlement,assertSubscriptionLimit
+ assertSubscriptionEntitlement,assertSubscriptionLimit,createSubscriptionEntitlementReader
 } from "../subscription-entitlements.mjs";
 
 const NOW=new Date("2026-11-22T08:00:00.000Z");
@@ -76,4 +76,45 @@ test("assert helpers return validated values and expose stable denial codes",()=
  assert.equal(assertSubscriptionLimit(result,{name:"maxConcurrentJobs",used:0,requested:1}).limit,3);
  assert.throws(()=>assertSubscriptionEntitlement(result,{path:"features.commercialUse"}),{code:"SUBSCRIPTION_ENTITLEMENT_REQUIRED",status:403});
  assert.throws(()=>assertSubscriptionLimit(result,{name:"maxConcurrentJobs",used:3,requested:1}),{code:"SUBSCRIPTION_LIMIT_EXCEEDED",status:403});
+});
+
+
+const ownerId="123e4567-e89b-42d3-a456-426614174000";
+const readerOptions={
+ supabaseUrl:"https://project.supabase.co",serviceRoleKey:"server-role-secret",now:()=>NOW
+};
+const jsonResponse=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json"}});
+
+test("trusted entitlement reader scopes active subscription lookup to the authenticated owner",async()=>{
+ let requestUrl="",requestHeaders;
+ const reader=createSubscriptionEntitlementReader({...readerOptions,fetchImpl:async(url,options)=>{
+  requestUrl=String(url);requestHeaders=options.headers;
+  return jsonResponse([active()]);
+ }});
+ const result=await reader({ownerId});
+ assert.equal(result.active,true);
+ assert.ok(requestUrl.includes("owner_id=eq."+ownerId));
+ assert.ok(requestUrl.includes("status=eq.active"));
+ assert.ok(requestUrl.includes("limit=2"));
+ assert.equal(requestHeaders.apikey,"server-role-secret");
+ assert.equal(requestHeaders["accept-profile"],"executive_visuals");
+ assert.equal(requestUrl.includes("server-role-secret"),false);
+});
+
+test("trusted entitlement reader denies missing and ambiguous active subscriptions",async()=>{
+ const missing=createSubscriptionEntitlementReader({...readerOptions,fetchImpl:async()=>jsonResponse([])});
+ assert.equal((await missing({ownerId})).active,false);
+ const ambiguous=createSubscriptionEntitlementReader({...readerOptions,fetchImpl:async()=>jsonResponse([active(),active()])});
+ await assert.rejects(()=>ambiguous({ownerId}),{code:"SUBSCRIPTION_RECORD_AMBIGUOUS",status:409});
+});
+
+test("trusted entitlement reader fails closed on database errors, invalid payloads and invalid owners",async()=>{
+ const unavailable=createSubscriptionEntitlementReader({...readerOptions,fetchImpl:async()=>jsonResponse({message:"unavailable"},503)});
+ await assert.rejects(()=>unavailable({ownerId}),{code:"SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE",status:503});
+ const malformed=createSubscriptionEntitlementReader({...readerOptions,fetchImpl:async()=>jsonResponse({not:"an array"})});
+ await assert.rejects(()=>malformed({ownerId}),{code:"SUBSCRIPTION_RECORD_AMBIGUOUS",status:409});
+ let calls=0;
+ const invalidOwner=createSubscriptionEntitlementReader({...readerOptions,fetchImpl:async()=>{calls++;return jsonResponse([]);}});
+ await assert.rejects(()=>invalidOwner({ownerId:"not-a-uuid"}),{code:"SUBSCRIPTION_OWNER_INVALID",status:400});
+ assert.equal(calls,0);
 });
