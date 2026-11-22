@@ -46,6 +46,54 @@ test("reports provider cost ratio and explicitly avoids representing contributio
  assert.match(result.limitations.join(" "),/not net profit/);
 });
 
+test("calculates contribution after provider cost, payment fees and support reserve",()=>{
+ const input={...economics,pricingPolicy:{...economics.pricingPolicy,fixedPaymentFeeMicros:125000}};
+ const result=calculateMixedSubscriptionWorkloadEconomics({planEconomics:input,workloads:[{name:"Single Gen 4.5",items:[{scenarioIndex:0,quantity:1}]}]});
+ const row=result.plans.find(plan=>plan.planCode==="starter_creator").mixes[0];
+ assert.equal(row.fitsCreditAllowance,true);
+ assert.equal(row.estimatedProviderCostMinor,120);
+ assert.equal(row.estimatedPaymentFeeMinor,40);
+ assert.equal(row.estimatedSupportReserveMinor,45);
+ assert.equal(row.estimatedContributionAfterProviderPaymentAndSupportUsd,6.95);
+ assert.equal(row.estimatedContributionMarginBps,Math.floor(695*10000/900));
+ assert.equal(row.targetMarginBps,6500);
+ assert.equal(row.marginAssessment,"meets_target_before_other_costs");
+ assert.equal(row.targetMarginMet,true);
+ assert.equal(result.pricingAssumptions.fixedPaymentFeeMicros,125000);
+});
+
+test("does not claim plan margin when workload exceeds included credits or plan is custom-priced",()=>{
+ const result=calculateMixedSubscriptionWorkloadEconomics({planEconomics:economics,workloads:[
+  {name:"Premium-only month",items:[{scenarioIndex:1,quantity:1}]}
+ ]});
+ const starter=result.plans.find(plan=>plan.planCode==="starter_creator").mixes[0];
+ const enterprise=result.plans.find(plan=>plan.planCode==="enterprise").mixes[0];
+ assert.equal(starter.fitsCreditAllowance,false);
+ assert.equal(starter.marginAssessment,"not_applicable_credit_shortfall");
+ assert.equal(starter.targetMarginMet,false);
+ assert.equal(enterprise.marginAssessment,"custom_price_required");
+ assert.equal(enterprise.estimatedContributionAfterProviderPaymentAndSupportUsd,null);
+});
+
+test("flags a below-target modeled contribution without calling it net profit",()=>{
+ const expensive={...economics,scenarios:economics.scenarios.map((scenario,index)=>index===0
+  ?{...scenario,providerCostUsd:8,customerCreditsPerGeneration:1}:scenario)};
+ const result=calculateMixedSubscriptionWorkloadEconomics({planEconomics:expensive,workloads:[{name:"Loss-making example",items:[{scenarioIndex:0,quantity:1}]}]});
+ const row=result.plans.find(plan=>plan.planCode==="starter_creator").mixes[0];
+ assert.equal(row.estimatedContributionAfterProviderPaymentAndSupportUsd,0.08);
+ assert.equal(row.marginAssessment,"below_target_before_other_costs");
+ assert.equal(row.targetMarginMet,false);
+ assert.match(result.limitations.join(" "),/not net profit/);
+});
+
+test("requires bounded shared pricing assumptions before calculating margins",()=>{
+ for(const pricingPolicy of [null,{}, {...economics.pricingPolicy,paymentFeeBps:2001},
+  {...economics.pricingPolicy,targetMarginBps:9500},{...economics.pricingPolicy,fixedPaymentFeeMicros:-1}]){
+  const invalid={...economics,pricingPolicy};
+  assert.throws(()=>calculateMixedSubscriptionWorkloadEconomics({planEconomics:invalid,workloads:[{name:"Validation",items:[{scenarioIndex:0,quantity:1}]}]}));
+ }
+});
+
 test("rejects invalid scenario indexes, zero quantities, empty mixes and unsafe input",()=>{
  for(const workload of [
   {name:"Invalid",items:[{scenarioIndex:99,quantity:1}]},
