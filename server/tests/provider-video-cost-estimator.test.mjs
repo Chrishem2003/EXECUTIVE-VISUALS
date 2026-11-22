@@ -72,7 +72,7 @@ test("fails closed for legacy, stale, future, unsupported and missing rate-card 
 test("requires explicit prices for requested input types and validates quantities",()=>{
  assert.throws(()=>estimateProviderVideoCost({rateCard:card(),request:request({inputImageCount:1})}),
   {code:"PROVIDER_VIDEO_RATE_MISSING"});
- assert.throws(()=>estimateProviderVideoCost({rateCard:card(),request:request({referenceVideoSeconds:2})}),
+ assert.throws(()=>estimateProviderVideoCost({rateCard:card({pricingDimensions:{minimumGenerationMinor:80}}),request:request({referenceVideoSeconds:2})}),
   {code:"PROVIDER_VIDEO_RATE_MISSING"});
  assert.throws(()=>estimateProviderVideoCost({rateCard:card(),request:request({outputSeconds:0})}),
   {code:"PROVIDER_VIDEO_QUANTITY_INVALID"});
