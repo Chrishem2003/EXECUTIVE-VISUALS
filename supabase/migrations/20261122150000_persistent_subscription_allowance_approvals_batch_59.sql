@@ -119,7 +119,11 @@ begin
      ((coalesce((p_proposal->'costEvidence'->>'totalProviderCostMinor')::bigint,0)
        + coalesce((p_proposal->'costEvidence'->>'sampleCredits')::bigint,0)-1)
        / greatest(coalesce((p_proposal->'costEvidence'->>'sampleCredits')::bigint,0),1))
+  or nullif(p_proposal->'costEvidence'->>'source','') is null
+  or nullif(p_proposal->'costEvidence'->>'rateCardVersion','') is null
+  or nullif(p_proposal->'costEvidence'->>'periodStart','') is null
   or nullif(p_proposal->'costEvidence'->>'periodEnd','') is null
+  or (p_proposal->'costEvidence'->>'periodEnd')::timestamptz <= (p_proposal->'costEvidence'->>'periodStart')::timestamptz then
   or (p_proposal->'costEvidence'->>'periodEnd')::timestamptz <= (p_proposal->'costEvidence'->>'periodStart')::timestamptz then
   raise exception using errcode='22023',message='subscription_allowance_invoice_evidence_required';
  end if;
