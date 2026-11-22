@@ -9,7 +9,7 @@ const [migration,api]=await Promise.all([
 ]);
 
 test("project-scoped credit preflight reads the same wallet selected by atomic generation reservation",()=>{
- assert.match(migration,/get_generation_credit_balance_for_project\(\s*p_owner_id uuid,p_project_id uuid\)/i);
+ assert.match(migration,/get_generation_credit_balance_for_project\(\s*p_owner_id uuid,p_project_id uuid\s*\)/i);
  assert.match(migration,/from project_credit_pools where project_id=p_project_id/i);
  assert.match(migration,/from project_credit_pool_ledger where project_id=p_project_id/i);
  assert.match(migration,/from project_credit_pool_reservations[\s\S]*state='reserved'/i);
