@@ -8,7 +8,7 @@ const finance="11111111-1111-4111-8111-111111111111";
 const product="22222222-2222-4222-8222-222222222222";
 const evidence={
  status:"verified_measured",approved:false,source:"immutable posted invoice attribution",
- rateCardVersion:"invoice-attribution-derived-v1",sampleJobs:8,sampleCredits:8000,totalProviderCostMinor:800,evidenceDigest:"a".repeat(64),
+ rateCardVersion:"invoice-attribution-derived-v1",sampleJobs:8,sampleCredits:8000,totalProviderCostMinor:16000,evidenceDigest:"a".repeat(64),
  periodStart:"2026-10-01T00:00:00.000Z",periodEnd:"2026-11-01T00:00:00.000Z"
 };
 const base={
