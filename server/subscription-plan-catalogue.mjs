@@ -27,6 +27,7 @@ function timestamp(value,label,{optional=false}={}){
  return ms;
 }
 function normalizePlan(row,nowMs){
+ const id=text(row.id);
  const code=text(row.plan_code??row.planCode).toLowerCase();
  const name=text(row.name??row.display_name);
  const description=text(row.description);
@@ -34,7 +35,7 @@ function normalizePlan(row,nowMs){
  const status=text(row.status).toLowerCase();
  const interval=text(row.billing_interval??row.billingInterval).toLowerCase();
  const isPublic=row.is_public??row.isPublic;
- if(!PLAN_CODE.test(code)||!name||name.length>100||description.length>1000||!["none","monthly","yearly"].includes(interval)||typeof isPublic!=="boolean"||!["active","inactive","archived"].includes(status))
+ if(!id||id.length>128||!PLAN_CODE.test(code)||!name||name.length>100||description.length>1000||!["none","monthly","yearly"].includes(interval)||typeof isPublic!=="boolean"||!["active","inactive","archived"].includes(status))
   throw fail("SUBSCRIPTION_CATALOGUE_INVALID","Plan identity, visibility, status or billing interval is invalid.");
  const effectiveFrom=timestamp(row.effective_from??row.effectiveFrom,"plan effective_from",{optional:true});
  const effectiveUntil=timestamp(row.effective_until??row.effectiveUntil,"plan effective_until",{optional:true});
