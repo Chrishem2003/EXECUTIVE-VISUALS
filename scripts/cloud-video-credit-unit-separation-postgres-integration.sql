@@ -40,16 +40,19 @@ select * from executive_visuals.approve_and_enqueue_video_workflow(
 );
 
 do $credit_unit_reservation_assertion$
-declare r record; cr executive_visuals.billing_credit_reservations; q executive_visuals.video_workflow_quotes;
+declare r record; cr executive_visuals.billing_credit_reservations; q executive_visuals.video_workflow_quotes; wallet record;
 begin
  select * into r from customer_credit_separation_result;
  select * into q from executive_visuals.video_workflow_quotes
   where id='723e4567-e89b-42d3-a456-426614174001';
  select * into cr from executive_visuals.billing_credit_reservations
   where job_id=r.job_id;
+ select * into wallet from executive_visuals.get_generation_credit_balance('123e4567-e89b-42d3-a456-426614174000');
  if r.job_id is null or r.job_status<>'queued' or cr.id is null
-    or cr.reserved_credits<>4321 or cr.reserved_credits=q.estimated_credits then
-  raise exception 'customer reservation used provider credits instead of the customer quote';
+    or cr.reserved_credits<>4321 or cr.reserved_credits=q.estimated_credits
+    or wallet.reserved_credits<4321
+    or wallet.available_credits<>wallet.ledger_balance-wallet.reserved_credits then
+  raise exception 'customer reservation or wallet balance did not use the customer quote';
  end if;
 end
 $credit_unit_reservation_assertion$;
