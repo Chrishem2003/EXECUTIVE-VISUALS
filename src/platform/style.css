@@ -1553,3 +1553,16 @@ body{
 .review-version-state.changed{color:#f6bd70}
 .review-version-state.unavailable{color:#f39a9a}
 .review-version-state.unbound{color:#a9a2b7}
+
+
+/* Batch 67 — customer credit wallet and prepaid purchase experience */
+.credit-wallet,.credit-topup{border-color:rgba(166,139,255,.25);background:linear-gradient(145deg,rgba(30,25,52,.86),rgba(17,18,31,.92))}
+.credit-wallet h2,.credit-topup h2{font-size:clamp(23px,2.5vw,31px);letter-spacing:-.035em;margin:8px 0}
+.credit-wallet .billing-metrics{margin-bottom:12px}
+.credit-wallet .billing-metrics>div:first-child{border-color:rgba(145,112,230,.55);background:rgba(117,80,211,.13)}
+.credit-topup .billing-plan-grid{margin:18px 0}
+.credit-topup .billing-plan{min-height:190px;border-color:rgba(178,160,236,.22)}
+.credit-topup .billing-plan strong{font-size:clamp(21px,2.2vw,27px)}
+.credit-topup .form-grid{margin-top:18px}
+.credit-topup .form-grid button[type=submit]{min-height:46px}
+@media(max-width:760px){.credit-wallet .billing-metrics{grid-template-columns:1fr}.credit-topup .billing-plan-grid{grid-template-columns:1fr}}
