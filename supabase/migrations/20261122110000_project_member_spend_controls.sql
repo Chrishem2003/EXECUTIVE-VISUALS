@@ -48,9 +48,9 @@ begin
  if not exists(select 1 from projects where id=p_project_id and owner_id=p_owner_id) then
   raise exception 'PROJECT_CREDIT_POOL_OWNER_REQUIRED' using errcode='42501';
  end if;
- if not exists(select 1 from project_credit_pools where project_id=p_project_id and owner_id=p_owner_id and status='active') then
-  raise exception 'PROJECT_CREDIT_POOL_NOT_ACTIVE';
- end if;
+ perform 1 from project_credit_pools
+  where project_id=p_project_id and owner_id=p_owner_id and status='active' for update;
+ if not found then raise exception 'PROJECT_CREDIT_POOL_NOT_ACTIVE'; end if;
  if p_member_id=p_owner_id or not exists(
   select 1 from project_members where project_id=p_project_id and member_id=p_member_id and role='editor'
  ) then
