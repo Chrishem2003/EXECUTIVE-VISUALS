@@ -129,6 +129,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109230000_cloud_customer_credit_reservations.sql
       - name: Apply financial intelligence foundation
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110120000_financial_intelligence_foundation.sql
+      - name: Apply Flutterwave UGX credit-pack checkout foundation
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110150000_flutterwave_ugx_checkout.sql
       - name: Apply atomic payment refund migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110130000_financial_refund_atomicity.sql
       - name: Apply payment recovery and grace-period migration
