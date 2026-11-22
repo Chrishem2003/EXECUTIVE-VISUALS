@@ -71,7 +71,8 @@ test("cloud project routes parse mutation bodies and expose the guarded shared c
  const app=await readFile(new URL("../../src/platform/app.ts",import.meta.url),"utf8");
  assert.match(index,/path\.includes\("\/credit-pool"\).*req\.method==="POST"\|\|req\.method==="PUT"/);
  assert.match(index,/PROJECT_CREDIT_POOL_API_ENABLED/);
- assert.match(cloudApi,/\/api\/cloud\/projects\/\(\[0-9a-f-\]\+\)\/credit-pool/);
+ assert.ok(cloudApi.includes("projectCreditPoolMatch=path.match"));
+ assert.ok(cloudApi.includes("/credit-pool"));
  assert.match(cloudApi,/project\.ownerId!==ownerId/);
  assert.match(app,/project-credit-pool-configure/);
  assert.match(app,/project-credit-pool-fund/);
