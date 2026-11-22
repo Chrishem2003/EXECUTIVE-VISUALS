@@ -393,7 +393,6 @@ begin
       count(*) filter(where currency is not null)::integer currency_count,
       case when count(*) filter(where currency is not null)=1
         and sum(incomplete_count)=0
-        and count(*) filter(where currency is null)=0
         then max(currency) end revenue_currency,
       case when count(*) filter(where currency is not null)=1
         and sum(incomplete_count)=0
