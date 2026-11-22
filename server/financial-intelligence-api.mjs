@@ -1299,10 +1299,10 @@ export function createFinancialIntelligenceApi({
           const usageEvents=rawEvents.slice(0,1000);
           const usageIds=usageEvents.map(row=>String(row.id||"")).filter(id=>UUID.test(id));
           const jobIds=[...new Set(usageEvents.map(row=>String(row.job_id||"")).filter(id=>UUID.test(id)))];
-          const [attributionResult,reservationResult]=await Promise.all([
+          const [attributionResult,reservationResult]=sampleComplete?await Promise.all([
             usageIds.length?dbRequest("financial_cost_attribution_links?select=usage_event_id,amount_minor,currency,invoice_import_id,invoice_line_id&usage_event_id=in.("+usageIds.join(",")+")"):Promise.resolve({data:[]}),
             jobIds.length?dbRequest("billing_credit_reservations?select=job_id,actual_credits,state&job_id=in.("+jobIds.join(",")+")"):Promise.resolve({data:[]})
-          ]);
+          ]):[{data:[]},{data:[]}];
           const costEvidence=deriveInvoiceBackedCreditCostEvidence({
             periodMonth,usageEvents,invoiceAttributions:Array.isArray(attributionResult.data)?attributionResult.data:[],
             creditReservations:Array.isArray(reservationResult.data)?reservationResult.data:[],sampleComplete
