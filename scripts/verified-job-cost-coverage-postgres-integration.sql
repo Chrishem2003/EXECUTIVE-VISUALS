@@ -60,7 +60,7 @@ begin
     id,provider,invoice_reference,currency,period_start,period_end,total_minor,
     imported_line_count,matched_line_count,reconciliation_status,source_fingerprint,imported_by
   ) values
-    (v_import_usd,'runway','BATCH70-USD-'||v_import_usd::text,'USD','2026-11-01','2026-11-30',680,1,0,'pending',repeat('c',64),v_actor),
+    (v_import_usd,'runway','BATCH70-USD-'||v_import_usd::text,'USD','2026-11-01','2026-11-30',680,1,1,'matched',repeat('c',64),v_actor),
     (v_import_ugx,'runway','BATCH70-UGX-'||v_import_ugx::text,'UGX','2026-11-01','2026-11-30',4000,1,0,'pending',repeat('d',64),v_actor),
     (v_import_cost_only,'runway','BATCH70-COST-'||v_import_cost_only::text,'USD','2026-11-01','2026-11-30',250,1,0,'pending',repeat('e',64),v_actor),
     (v_import_unmatched,'runway','BATCH70-UNMATCHED-'||v_import_unmatched::text,'USD','2026-11-01','2026-11-30',300,1,0,'pending',repeat('f',64),v_actor);
