@@ -151,11 +151,11 @@ test("proposal creation re-derives invoice evidence server-side and stores its e
 
 test("proposal creation rejects browser-supplied provider cost evidence",async()=>{
  let calls=0;
- const service=api(async()=>{calls++;throw new Error("Untrusted evidence must not reach the database.");});
+ const service=api(async(url)=>{calls++;if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);throw new Error("Untrusted evidence must not reach any other database query.");});
  const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-proposals",
   ownerId:financeActor,idempotencyKey:"batch59-create-002",
   body:{planCode:"starter_creator",providerCostPerCustomerCreditMinor:1,costEvidence:{status:"verified_measured"}}});
  assert.equal(result.status,400);
  assert.equal(result.body.error.code,"SUBSCRIPTION_ALLOWANCE_PROPOSAL_INPUT_INVALID");
- assert.equal(calls,0);
+ assert.equal(calls,1);
 });
