@@ -892,7 +892,10 @@ export function createFinancialIntelligenceApi({
       }
       if(path==="/api/admin/finance/subscription-plan-economics"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
-        if(!body||typeof body!=="object"||Array.isArray(body)||!Array.isArray(body.scenarios)||body.scenarios.length<1||body.scenarios.length>20)
+        const allowedRequestFields=new Set(["creditBudgetShareBps","scenarios","workloads","periodMonth"]);
+        if(!body||typeof body!=="object"||Array.isArray(body)||Object.keys(body).some(key=>!allowedRequestFields.has(key)))
+          return error(400,"SUBSCRIPTION_ECONOMICS_INPUT_INVALID","Only provider workload scenarios, a credit-budget share, optional workload mixes and a reporting month are accepted. Actual cost evidence is derived from server-side invoice reconciliation.");
+        if(!Array.isArray(body.scenarios)||body.scenarios.length<1||body.scenarios.length>20)
           return error(400,"SUBSCRIPTION_ECONOMICS_SCENARIOS_INVALID","Provide between one and twenty provider cost scenarios.");
         if(!Number.isSafeInteger(body.creditBudgetShareBps)||body.creditBudgetShareBps<1000||body.creditBudgetShareBps>10000)
           return error(400,"SUBSCRIPTION_ECONOMICS_BUDGET_SHARE_INVALID","Provide an explicit credit-budget share between 1000 and 10000 basis points.");
