@@ -437,16 +437,25 @@ test("customer invoice history is owner-scoped and never exposes private object 
 
 
 test("subscription plan catalogue exposes only active public plans",async()=>{
-  let requestUrl="";
+  const requestUrls=[];
   const service=api(async url=>{
-    requestUrl=String(url);
-    return json([{plan_code:"free",status:"active",is_public:true,billing_interval:"none",amount_minor:0,currency:"UGX",included_credits:0}]);
+    const target=String(url);requestUrls.push(target);
+    if(target.includes("/rest/v1/subscription_plans?"))return json([{
+      id:"plan-free-v1",plan_code:"free",name:"Free Creator",description:"Explore the workspace.",
+      status:"active",is_public:true,billing_interval:"none",amount_minor:0,currency:"UGX",
+      included_credits:0,entitlements:{features:{videoGeneration:false}},version:1
+    }]);
+    if(target.includes("/rest/v1/subscription_plan_provider_prices?"))return json([]);
+    throw new Error("Unexpected request: "+target);
   });
   const result=await service.handle({method:"GET",path:"/api/billing/plans",ownerId:owner});
   assert.equal(result.status,200);
   assert.equal(result.body.plans.length,1);
-  assert.ok(requestUrl.includes("status=eq.active"));
-  assert.ok(requestUrl.includes("is_public=eq.true"));
+  assert.equal(result.body.plans[0].planCode,"free");
+  assert.deepEqual(result.body.plans[0].checkoutProviders,[]);
+  assert.equal(result.body.checkoutEnabled,false);
+  assert.ok(requestUrls.some(url=>url.includes("status=eq.active")));
+  assert.ok(requestUrls.some(url=>url.includes("is_public=eq.true")));
 });
 
 test("customer subscription endpoint is scoped to the authenticated owner",async()=>{
@@ -1761,5 +1770,5 @@ test("billing plans endpoint does not publish a plan with an invalid provider pr
   throw new Error("Unexpected request: "+target);
  });
  const result=await service.handle({method:"GET",path:"/api/billing/plans",ownerId:owner});
- assert.equal(result.status,500);
+ assert.equal(result.status,502);
 });
