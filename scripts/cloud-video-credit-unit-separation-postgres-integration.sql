@@ -20,7 +20,7 @@ begin
     or q.estimated_amount<>0.10 or q.currency<>'USD' then
   raise exception 'provider and customer credit units were not persisted independently';
  end if;
-end
+end;
 $credit_unit_quote_assertion$;
 
 create temporary table customer_credit_separation_result as
@@ -54,7 +54,7 @@ begin
     or wallet.available_credits<>wallet.ledger_balance-wallet.reserved_credits then
   raise exception 'customer reservation or wallet balance did not use the customer quote';
  end if;
-end
+end;
 $credit_unit_reservation_assertion$;
 
 create temporary table customer_credit_separation_replay as
@@ -83,7 +83,7 @@ begin
         where job_id=first_row.job_id)<>1 then
   raise exception 'customer credit reservation was not idempotent';
  end if;
-end
+end;
 $credit_unit_replay_assertion$;
 
 select executive_visuals.record_video_workflow_quote(
@@ -118,7 +118,7 @@ begin
   if sqlerrm='legacy provider-only quote unexpectedly approved' then raise; end if;
   if sqlerrm<>'VIDEO_WORKFLOW_CUSTOMER_CREDIT_PRICING_REQUIRED' then raise; end if;
  end;
-end
+end;
 $legacy_quote_fail_closed$;
 
 reset role;
