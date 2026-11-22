@@ -19,7 +19,7 @@ declare
   settled_credits bigint:=0;
   reserved_credits bigint:=0;
   used_credits bigint:=0;
-  usage_percent integer;
+  usage_percent bigint;
   alerts jsonb:='[]'::jsonb;
 begin
   if p_owner_id is null then
@@ -75,7 +75,7 @@ begin
 
   used_credits:=settled_credits+reserved_credits;
   if allowance_published then
-    usage_percent:=floor((used_credits::numeric*100)/allowance)::integer;
+    usage_percent:=floor((used_credits::numeric*100)/allowance)::bigint;
     select coalesce(jsonb_agg(
       jsonb_build_object(
         'threshold',threshold,
