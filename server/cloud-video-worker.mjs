@@ -100,7 +100,7 @@ export async function runCloudVideoWorkerCycle({
     const persistedOutput = {
       provider: output.provider, model: output.model, providerTaskId: output.providerTaskId,
       assetIds: output.assetIds, usage: output.usage || null,
-      actualAmount: output.actualAmount, actualCredits: output.actualCredits, currency: output.currency,
+      actualAmount: output.actualAmount, actualCredits: output.actualCredits, providerCredits: output.providerCredits, currency: output.currency,
       costEvidenceReference: output.costEvidenceReference,
       customerCreditSettlement: output.customerCreditSettlement || null
     };
@@ -166,6 +166,7 @@ export function createCloudVideoWorker({
   ingestOutputs,
   resolveActualCost,
   customerCredits,
+  quoteCustomerCredits,
   authorizeSubscription,
   requireSubscription = false,
   deferSeconds = 30
@@ -183,7 +184,7 @@ export function createCloudVideoWorker({
         queue, enqueue, workerId, leaseSeconds, heartbeatIntervalMs, deferSeconds, onEvent,
         execute: ({ job, workerId: activeWorker, signal, assertLease }) => executeCloudVideoGenerationJob({
           job, workerId: activeWorker, ledger, adapter, resolveAdapter, ingestOutputs, resolveActualCost,
-          customerCredits, authorizeSubscription, requireSubscription, signal, assertLease
+          customerCredits, quoteCustomerCredits, authorizeSubscription, requireSubscription, signal, assertLease
         })
       });
     },
