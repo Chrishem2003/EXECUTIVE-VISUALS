@@ -1375,6 +1375,8 @@ export function createAppServer() {
               result.pricing={...result.pricing,quote:{...result.pricing.quote,customerCreditQuote:{
                 unit:"customer_credits",totalCredits,perShot:perShotCredits,pricingBasis:"server-side cost, margin and fee policy"
               }}};
+              result.status="customer_credit_settlement_pending";result.readyForApproval=false;
+              result.reason="Provider cost and customer credit estimates are available, but the direct storyboard shot queue is held until atomic customer-credit reservation and authoritative provider-usage settlement are implemented. Use the customer-credit-gated workflow route for paid cloud generation.";
             }catch{
               result.status="pricing_unverified";result.readyForApproval=false;
               result.pricing={...result.pricing,customerCreditQuote:{status:"unavailable"}};
