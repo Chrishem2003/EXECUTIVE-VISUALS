@@ -86,6 +86,8 @@ test("cloud project routes parse mutation bodies and expose the guarded shared c
  assert.match(app,/project-credit-pool-fund/);
  assert.match(app,/data-project-credit-member-policy/);
  assert.match(app,/project-member-add/);
+ assert.match(app,/Account team seats/);
+ assert.match(app,/limits\.teamSeats/);
  assert.match(app,/data-project-member-remove/);
  assert.match(cloudApi,/projectMembersMatch/);
 });
