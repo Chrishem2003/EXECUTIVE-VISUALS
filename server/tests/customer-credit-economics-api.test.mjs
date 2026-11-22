@@ -106,8 +106,8 @@ test("model recommendations require trusted quality evidence and never auto-rout
  const response=await post("/api/video-model-recommendations",{
   provider:"runway",model:"kling_4",durationSeconds:10,resolution:"1080p",audioMode:"none",referenceImageCount:0
  },cookie);
- assert.equal(response.status,200,await response.text());
  const body=await response.json();
+ assert.equal(response.status,200,JSON.stringify(body));
  assert.equal(body.evidenceConfigured,true);
  assert.equal(body.automaticRouting,false);
  assert.equal(body.recommendation.automaticRouting,false);
