@@ -159,7 +159,7 @@ begin
   exception when sqlstate '23514' then null;
   end;
 
-  -- A repeated settlement must not double-allocate revenue.
+  -- A settlement replay must not double-allocate revenue.
   perform * from executive_visuals.settle_generation_credit_reservation(
     v_paid_reservation,40,
     '{"provider":"runway","evidenceType":"provider_invoice","evidenceId":"batch71-paid-job-invoice"}'
