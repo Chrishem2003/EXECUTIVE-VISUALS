@@ -60,6 +60,14 @@ test("verified job cost coverage calls the read-only report with authenticated a
   assert.equal(calls[1].body.p_limit,25);
 });
 
+test("financial command centre renders invoice-backed job cost coverage and revenue gate",async()=>{
+  const app=await readFile(new URL("../../src/platform/app.ts",import.meta.url),"utf8");
+  assert.match(app,/\/api\/admin\/finance\/job-cost-coverage/);
+  assert.match(app,/Verified job cost & credit coverage/);
+  assert.match(app,/Profitability: blocked pending revenue evidence/);
+  assert.match(app,/Recognized revenue and gross margin are deliberately not inferred from credits/);
+});
+
 test("coverage migration requires invoice-backed matches and never converts credits into revenue",async()=>{
   const sql=await readFile(new URL("../../supabase/migrations/20261122170000_verified_job_cost_coverage_batch_70.sql",import.meta.url),"utf8");
   assert.match(sql,/ai_provider_invoice_reconciliation_events/);
