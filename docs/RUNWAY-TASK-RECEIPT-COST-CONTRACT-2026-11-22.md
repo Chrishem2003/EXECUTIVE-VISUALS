@@ -27,7 +27,7 @@ Primary sources checked on 2026-11-22:
 
 ## Composition and remaining gates
 
-- The default task-receipt resolver is used for supported non-Veo Runway models.
+- The default task-receipt resolver is used for supported non-Veo Runway models.\n- The shared executor applies the same customer-credit conversion policy to verified USD costs from Runway, Fal and Luma; a missing policy quarantines the job rather than settling provider credits as customer credits.
 - The existing linked Enterprise workspace usage readiness gate remains in place for Veo registration; its legacy usage lookup is not used as the settlement amount when the task receipt is present.
 - Runway remote generation still requires the existing explicit environment opt-ins, provider key, subscription/approval controls, durable submission ledger, private output ingestion, media validation and customer-credit reservation.
 - No remote Runway task was submitted during this change.
