@@ -13,6 +13,8 @@ export function calculateMixedSubscriptionWorkloadEconomics({planEconomics,workl
  if(!planEconomics||planEconomics.calculationType!=="subscription_plan_credit_scenario_not_activation"||
     !Array.isArray(planEconomics.plans)||!Array.isArray(planEconomics.scenarios))
   fail("SUBSCRIPTION_WORKLOAD_ECONOMICS_INPUT_INVALID","A valid read-only subscription-plan economics result is required.");
+ if(planEconomics.plans.length<1||planEconomics.plans.length>20||planEconomics.scenarios.length<1||planEconomics.scenarios.length>20)
+  fail("SUBSCRIPTION_WORKLOAD_ECONOMICS_INPUT_INVALID","The plan and provider scenario collections must be bounded and non-empty.");
  if(!Array.isArray(workloads)||workloads.length<1||workloads.length>20)
   fail("SUBSCRIPTION_WORKLOAD_MIX_INVALID","Provide between one and twenty named monthly workload mixes.");
  const scenarios=planEconomics.scenarios;
@@ -30,13 +32,21 @@ export function calculateMixedSubscriptionWorkloadEconomics({planEconomics,workl
    if(merged.get(scenarioIndex)>10000)fail("SUBSCRIPTION_WORKLOAD_MIX_INVALID","Combined monthly quantity exceeds the supported limit.");
   }
   const lines=[...merged.entries()].map(([scenarioIndex,quantity])=>{
-   const scenario=scenarios[scenarioIndex],providerCostUsd=Number(scenario.providerCostUsd);
+   const scenario=scenarios[scenarioIndex];
+   if(!scenario||typeof scenario!=="object"||Array.isArray(scenario))
+    fail("SUBSCRIPTION_WORKLOAD_MIX_INVALID","The selected provider scenario is unavailable.");
+   const providerCostUsd=Number(scenario.providerCostUsd);
+   if(!Number.isFinite(providerCostUsd)||providerCostUsd<0||providerCostUsd>10_000_000)
+    fail("SUBSCRIPTION_WORKLOAD_MIX_INVALID","Scenario provider cost must be a finite, non-negative USD amount.");
    const creditsPerGeneration=integer(scenario.customerCreditsPerGeneration,"scenario customer credits",{min:1,max:100000000});
    const creditsRequired=quantity*creditsPerGeneration;
    if(!Number.isSafeInteger(creditsRequired))fail("SUBSCRIPTION_WORKLOAD_MIX_INVALID","Monthly credit requirement exceeds safe bounds.");
+   const providerSpendUsd=Number((quantity*providerCostUsd).toFixed(6));
+   if(!Number.isFinite(providerSpendUsd)||providerSpendUsd>10_000_000)
+    fail("SUBSCRIPTION_WORKLOAD_MIX_INVALID","Monthly line provider spend exceeds safe bounds.");
    return Object.freeze({scenarioIndex,provider:scenario.provider,model:scenario.model,operation:scenario.operation,
     durationSeconds:scenario.durationSeconds,resolution:scenario.resolution,quantity,
-    providerCostPerGenerationUsd:providerCostUsd,providerSpendUsd:Number((quantity*providerCostUsd).toFixed(6)),
+    providerCostPerGenerationUsd:providerCostUsd,providerSpendUsd,
     customerCreditsPerGeneration:creditsPerGeneration,creditsRequired});
   });
   const totalCredits=lines.reduce((sum,line)=>sum+line.creditsRequired,0);
@@ -48,7 +58,9 @@ export function calculateMixedSubscriptionWorkloadEconomics({planEconomics,workl
   return Object.freeze({name,lines:Object.freeze(lines),totalCredits,providerSpendUsd});
  });
  const plans=planEconomics.plans.map(plan=>{
-  const priceUsd=Number(plan.amountMinor)/100;
+  if(!plan||typeof plan!=="object"||Array.isArray(plan))fail("SUBSCRIPTION_WORKLOAD_ECONOMICS_INPUT_INVALID","Each draft plan must be an object.");
+  const amountMinor=integer(plan.amountMinor,"draft plan price in minor units",{min:0,max:Number.MAX_SAFE_INTEGER});
+  const priceUsd=amountMinor/100;
   const monthlyCreditAllowance=integer(plan.proposedMonthlyCreditAllowance,"hypothetical monthly credit allowance",{min:0,max:100000000});
   const mixes=normalized.map(workload=>{
    const creditShortfall=Math.max(0,workload.totalCredits-monthlyCreditAllowance);
