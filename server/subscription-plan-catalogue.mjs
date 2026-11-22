@@ -94,16 +94,18 @@ export function buildPublicSubscriptionCatalogue({plans,providerPrices,now=()=>n
  return Object.freeze(normalizedPlans.filter(plan=>plan.eligible).map(plan=>{
   const prices=normalizedPrices.filter(price=>plan.billingInterval!=="none"&&price.planId===plan.id&&price.active)
    .map(price=>Object.freeze({provider:price.provider,currency:price.currency,amountMinor:price.amountMinor}));
+  const includedCredits=plan.creditAllowancePublished?plan.includedCredits:null;
+  const checkoutProviders=Object.freeze(prices.map(price=>price.provider));
   return Object.freeze({
+   // Canonical API fields.
    planCode:plan.planCode,name:plan.name,description:plan.description,version:plan.version,
-   billingInterval:plan.billingInterval,
-   amount_minor:plan.baseAmountMinor,
-   currency:plan.baseCurrency||null,
-   includedCredits:plan.creditAllowancePublished?plan.includedCredits:null,
+   billingInterval:plan.billingInterval,includedCredits,
    creditAllowancePublished:plan.creditAllowancePublished,
-   entitlements:plan.entitlements,
-   prices:Object.freeze(prices),
-   checkoutProviders:Object.freeze(prices.map(price=>price.provider))
+   // Compatibility aliases used by the existing Billing workspace and older clients.
+   plan_code:plan.planCode,plan_version:plan.version,billing_interval:plan.billingInterval,
+   included_credits:includedCredits,credit_allowance_published:plan.creditAllowancePublished,
+   amount_minor:plan.baseAmountMinor,currency:plan.baseCurrency||null,
+   entitlements:plan.entitlements,prices:Object.freeze(prices),checkoutProviders
   });
  }));
 }
