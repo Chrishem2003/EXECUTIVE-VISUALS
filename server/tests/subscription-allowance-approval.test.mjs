@@ -8,7 +8,7 @@ const finance="11111111-1111-4111-8111-111111111111";
 const product="22222222-2222-4222-8222-222222222222";
 const evidence={
  status:"verified_measured",approved:false,source:"immutable posted invoice attribution",
- rateCardVersion:"invoice-attribution-derived-v1",sampleJobs:8,
+ rateCardVersion:"invoice-attribution-derived-v1",sampleJobs:8,sampleCredits:8000,totalProviderCostMinor:800,evidenceDigest:"a".repeat(64),
  periodStart:"2026-10-01T00:00:00.000Z",periodEnd:"2026-11-01T00:00:00.000Z"
 };
 const base={
@@ -36,6 +36,8 @@ test("creates a deterministic, exact-plan approval packet without publishing or 
 test("requires at least five verified invoice-backed jobs and rejects browser-like unverified evidence",()=>{
  for(const costEvidence of [
   {...evidence,sampleJobs:4},
+  {...evidence,evidenceDigest:"invalid"},
+  {...evidence,sampleCredits:0},
   {...evidence,status:"forecast"},
   {...evidence,approved:true},
   {...evidence,source:""},
