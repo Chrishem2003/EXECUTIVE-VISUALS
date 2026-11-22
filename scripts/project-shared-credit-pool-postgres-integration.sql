@@ -95,8 +95,8 @@ begin
  if pool_balance<>920 or personal_balance<>(select balance-1000 from project_pool_personal_before) or state<>'settled' or actual<>80 then
   raise exception 'Verified provider settlement did not reconcile the shared project wallet';
  end if;
- if not exists(select 1 from executive_visuals.billing_credit_reservations
-  where job_id='e23e4567-e89b-42d3-a456-426614174001' and state='settled' and actual_credits=80) then
+ if not exists(select 1 from executive_visuals.billing_credit_reservations cr
+  where cr.job_id='e23e4567-e89b-42d3-a456-426614174001' and cr.state='settled' and cr.actual_credits=80) then
   raise exception 'Compatibility reservation mirror did not settle';
  end if;
 end
