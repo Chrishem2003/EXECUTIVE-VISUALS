@@ -41,7 +41,8 @@ begin
   invoice_cost_currency as (
     select u.job_id,u.owner_id,e.currency,
       sum(e.expected_amount_minor)::numeric as amount_minor,
-      count(*)::integer as line_count
+      count(*)::integer as line_count,
+      count(*) filter(where e.expected_amount_minor<0)::integer as negative_line_count
     from ai_provider_invoice_reconciliation_events e
     join matched_imports mi on mi.id=e.invoice_import_id
     join ai_usage_cost_events u on u.id=e.usage_event_id
@@ -57,8 +58,9 @@ begin
       ) order by currency) as cost_by_currency,
       count(*)::integer as currency_count,
       case when count(*)=1 then max(currency) else null end as currency,
-      case when count(*)=1 then max(amount_minor)::bigint else null end as actual_provider_cost_minor,
-      sum(line_count)::integer as matched_invoice_line_count
+      case when count(*)=1 and sum(negative_line_count)=0 then max(amount_minor)::bigint else null end as actual_provider_cost_minor,
+      sum(line_count)::integer as matched_invoice_line_count,
+      sum(negative_line_count)::integer as negative_invoice_line_count
     from invoice_cost_currency
     group by job_id,owner_id
   ),
@@ -81,11 +83,13 @@ begin
     select j.job_id,j.owner_id,c.currency,c.currency_count,c.cost_by_currency,
       c.actual_provider_cost_minor,
       coalesce(c.matched_invoice_line_count,0) as matched_invoice_line_count,
+      coalesce(c.negative_invoice_line_count,0) as negative_invoice_line_count,
       coalesce(u.credits_debited,0) as credits_debited,
       coalesce(u.settled_reservation_count,0) as settled_reservation_count,
       case
         when c.job_id is null then 'missing_invoice_backed_actual_cost'
         when u.job_id is null then 'missing_settled_credit_usage'
+        when c.negative_invoice_line_count>0 then 'negative_invoice_adjustment_review'
         when c.currency_count>1 then 'mixed_currency_cost_review'
         else 'cost_and_credit_evidence_available'
       end as evidence_status,
