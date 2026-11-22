@@ -438,6 +438,25 @@ test("customer credit activity history is owner-scoped, bounded and omits privat
  assert.equal(Object.hasOwn(result.body.entries[0],"idempotency_key"),false);
 });
 
+test("customer credit activity history returns a bounded next page and continuation flag",async()=>{
+ let requestUrl="";
+ const ledger=Array.from({length:21},(_,index)=>({
+  id:"00000000-0000-4000-8000-"+String(index+1).padStart(12,"0"),
+  amount:index%2===0?100:-25,event_type:index%2===0?"grant":"generation_settlement",
+  reference_id:null,description:"Credit activity "+(index+1),
+  created_at:new Date(Date.UTC(2026,10,22,12,0,index)).toISOString()
+ }));
+ const service=api(async url=>{requestUrl=String(url);return json(ledger);});
+ const result=await service.handle({method:"GET",path:"/api/billing/credits/history",ownerId:owner,query:{limit:"20",offset:"20"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.entries.length,20);
+ assert.equal(result.body.hasMore,true);
+ assert.equal(result.body.limit,20);
+ assert.equal(result.body.offset,20);
+ assert.ok(requestUrl.includes("limit=21"));
+ assert.ok(requestUrl.includes("offset=20"));
+});
+
 test("customer credit activity history rejects invalid pagination before database access",async()=>{
  const service=api(async()=>{throw new Error("Invalid pagination must not query the ledger.");});
  for(const query of [{limit:"0"},{limit:"101"},{offset:"-1"},{offset:"100001"},{limit:"1.5"}]){
