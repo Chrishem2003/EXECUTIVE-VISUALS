@@ -72,8 +72,8 @@ test("single-generation estimate returns provider cost and margin-protected cust
  const response=await post("/api/video-cost-estimate",{
   provider:"runway",model:"kling_4",durationSeconds:10,resolution:"1080p",audioMode:"none",referenceImageCount:0
  },cookie);
- assert.equal(response.status,200,await response.text());
  const body=await response.json();
+ assert.equal(response.status,200,JSON.stringify(body));
  assert.equal(body.available,true);
  assert.equal(body.amount,2.35);
  assert.equal(body.customerCreditQuote.available,true);
@@ -91,8 +91,8 @@ test("multi-shot production quote aggregates provider costs and returns a single
   {id:"opening",provider:"runway",model:"kling_4",durationSeconds:5,resolution:"1080p",audioMode:"none",referenceImageCount:0},
   {id:"close",provider:"runway",model:"kling_4",durationSeconds:5,resolution:"1080p",audioMode:"none",referenceImageCount:0}
  ]},cookie);
- assert.equal(response.status,200,await response.text());
  const body=await response.json();
+ assert.equal(response.status,200,JSON.stringify(body));
  assert.equal(body.available,true);
  assert.equal(body.amount,2.35);
  assert.equal(body.shotCount,2);
