@@ -215,6 +215,19 @@ begin
      or (expected_credits=0 and grant_count<>0) then
     raise exception 'Pesapal initial subscription credit grant does not match the verified plan allowance';
   end if;
+  replay:=executive_visuals.finalize_subscription_purchase_for_provider(
+    pesapal_payment_id,'pesapal-initial-transaction',
+    jsonb_build_object('status','succeeded','amount_minor',25000,'currency','UGX','reference',pesapal_reference),
+    now()
+  );
+  if replay->>'idempotentReplay'<>'true' then raise exception 'Pesapal initial purchase replay was not idempotent'; end if;
+  select count(*),coalesce(sum(credit_delta),0) into grant_count,granted_credits
+    from executive_visuals.credit_ledger where owner_id=pesapal_owner
+      and idempotency_key='subscription-purchase:'||pesapal_payment_id::text;
+  if grant_count<>(case when expected_credits>0 then 1 else 0 end)
+     or granted_credits<>expected_credits then
+    raise exception 'Pesapal initial purchase replay duplicated or changed its customer credit grant';
+  end if;
 
   result:=executive_visuals.reserve_pesapal_subscription_renewal(
     pesapal_owner,pesapal_subscription_id,'pesapal-renewal-key-0001',
