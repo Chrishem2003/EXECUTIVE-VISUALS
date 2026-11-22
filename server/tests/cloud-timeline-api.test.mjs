@@ -389,7 +389,7 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async(url,options)=>{
-   if(url.endsWith("/rpc/record_video_workflow_quote")){
+   if(url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){
     const args=JSON.parse(options.body);persisted.push(args);
     return{ok:true,status:200,async text(){return JSON.stringify(args.p_quote_id);}};
    }
@@ -495,7 +495,7 @@ test("cloud workflow video quote fails closed when durable persistence is unavai
  let providerCalls=0;
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
-  fetchImpl:async(url)=>url.endsWith("/rpc/record_video_workflow_quote")
+  fetchImpl:async(url)=>url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")
    ?{ok:false,status:503,async text(){return JSON.stringify({message:"database unavailable"});}}
    :{ok:true,status:200,async text(){return"[]";}},
   timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},authorize:async()=>true,
@@ -686,7 +686,7 @@ test("paid workflow quotes require the complete provider-aware worker launch con
       serviceRoleKey: "test-service-role-key",
       env,
       fetchImpl: async (url, options) => {
-        if (url.endsWith("/rpc/record_video_workflow_quote")) {
+        if (url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")) {
           const args = JSON.parse(options.body);
           return { ok: true, status: 200, async text() { return JSON.stringify(args.p_quote_id); } };
         }
@@ -851,7 +851,7 @@ test("Luma source-video edit and reframe quotes use private metadata and operati
    return{ownerId,projectId,assetId,mediaType:"video/mp4",durationSeconds:metadataByOperation[activeOperation]};
   }},
   fetchImpl:async(url,options)=>{
-   if(url.endsWith("/rpc/record_video_workflow_quote")){
+   if(url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){
     const args=JSON.parse(options.body);writes.push(args);
     return{ok:true,status:200,async text(){return JSON.stringify(args.p_quote_id);}};
    }
@@ -919,7 +919,7 @@ test("Luma multi-keyframe quotes revalidate every private anchor in the exact pr
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
   fetchImpl:async(url,options)=>{
-   if(url.endsWith("/rpc/record_video_workflow_quote"))return{ok:true,status:200,async text(){return JSON.stringify(JSON.parse(options.body).p_quote_id);}};
+   if(url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits"))return{ok:true,status:200,async text(){return JSON.stringify(JSON.parse(options.body).p_quote_id);}};
    return{ok:true,status:200,async text(){return"[]";}};
   },
   timelineService:{
@@ -945,7 +945,7 @@ test("Luma quote stays blocked until schema and private frame scope are ready",a
  const makeApi=(env,assetProject=project)=>createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env,
   fetchImpl:async(url,options)=>{
-   if(url.endsWith("/rpc/record_video_workflow_quote")){writes++;return{ok:true,status:200,async text(){return JSON.stringify(lumaQuote);}};}
+   if(url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){writes++;return{ok:true,status:200,async text(){return JSON.stringify(lumaQuote);}};}
    return{ok:true,status:200,async text(){return"[]";}};
   },
   timelineService:{
@@ -994,7 +994,7 @@ test("direct Seedance workflow quote uses the official list-price estimator and 
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async(url,options)=>{
-   if(url.endsWith("/rpc/record_video_workflow_quote")){
+   if(url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){
     persisted=JSON.parse(options.body);
     return{ok:true,status:200,async text(){return JSON.stringify(persisted.p_quote_id);}};
    }
@@ -1034,7 +1034,7 @@ test("Seedance draft enhancement quote verifies the original succeeded project j
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async(url,options)=>{
    if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
-   if(String(url).endsWith("/rpc/record_video_workflow_quote")){
+   if(String(url).endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){
     quoteArgs=JSON.parse(options.body);
     return{ok:true,status:200,async text(){return JSON.stringify(quoteArgs.p_quote_id);}};
    }
@@ -1073,7 +1073,7 @@ test("Seedance video-to-video draft enhancement quote includes the verified inpu
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",runwaySourceResolver:sourceResolver,
   fetchImpl:async(url,options)=>{
    if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
-   if(String(url).endsWith("/rpc/record_video_workflow_quote")){
+   if(String(url).endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){
     quoteArgs=JSON.parse(options.body);
     return{ok:true,status:200,async text(){return JSON.stringify(quoteArgs.p_quote_id);}};
    }
@@ -1344,7 +1344,7 @@ test("cloud workflow quote fails closed when customer-credit pricing is not conf
  const api=createCloudTimelineApi({
   quoteCustomerCredits:null,
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
-  fetchImpl:async(url)=>{if(String(url).includes("/rpc/record_video_workflow_quote"))writes++;return{ok:true,status:200,async text(){return"[]";}};},
+  fetchImpl:async(url)=>{if(String(url).includes("/rpc/record_video_workflow_quote_with_customer_credits"))writes++;return{ok:true,status:200,async text(){return"[]";}};},
   timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
   authorize:async()=>true,
   runwayRouterAdapter:{async prepareInput(input){return input;},async preflight(){preflights++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}}
