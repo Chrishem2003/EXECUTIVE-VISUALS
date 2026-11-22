@@ -23,7 +23,7 @@ Runway Dev's Kling 4.0 API pricing guide, checked November 22, 2026, lists:
 - 4K output: USD 0.549 per second.
 - 4K HDR surcharge: USD 0.078 per output second.
 
-A 10-second 1080p HDR scenario therefore forecasts USD 2.82 in direct provider cost (USD 2.35 output + USD 0.47 HDR), before any input-video billing, taxes, retries, infrastructure or support allocation.
+The rate-card estimator stores rates in integer currency minor units. To avoid undercharging when a provider publishes fractional-cent per-second rates, each rate is rounded upward independently: USD 0.235 becomes USD 0.24 per second and USD 0.047 becomes USD 0.05 per second. A 10-second 1080p HDR scenario therefore conservatively forecasts USD 2.90 (USD 2.40 output + USD 0.50 HDR), rather than understating the exact USD 2.82 arithmetic. This conservative rounding is before input-video billing, taxes, retries, infrastructure or support allocation.
 
 Source: https://dev.runwayml.com/learn/kling-4-0-api
 
