@@ -214,6 +214,7 @@ test("Seedance 2.5 Flash is catalogued with the documented lower-cost profile wh
  assert.deepEqual(model.constraints.inputVideoCreditsPerSecondByResolution,{"480p":7,"720p":10});
  assert.equal(model.constraints.minimumCredits,52);
  assert.equal(model.constraints.videoToVideoReservesSourceVideoSlot,true);
+ assert.deepEqual(model.constraints.outputFormats,["mp4"]);
  assert.equal(listSelectableVideoProviderModels().length,0);
 });
 test("Veo 3.1 and Fast catalogue enforce duration, resolution, audio and tier-specific pricing boundaries", () => {
