@@ -16,13 +16,13 @@ test("proposed creator tiers are seeded as private draft hypotheses with no incl
     assert.match(migration, new RegExp("'" + name + "'"));
     assert.match(migration, new RegExp("'draft'\\s*,\\s*'monthly'\\s*,\\s*" + amount + "\\s*,\\s*'USD'\\s*,\\s*0"));
   }
-  assert.match(migration, /"catalog_state"\\s*:\\s*"pricing_hypothesis"/);
-  assert.match(migration, /"credits_pending_cost_validation"\\s*:\\s*true/);
+  assert.match(migration, /"catalog_state"\s*:\s*"pricing_hypothesis"/);
+  assert.match(migration, /"credits_pending_cost_validation"\s*:\s*true/);
 });
 
 test("pricing hypotheses cannot be publicly purchased or silently overwrite existing plans", () => {
   assert.match(migration, /false,1/);
   assert.match(migration, /on conflict.*plan_code.*do nothing/i);
   assert.doesNotMatch(migration, /subscription_plan_provider_prices/i);
-  assert.doesNotMatch(migration, /included_credits[^\\n]*[1-9]/i);
+  assert.doesNotMatch(migration, /included_credits[^\n]*[1-9]/i);
 });
