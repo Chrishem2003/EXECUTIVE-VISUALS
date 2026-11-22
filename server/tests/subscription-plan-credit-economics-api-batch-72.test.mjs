@@ -72,8 +72,8 @@ test("plan economics uses an exact governed provider rate-card version for Seeda
   provider:"runway",model:"seedance-2.5",currency:"USD",video_second_minor:68,
   rate_card_version:"2026-11-23.1",billing_unit:"video_second",
   verification_status:"source_linked",source_url:"https://dev.runway.com/pricing",
-  source_checked_at:"2026-11-23T00:00:00Z",source_fingerprint:"a".repeat(64),
-  effective_from:"2026-11-22T00:00:00Z",effective_to:null,
+  source_checked_at:"2026-11-22T00:00:00Z",source_fingerprint:"a".repeat(64),
+  effective_from:"2026-11-21T00:00:00Z",effective_to:null,
   pricing_dimensions:{videoSecondMinor_1080p:68,minimumGenerationMinor:80}
  };
  const service=api(async(url,options={})=>{
