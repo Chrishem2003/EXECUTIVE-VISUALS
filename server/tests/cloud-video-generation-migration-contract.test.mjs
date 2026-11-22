@@ -290,7 +290,9 @@ test("project member spend policy migration and PostgreSQL integration are seque
  const memberMigration=memberPolicyCi.indexOf("20261122110000_project_member_spend_controls.sql");
  const memberIntegration=memberPolicyCi.indexOf("scripts/project-member-spend-controls-postgres-integration.sql");
  assert.ok(poolMigration>=0&&poolIntegration>poolMigration&&memberMigration>poolIntegration&&memberIntegration>memberMigration);
- assert.doesNotMatch(projectMemberPolicySql,/\b(drop\s+table|truncate\s+table|delete\s+from)\b/i);
+ assert.doesNotMatch(projectMemberPolicySql,/\b(drop\s+table|truncate\s+table)\b/i);
+ assert.match(projectMemberPolicySql,/\bdelete\s+from\s+project_members\b/i);
+ assert.doesNotMatch(projectMemberPolicySql,/\bdelete\s+from\s+(?!project_members\b)\w+/i);
 });
 
 test("cloud project membership administration is owner-scoped and retains removed-member spend history",()=>{
