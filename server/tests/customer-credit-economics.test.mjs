@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {compareCommercialProductionCandidates,evaluateProductionEntitlement,quoteCustomerCredits,resolveCustomerCreditPolicy} from "../customer-credit-economics.mjs";
+import {compareCommercialProductionCandidates,evaluateProductionEntitlement,parseVideoModelQualityEvidence,quoteCustomerCredits,resolveCustomerCreditPolicy} from "../customer-credit-economics.mjs";
 
 const policy={currency:"USD",creditValueMinor:1,minorUnitsPerMajor:100,targetMarginBps:6000,paymentFeeBps:300,retryReserveBps:500,infrastructureReserveBps:300,fixedPaymentFeeMinor:30,pricingVersion:"test-v1"};
 const providerQuote={available:true,estimated:true,currency:"USD",amount:2.35,pricing:{sourceUrl:"https://provider.example/pricing"}};
@@ -48,11 +48,24 @@ test("subscription entitlement checks are server-snapshot based and fail closed"
  assert.equal(evaluateProductionEntitlement({subscription,request:{durationSeconds:5,resolution:"4k"}}).code,"PLAN_RESOLUTION_LIMIT");
 });
 
+test("trusted quality evidence parser rejects client-shaped, duplicate, unverified and under-sampled records",()=>{
+ const evidence=parseVideoModelQualityEvidence(JSON.stringify([
+  {provider:"runway",model:"model-a",verified:true,sampleCount:40,qualityScore:0.95,p95LatencyMs:400,evaluationVersion:"eval-1"},
+  {provider:"runway",model:"model-a",verified:true,sampleCount:40,qualityScore:0.95,p95LatencyMs:400,evaluationVersion:"eval-1"},
+  {provider:"runway",model:"model-b",verified:false,sampleCount:100,qualityScore:0.99,p95LatencyMs:100,evaluationVersion:"eval-2"},
+  {provider:"runway",model:"model-c",verified:true,sampleCount:4,qualityScore:0.99,p95LatencyMs:100,evaluationVersion:"eval-3"}
+ ]));
+ assert.equal(evidence.configured,true);
+ assert.equal(evidence.records.length,1);
+ assert.equal(evidence.rejectedCount,3);
+ assert.equal(parseVideoModelQualityEvidence("not-json").configured,false);
+});
+
 test("candidate recommendation requires measured quality evidence and never auto-routes",()=>{
  const result=compareCommercialProductionCandidates({candidates:[
-  {id:"cheap-unproven",provider:"p",model:"a",creditQuote:{available:true,customerCredits:30},qualityEvidence:{verified:true,sampleCount:3,qualityScore:0.99,evaluationVersion:"e1"}},
-  {id:"qualified",provider:"p",model:"b",creditQuote:{available:true,customerCredits:50},qualityEvidence:{verified:true,sampleCount:50,qualityScore:0.95,evaluationVersion:"e2"}},
-  {id:"best-quality-costlier",provider:"p",model:"c",creditQuote:{available:true,customerCredits:60},qualityEvidence:{verified:true,sampleCount:60,qualityScore:0.98,evaluationVersion:"e3"}}
+  {id:"cheap-unproven",provider:"p",model:"a",creditQuote:{available:true,customerCredits:30},qualityEvidence:{verified:true,sampleCount:3,qualityScore:0.99,p95LatencyMs:100,evaluationVersion:"e1"}},
+  {id:"qualified",provider:"p",model:"b",creditQuote:{available:true,customerCredits:50},qualityEvidence:{verified:true,sampleCount:50,qualityScore:0.95,p95LatencyMs:350,evaluationVersion:"e2"}},
+  {id:"best-quality-costlier",provider:"p",model:"c",creditQuote:{available:true,customerCredits:60},qualityEvidence:{verified:true,sampleCount:60,qualityScore:0.98,p95LatencyMs:200,evaluationVersion:"e3"}}
  ]});
  assert.equal(result.mode,"recommendation_only");
  assert.equal(result.automaticRouting,false);
