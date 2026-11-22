@@ -1,6 +1,6 @@
 function parseInteger(value, name, { min, max }) {
   const text = String(value ?? "").trim();
-  if (!/^\\d+$/.test(text)) throw new Error(name + " must be explicitly configured as a positive integer.");
+  if (!text || !Array.from(text).every(char => char >= "0" && char <= "9")) throw new Error(name + " must be explicitly configured as a positive integer.");
   const number = Number(text);
   if (!Number.isSafeInteger(number) || number < min || number > max) {
     throw new Error(name + " must be between " + min + " and " + max + ".");
