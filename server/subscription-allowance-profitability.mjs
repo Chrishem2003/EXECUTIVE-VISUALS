@@ -28,7 +28,7 @@ function validateEvidence(evidence,costPerCreditMinor){
     typeof evidence.source!=="string"||evidence.source.trim().length<3||
     typeof evidence.rateCardVersion!=="string"||evidence.rateCardVersion.trim().length<1||
     !Number.isSafeInteger(evidence.sampleJobs)||evidence.sampleJobs<1)
-  fail("SUBSCRIPTION_ECONOMICS_EVIDENCE_INVALID","Credit allowances require server-verified measured provider-cost evidence; finance/product approval is a separate release gate, a source, rate-card version and sample size.");
+  fail("SUBSCRIPTION_ECONOMICS_EVIDENCE_INVALID","Credit allowances require server-verified measured provider-cost evidence; finance/product approval is a separate release gate, a source, a calculation-method version and a sample size.");
  const start=date(evidence.periodStart,"evidence periodStart");
  const end=date(evidence.periodEnd,"evidence periodEnd");
  if(end<=start)fail("SUBSCRIPTION_ECONOMICS_EVIDENCE_INVALID","Evidence periodEnd must follow periodStart.");
