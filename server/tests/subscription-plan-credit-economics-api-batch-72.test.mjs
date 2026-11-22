@@ -303,12 +303,12 @@ test("subscription economics does not write or activate private draft plan hypot
 
 test("plan economics includes the exact governed Kling 4.0 HDR surcharge in the customer-cost forecast",async()=>{
  const rateCard={
-  provider:"runway",model:"kling-4.0",currency:"USD",video_second_minor:235,
+  provider:"runway",model:"kling-4.0",currency:"USD",video_second_minor:24,
   rate_card_version:"2026-11-23.kling4-hdr",billing_unit:"mixed",
   verification_status:"source_linked",source_url:"https://dev.runwayml.com/learn/kling-4-0-api",
   source_checked_at:"2026-11-22T00:00:00Z",source_fingerprint:"b".repeat(64),
   effective_from:"2026-11-22T00:00:00Z",effective_to:null,
-  pricing_dimensions:{hdrSurchargeSecondMinor_1080p:47}
+  pricing_dimensions:{hdrSurchargeSecondMinor_1080p:5}
  };
  const calls=[];
  const service=api(async(url,options={})=>{
@@ -326,7 +326,7 @@ test("plan economics includes the exact governed Kling 4.0 HDR surcharge in the 
   }]}});
  assert.equal(result.status,200,JSON.stringify(result.body));
  const row=result.body.economics.scenarios[0];
- assert.equal(row.providerCostUsd,2.82);
+ assert.equal(row.providerCostUsd,2.9);
  assert.equal(row.rateCardVersion,"2026-11-23.kling4-hdr");
  const lookup=calls.find(call=>call.target.includes("/ai_model_price_catalog?"));
  assert.ok(lookup.target.includes("rate_card_version=eq.2026-11-23.kling4-hdr"));
