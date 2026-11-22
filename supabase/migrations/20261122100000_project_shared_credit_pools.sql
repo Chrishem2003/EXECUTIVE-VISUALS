@@ -158,6 +158,7 @@ begin
     or p_idempotency_key is null or char_length(p_idempotency_key) not between 1 and 200 then
   raise exception 'BILLING_CREDIT_RESERVATION_ARGUMENTS_INVALID';
  end if;
+ perform assert_video_generation_entitlement(p_owner_id);
  select * into job_row from jobs where id=p_job_id and owner_id=p_owner_id and job_type='video.generate';
  if job_row.id is null then raise exception 'BILLING_JOB_OWNER_MISMATCH'; end if;
  if job_row.project_id is not null then
@@ -191,9 +192,17 @@ begin
   insert into project_credit_pool_ledger(project_id,owner_id,actor_id,amount,event_type,reference_id,idempotency_key,description)
   values(job_row.project_id,p_owner_id,p_owner_id,-p_credits,'generation_reserve',p_job_id,
    'project-credit-reserve:'||md5(p_idempotency_key),'Project shared credit reservation');
+  -- Compatibility mirror keeps existing workflow replay/cancellation readers intact.
+  insert into billing_credit_reservations(id,owner_id,job_id,idempotency_key,reserved_credits)
+  values(new_id,p_owner_id,p_job_id,p_idempotency_key,p_credits);
   return query select new_id,current_balance-p_credits,false; return;
  end if;
 
+ return query select r.reservation_id,r.balance,r.replayed
+  from reserve_generation_credits_without_entitlement(p_owner_id,p_job_id,p_credits,p_idempotency_key) r;
+ return;
+
+ /* Personal-wallet fallback is delegated to the original entitlement-gated implementation. */
  insert into billing_credit_accounts(owner_id) values(p_owner_id) on conflict(owner_id) do nothing;
  select a.status into account_status from billing_credit_accounts a where a.owner_id=p_owner_id for update;
  if account_status is distinct from 'active' then raise exception 'BILLING_ACCOUNT_NOT_ACTIVE'; end if;
@@ -252,6 +261,8 @@ begin
    'Provider-verified project generation credit settlement',p_evidence);
  end if;
  update project_credit_pool_reservations set actual_credits=p_actual_credits,state='settled',evidence=p_evidence,settled_at=clock_timestamp()
+ where id=reservation.id;
+ update billing_credit_reservations set actual_credits=p_actual_credits,state='settled',evidence=p_evidence,settled_at=clock_timestamp()
  where id=reservation.id;
  select coalesce(sum(amount),0) into current_balance from project_credit_pool_ledger where project_id=reservation.project_id;
  return query select current_balance,delta,false;
@@ -315,6 +326,7 @@ begin
    pool_reservation.reserved_credits,'generation_refund',pool_reservation.job_id,
    'project-credit-release:'||pool_reservation.id::text,left(p_reason,500));
   update project_credit_pool_reservations set state='released',settled_at=clock_timestamp() where id=pool_reservation.id;
+  update billing_credit_reservations set state='released',settled_at=clock_timestamp() where id=pool_reservation.id;
   select coalesce(sum(amount),0) into current_balance from project_credit_pool_ledger where project_id=pool_reservation.project_id;
   return query select current_balance,false; return;
  end if;
