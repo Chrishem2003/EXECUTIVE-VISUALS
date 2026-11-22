@@ -1256,12 +1256,13 @@ export function createAppServer() {
         if(candidates.length<2){
           send(res,200,{recommendation:{mode:"recommendation_only",automaticRouting:false,recommended:null,candidates:[],reason:"At least two current provider rate cards are required for a model comparison."},evidenceConfigured:evidence.configured},cors);return;
         }
-        const parseThreshold=(raw,fallback,min,max)=>{const value=raw==null||String(raw).trim()===""?fallback:Number(raw);return Number.isFinite(value)&&value>=min&&value<=max?value:fallback;};
+        const parseNumberThreshold=(raw,fallback,min,max)=>{const value=raw==null||String(raw).trim()===""?fallback:Number(raw);return Number.isFinite(value)&&value>=min&&value<=max?value:fallback;};
+        const parseIntegerThreshold=(raw,fallback,min,max)=>{const value=raw==null||String(raw).trim()===""?fallback:Number(raw);return Number.isSafeInteger(value)&&value>=min&&value<=max?value:fallback;};
         const recommendation=compareCommercialProductionCandidates({
           candidates,
-          minQualityScore:parseThreshold(process.env.VIDEO_MODEL_MIN_QUALITY_SCORE,0.9,0,1),
-          minSamples:parseThreshold(process.env.VIDEO_MODEL_MIN_EVALUATION_SAMPLES,25,25,100000),
-          maxLatencyMs:parseThreshold(process.env.VIDEO_MODEL_MAX_P95_LATENCY_MS,30000,1,86400000)
+          minQualityScore:parseNumberThreshold(process.env.VIDEO_MODEL_MIN_QUALITY_SCORE,0.9,0,1),
+          minSamples:parseIntegerThreshold(process.env.VIDEO_MODEL_MIN_EVALUATION_SAMPLES,25,25,100000),
+          maxLatencyMs:parseIntegerThreshold(process.env.VIDEO_MODEL_MAX_P95_LATENCY_MS,30000,1,86400000)
         });
         send(res,200,{recommendation,evidenceConfigured:evidence.configured,rejectedEvidenceRecords:evidence.rejectedCount,automaticRouting:false},cors);return;
       }
