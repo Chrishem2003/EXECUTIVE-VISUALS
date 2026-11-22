@@ -23,6 +23,7 @@ export async function executeCloudVideoGenerationJob({
   ingestOutputs,
   resolveActualCost,
   customerCredits,
+  quoteCustomerCredits,
   authorizeSubscription,
   requireSubscription = false,
   signal,
@@ -246,15 +247,29 @@ export async function executeCloudVideoGenerationJob({
     if (!customerCredits || typeof customerCredits.settleJob !== "function") {
       throw fail("Workflow generation completed without a customer-credit settlement service.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNAVAILABLE");
     }
-    if (!Number.isSafeInteger(cost.actualCredits) || cost.actualCredits < 0 || cost.actualCredits > 1000000000) {
-      throw fail("Provider cost evidence did not include an authoritative integer customer-credit amount.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
+    if (typeof quoteCustomerCredits !== "function") {
+      throw fail("Verified provider cost cannot be settled without the shared customer-credit pricing policy.", "VIDEO_CUSTOMER_CREDIT_POLICY_UNCONFIGURED");
+    }
+    const amountMicros = Math.round(cost.amount * 1000000);
+    if (!Number.isSafeInteger(amountMicros) || amountMicros < 1 ||
+        Math.abs(cost.amount * 1000000 - amountMicros) > 0.0001) {
+      throw fail("Verified provider cost cannot be normalized to integer USD micro-units.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
+    }
+    let actualCustomerCredits;
+    try {
+      actualCustomerCredits = quoteCustomerCredits({ currency: cost.currency, amountMicros });
+    } catch {
+      throw fail("Verified provider cost could not be converted using the shared customer-credit pricing policy.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
+    }
+    if (!Number.isSafeInteger(actualCustomerCredits) || actualCustomerCredits < 1 || actualCustomerCredits > 100000000) {
+      throw fail("Calculated customer-credit settlement amount is outside approved bounds.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
     }
     try {
       customerCreditSettlement = await customerCredits.settleJob({
         jobId: job.id,
         ownerId: job.owner_id,
         provider: input.provider,
-        actualCredits: cost.actualCredits,
+        actualCredits: actualCustomerCredits,
         evidence: {
           provider: input.provider,
           evidenceType: "provider_task_receipt",
@@ -291,7 +306,7 @@ export async function executeCloudVideoGenerationJob({
     assetIds: Object.freeze([...ingested.assetIds]),
     usage: ingested.usage || null,
     actualAmount: cost.amount,
-    actualCredits: Number.isSafeInteger(cost.actualCredits) ? cost.actualCredits : null,
+    actualCredits: input.workflowQuoteId ? actualCustomerCredits : null,\n    providerCredits: Number.isSafeInteger(cost.providerCredits) ? cost.providerCredits : null,
     currency: cost.currency,
     costEvidenceReference: cost.evidenceReference,
     customerCreditSettlement
