@@ -1293,16 +1293,16 @@ export function createFinancialIntelligenceApi({
           if(!/^\d{4}-\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
              new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
             return error(400,"SUBSCRIPTION_COST_EVIDENCE_PERIOD_INVALID","Choose a valid reporting month.");
-          const candidateResult=await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month&job_id=not.is.null&period_month=eq."+encodeURIComponent(periodMonth)+"&order=occurred_at.asc,id.asc&limit=1001");
+          const candidateResult=await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month&job_id=not.is.null&period_month=eq."+encodeURIComponent(periodMonth)+"&order=occurred_at.asc,id.asc&limit=1000");
           const candidates=Array.isArray(candidateResult.data)?candidateResult.data:[];
-          let sampleComplete=candidates.length<=1000;
+          let sampleComplete=candidates.length<1000;
           const candidateJobIds=[...new Set(candidates.map(row=>String(row.job_id||"")).filter(id=>UUID.test(id)))];
           const allUsageResult=sampleComplete&&candidateJobIds.length
-            ?await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month&job_id=in.("+candidateJobIds.join(",")+")&order=occurred_at.asc,id.asc&limit=5001")
+            ?await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month&job_id=in.("+candidateJobIds.join(",")+")&order=occurred_at.asc,id.asc&limit=1000")
             :{data:[]};
           const allRawEvents=Array.isArray(allUsageResult.data)?allUsageResult.data:[];
-          sampleComplete=sampleComplete&&allRawEvents.length<=5000;
-          const usageEvents=allRawEvents.slice(0,5000);
+          sampleComplete=sampleComplete&&allRawEvents.length<1000;
+          const usageEvents=allRawEvents.slice(0,1000);
           const usageIds=usageEvents.map(row=>String(row.id||"")).filter(id=>UUID.test(id));
           const jobIds=[...new Set(usageEvents.map(row=>String(row.job_id||"")).filter(id=>UUID.test(id)))];
           const [attributionResult,reservationResult]=sampleComplete?await Promise.all([
