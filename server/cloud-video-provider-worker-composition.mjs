@@ -230,7 +230,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
             : null))
         : null;
       if (veoOnly && typeof runwayBillingReadiness !== "function") {
-        throw new Error("Veo cloud registration requires the linked Enterprise workspace usage readiness gate.");
+        throw new Error("Veo cloud registration requires the linked Enterprise workspace usage gate for task-receipt settlement readiness.");
       }
       if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative", "ruby", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(model)) &&
           typeof prepareInput !== "function") {
