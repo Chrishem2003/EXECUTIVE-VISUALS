@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { preflightVideoProduction } from "../video-shot-preflight.mjs";
 import { getProviderCatalog } from "../provider-registry.mjs";
 
@@ -237,4 +238,17 @@ test("Runway Model Router preflight supports first-frame and private source-vide
  const invalidSource=preflightVideoProduction({shots:[{...sourceShot,sourceVideoAssetId:"not-a-uuid"}],providerCatalog:catalog,pricingCatalog:routerPricing,now});
  assert.equal(invalidSource.status,"blocked");
  assert.equal(invalidSource.shots[0].checks.find(check=>check.id==="source_video").status,"failed");
+});
+
+
+test("customer-facing storyboard preflight renders per-shot provider cost and customer credits safely",async()=>{
+ const app=await readFile(new URL("../../src/platform/app.ts",import.meta.url),"utf8");
+ assert.match(app,/customer-credit-quote-breakdown/);
+ assert.match(app,/providerTotal\.textContent=/);
+ assert.match(app,/totalStrong\.textContent=/);
+ assert.match(app,/creditRows\.find\(item=>item\?\.shotId===shot\?\.shotId\)/);
+ assert.match(app,/item\.textContent=label/);
+ assert.match(app,/panel\.replaceChildren\(\)/);
+ assert.match(app,/Customer-credit pricing is unavailable\. No fallback price has been assumed/);
+ assert.match(app,/no customer credits were reserved or deducted/i);
 });

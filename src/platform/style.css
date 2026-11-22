@@ -1553,3 +1553,9 @@ body{
 .review-version-state.changed{color:#f6bd70}
 .review-version-state.unavailable{color:#f39a9a}
 .review-version-state.unbound{color:#a9a2b7}
+
+
+/* Pre-generation customer credit quote breakdown */
+.customer-credit-quote-breakdown{display:grid;gap:7px;margin:8px 0 12px;padding-left:20px;color:var(--text,#eeeaf5);font-size:12px}
+.customer-credit-quote-breakdown li{padding:7px 9px;border:1px solid var(--line,#383247);border-radius:8px;background:var(--soft,#171421);overflow-wrap:anywhere}
+.customer-credit-quote-breakdown+p,.customer-credit-quote-breakdown~p{font-size:11px;color:var(--muted,#a8a1b7)}
