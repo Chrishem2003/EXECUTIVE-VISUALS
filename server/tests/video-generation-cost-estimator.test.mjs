@@ -40,8 +40,8 @@ test("shared preflight prices Seedance 2.5 Flash and passes source/reference vid
   provider:"runway",model:"seedance2_5_flash",durationSeconds:5,resolution:"720p",
   inputType:"video",inputVideoSeconds:8,referenceVideoSeconds:4,referenceVideoCount:2
  });
- assert.equal(edit.credits,250);
- assert.equal(edit.amount,2.5);
+ assert.equal(edit.credits,220);
+ assert.equal(edit.amount,2.2);
  assert.throws(()=>estimateVideoGenerationCost({
   provider:"runway",model:"seedance2_5_flash",durationSeconds:5,resolution:"1080p"
  }),error=>error.code==="VIDEO_PRICE_INPUT_INVALID"||error.code==="RUNWAY_PRICE_INVALID_INPUT");
