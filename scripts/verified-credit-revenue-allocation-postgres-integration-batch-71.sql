@@ -84,14 +84,14 @@ begin
   select reservation_id into v_paid_reservation
     from executive_visuals.reserve_generation_credits(v_owner,v_job_paid,50,'batch71-reserve-paid');
   select reservation_id into v_pending_reservation
-    from executive_visuals.reserve_generation_credits(v_owner,v_job_pending,100,'batch71-reserve-pending');
+    from executive_visuals.reserve_generation_credits(v_owner,v_job_pending,120,'batch71-reserve-pending');
 
   perform * from executive_visuals.settle_generation_credit_reservation(
     v_paid_reservation,40,
     '{"provider":"runway","evidenceType":"provider_invoice","evidenceId":"batch71-paid-job-invoice"}'
   );
   perform * from executive_visuals.settle_generation_credit_reservation(
-    v_pending_reservation,100,
+    v_pending_reservation,120,
     '{"provider":"runway","evidenceType":"provider_invoice","evidenceId":"batch71-pending-job-invoice"}'
   );
 
@@ -110,8 +110,14 @@ begin
   if not exists(
     select 1 from executive_visuals.billing_credit_revenue_allocation_runs
     where reservation_id=v_pending_reservation and status='pending_subscription_split'
-      and actual_credits=100 and allocated_credits=100 and pending_split_credits=20
+      and actual_credits=120 and allocated_credits=120 and pending_split_credits=50
   ) then raise exception 'Mixed paid/promo/subscription credits were not conservatively flagged'; end if;
+
+  if not exists(
+    select 1 from executive_visuals.billing_credit_revenue_allocations
+    where reservation_id=v_pending_reservation and allocation_status='non_revenue'
+      and credits_consumed=10 and revenue_minor=0
+  ) then raise exception 'Promotional credits were not explicitly allocated as zero-revenue usage'; end if;
 
   if (select count(*) from executive_visuals.billing_credit_revenue_allocations
       where reservation_id=v_paid_reservation)<>1 then
