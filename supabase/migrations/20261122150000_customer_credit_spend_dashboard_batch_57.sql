@@ -59,19 +59,19 @@ begin
 
   select coalesce(sum(actual_credits),0)::bigint
     into settled_credits
-    from billing_credit_reservations
-   where owner_id=p_owner_id
-     and state='settled'
-     and created_at>=period_start
-     and created_at<period_end;
+    from billing_credit_reservations r
+   where r.owner_id=p_owner_id
+     and r.state='settled'
+     and r.created_at>=period_start
+     and r.created_at<period_end;
 
-  select coalesce(sum(reserved_credits),0)::bigint
+  select coalesce(sum(r.reserved_credits),0)::bigint
     into reserved_credits
-    from billing_credit_reservations
-   where owner_id=p_owner_id
-     and state='reserved'
-     and created_at>=period_start
-     and created_at<period_end;
+    from billing_credit_reservations r
+   where r.owner_id=p_owner_id
+     and r.state='reserved'
+     and r.created_at>=period_start
+     and r.created_at<period_end;
 
   used_credits:=settled_credits+reserved_credits;
   if allowance_published then
