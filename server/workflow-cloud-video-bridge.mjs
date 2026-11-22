@@ -257,6 +257,7 @@ export async function executeCloudVideoWorkflowNode({
    pricingSource:String(quote.body.quote.pricingSource||""),
    pricingUrl:String(quote.body.quote.pricingUrl||""),
    expiresAt:String(quote.body.quote.expiresAt||""),paidExecutionEnabled:quote.body.quote.paidExecutionEnabled===true,
+   creditAvailability:quote.body.quote.creditAvailability&&typeof quote.body.quote.creditAvailability==="object"?quote.body.quote.creditAvailability:null,
    cloudNode,cloudValues
   };
   onApprovalRequired(receipt);
