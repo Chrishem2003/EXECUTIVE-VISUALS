@@ -64,14 +64,16 @@ test("validates provider price identifiers and currency contracts",()=>{
  assert.throws(()=>build([plan()],[{...prices[0],amount_minor:0}]),{code:"SUBSCRIPTION_CATALOGUE_INVALID"});
 });
 
-test("never trusts browser-supplied price, credits or entitlement overrides",()=>{
- const [result]=build([plan({included_credits:9000,credit_allowance_published:false})]);
+test("ignores untrusted browser-shaped fields and keeps server records authoritative",()=>{
+ const [result]=build([plan({included_credits:9000,credit_allowance_published:false,clientPrice:1,clientCredits:1,clientEntitlements:{features:{videoGeneration:false}}})]);
  assert.equal(result.includedCredits,null);
  assert.equal(result.entitlements.features.videoGeneration,true);
  assert.equal(result.prices[0].amountMinor,2900);
 });
 
-test("rejects malformed clock and unbounded catalogues",()=>{
- assert.throws(()=>build([plan()],prices),{code:"SUBSCRIPTION_CATALOGUE_INVALID"});
+test("rejects malformed clock, missing references and unbounded catalogues",()=>{
+ assert.throws(()=>buildPublicSubscriptionCatalogue({plans:[plan()],providerPrices:prices,now:()=>"not-a-date"}),{code:"SUBSCRIPTION_CATALOGUE_INVALID"});
+ assert.throws(()=>build([plan({id:""})]),{code:"SUBSCRIPTION_CATALOGUE_INVALID"});
+ assert.throws(()=>build([plan()],[{...prices[0],plan_id:""}]),{code:"SUBSCRIPTION_CATALOGUE_INVALID"});
  assert.throws(()=>build(new Array(1001).fill(plan()),[]),{code:"SUBSCRIPTION_CATALOGUE_INVALID"});
 });
