@@ -526,6 +526,36 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      if(!Number.isSafeInteger(estimatedCustomerCredits)||estimatedCustomerCredits<1||estimatedCustomerCredits>100000000){
       return response(503,{error:{code:"CUSTOMER_CREDIT_QUOTE_INVALID",message:"The server returned an invalid customer credit quote."}});
      }
+     // Read the wallet that the atomic approval RPC will actually reserve from.
+     // This is advisory only: approval still rechecks balance and reserves atomically.
+     let creditAvailability={status:"unavailable",requiredCredits:estimatedCustomerCredits,
+      availableCredits:null,reservedCredits:null,ledgerBalance:null,fundingSource:null,poolStatus:null,
+      canCoverQuote:null};
+     try{
+      const balanceRows=await request("rpc/get_generation_credit_balance_for_project",{method:"POST",body:{
+       p_owner_id:ownerId,p_project_id:projectId
+      }});
+      const balance=Array.isArray(balanceRows)?balanceRows[0]:null;
+      const ledgerBalance=Number(balance?.ledger_balance);
+      const reservedCredits=Number(balance?.reserved_credits);
+      const availableCredits=Number(balance?.available_credits);
+      const fundingSource=String(balance?.funding_source||"");
+      const poolStatus=String(balance?.pool_status||"");
+      if(balance&&[ledgerBalance,reservedCredits,availableCredits].every(Number.isSafeInteger)&&
+         ledgerBalance>=0&&reservedCredits>=0&&availableCredits>=0&&
+         ledgerBalance===reservedCredits+availableCredits&&
+         ["personal","project_pool"].includes(fundingSource)&&
+         ["active","suspended"].includes(poolStatus)){
+       const status=poolStatus!=="active"?"suspended":
+        availableCredits>=estimatedCustomerCredits?"sufficient":"insufficient";
+       creditAvailability={status,requiredCredits:estimatedCustomerCredits,
+        availableCredits,reservedCredits,ledgerBalance,fundingSource,poolStatus,
+        canCoverQuote:status==="sufficient"};
+      }
+     }catch{
+      // Keep the quote visible when the advisory read is unavailable. The
+      // approval RPC remains the authoritative balance and reservation gate.
+     }
      const quoteId=randomUUID();
      const expiresAt=new Date(Date.now()+5*60*1000).toISOString();
      const quoteRecord=await request("rpc/record_video_workflow_quote_with_customer_credits",{method:"POST",body:{
@@ -547,6 +577,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       currency:estimate.currency,configId:estimate.configId||(directRunway?directRunwayConfigId(workflowRequest.model):null),
       pricingSource:String(estimate.pricingSource||"runway_model_router_dry_run"),pricingUrl:estimate.pricingUrl||null,billable:false,
       requiresExplicitApproval:true,paidExecutionEnabled:workflowProviderLaunchConfigured(env,workflowRequest),
+      creditAvailability,
       expiresAt
      }});
     }catch(error){
