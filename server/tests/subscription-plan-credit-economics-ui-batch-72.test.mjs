@@ -18,6 +18,9 @@ test("plan simulator displays draft plan allowances, model coverage, provider co
  assert.match(app,/customerCreditsPerGeneration/);
  assert.match(app,/pricingDate/);
  assert.match(app,/financeState\.planCreditEconomics\.limitations/);
+ assert.match(app,/pricingPolicy\?\.targetMarginBps/);
+ assert.match(app,/pricingPolicy\?\.paymentFeeBps/);
+ assert.match(app,/pricingPolicy\?\.supportReserveBps/);
 });
 
 test("plan simulator is a scenario-only control and does not activate plans or grant credits",()=>{
