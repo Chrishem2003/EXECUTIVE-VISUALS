@@ -25,7 +25,8 @@ test("fails closed when provider rates or customer credit pricing are unavailabl
  assert.match(quoteCustomerCredits(providerQuote,{...policy,currency:"UGX"}).reason,/currency/);
  assert.equal(resolveCustomerCreditPolicy({}).configured,false);
  assert.equal(resolveCustomerCreditPolicy({
-  CUSTOMER_CREDIT_CURRENCY:"USD",\n  CUSTOMER_CREDIT_VALUE_MINOR:"1",CUSTOMER_CREDIT_MINOR_UNITS_PER_MAJOR:"100",
+  CUSTOMER_CREDIT_CURRENCY:"USD",
+  CUSTOMER_CREDIT_VALUE_MINOR:"1",CUSTOMER_CREDIT_MINOR_UNITS_PER_MAJOR:"100",
   CUSTOMER_CREDIT_TARGET_MARGIN_BPS:"6000",CUSTOMER_CREDIT_PAYMENT_FEE_BPS:"300",
   CUSTOMER_CREDIT_RETRY_RESERVE_BPS:"500",CUSTOMER_CREDIT_INFRA_RESERVE_BPS:"300",
   CUSTOMER_CREDIT_FIXED_PAYMENT_FEE_MINOR:"30",CUSTOMER_CREDIT_PRICING_VERSION:"v1"
