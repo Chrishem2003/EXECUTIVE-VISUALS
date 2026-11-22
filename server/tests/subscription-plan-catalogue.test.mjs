@@ -19,6 +19,10 @@ const build=(plans=[plan()],providerPrices=prices)=>buildPublicSubscriptionCatal
 test("publishes active public plans with validated provider prices but does not invent credit allowances",()=>{
  const [result]=build();
  assert.equal(result.planCode,"professional");
+ assert.equal(result.plan_code,"professional");
+ assert.equal(result.billing_interval,"monthly");
+ assert.equal(result.credit_allowance_published,false);
+ assert.equal(result.included_credits,null);
  assert.equal(result.version,2);
  assert.equal(result.prices.length,2);
  assert.deepEqual(result.checkoutProviders,["paddle","pesapal"]);
@@ -30,7 +34,9 @@ test("publishes active public plans with validated provider prices but does not 
 test("publishes included credits only when an explicit server-side approval flag is true",()=>{
  const [result]=build([plan({included_credits:1200,credit_allowance_published:true})]);
  assert.equal(result.includedCredits,1200);
+ assert.equal(result.included_credits,1200);
  assert.equal(result.creditAllowancePublished,true);
+ assert.equal(result.credit_allowance_published,true);
 });
 
 test("filters inactive, private and not-yet-effective or expired plans",()=>{
