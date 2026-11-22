@@ -20,6 +20,12 @@ export function calculateSubscriptionPlanCreditEconomics({
  if(!Array.isArray(scenarios)||scenarios.length<1||scenarios.length>20)fail("SUBSCRIPTION_ECONOMICS_SCENARIOS_INVALID","One to twenty provider cost scenarios are required.");
  if(typeof quoteCustomerCredits!=="function")fail("CUSTOMER_CREDIT_PRICING_UNCONFIGURED","The server-side customer-credit pricing policy is unavailable.");
  const rate=safeInteger(creditsPerUsd,"creditsPerUsd",{min:1,max:1_000_000});
+ const policy=quoteCustomerCredits.assumptions;
+ if(!policy||policy.creditsPerUsd!==rate)fail("CUSTOMER_CREDIT_PRICING_UNCONFIGURED","The shared customer-credit pricing assumptions are unavailable or inconsistent.");
+ for(const key of ["targetMarginBps","paymentFeeBps","supportReserveBps","fixedPaymentFeeMicros"])
+  safeInteger(policy[key],"pricing assumption "+key,{min:0,max:100_000_000});
+ if(policy.targetMarginBps<1000||policy.targetMarginBps>9000||policy.paymentFeeBps>2000||policy.supportReserveBps>5000)
+  fail("CUSTOMER_CREDIT_PRICING_UNCONFIGURED","The shared customer-credit pricing assumptions are outside approved bounds.");
  const share=safeInteger(creditBudgetShareBps,"creditBudgetShareBps",{min:1000,max:10000});
  const normalizedPlans=plans.map(plan=>{
   const planCode=text(plan.plan_code??plan.planCode,"plan code",80);
@@ -79,7 +85,7 @@ export function calculateSubscriptionPlanCreditEconomics({
  });
  return Object.freeze({
   calculationType:"subscription_plan_credit_scenario_not_activation",
-  creditBudgetShareBps:share,creditsPerUsd:rate,
+  creditBudgetShareBps:share,creditsPerUsd:rate,pricingPolicy:Object.freeze({...policy}),
   plans:Object.freeze(coverage),scenarios:Object.freeze(pricedScenarios),
   limitations:Object.freeze([
    "All plan allowances are hypothetical; no subscription plan, entitlement or credit ledger is changed.",
