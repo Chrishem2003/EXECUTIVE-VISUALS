@@ -36,3 +36,14 @@ This branch adds a fail-closed subscription policy and a read-only plan-catalogu
 5. Complete isolated Paddle/Pesapal sandbox and Neon/PostgreSQL acceptance before enabling checkout or paid generation.
 
 No migrations, credentials, live checkout, production configuration or deployments are changed by this slice. The cloud video subscription gate is opt-in and remains disabled by default; it is not a production activation. The customer catalogue, dispatch gate, final worker submission gate, shared-engine customer-credit pricing and subscription-grant PostgreSQL replay assertions are covered by automated tests. The UI can display the validated catalogue, but checkout remains separately gated and still reserves its price through the existing database RPC.
+
+
+## Project shared credit pools
+
+Projects may opt into a project-scoped shared generation-credit pool. The project owner configures the pool and transfers credits from their personal generation-credit balance; funding writes a personal-wallet debit and project-wallet credit in one database transaction. Both ledgers are append-only and every transfer is idempotent.
+
+The existing `reserve_generation_credits` RPC remains the production entry point used by the approved workflow enqueue path. It first revalidates the owner's current `ai_generation` subscription entitlement. If the job's project has an active shared pool, the reservation is charged to that pool; otherwise, the original personal-wallet implementation is called. A configured pool is authoritative: insufficient shared funds or a monthly spend-cap breach blocks dispatch and never silently falls back to the personal wallet.
+
+The shared pool reservation mirrors the existing reservation identity so approval replay and cancellation continue to use the established contracts. Provider settlement and cancellation release reconcile the project pool reservation and mirror in the same transaction. Monthly spend caps serialize on the project-pool row and count settled actual credits or still-reserved credits for the current calendar month.
+
+This first increment is **project-owner controlled**. It does not yet grant project editors independent cloud-generation permission or per-member spend caps; the existing project owner authorization remains in force. Team-member authorization and attribution are a separate follow-up, not an implied capability. The migration is additive and CI-only until a separately approved staging migration.
