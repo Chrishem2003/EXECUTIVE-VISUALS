@@ -18,6 +18,8 @@ test("proposed creator tiers are seeded as private draft hypotheses with no incl
   }
   assert.match(migration, /'pricing_hypothesis'/);
   assert.match(migration, /'credits_pending_cost_validation'/);
+  assert.match(migration, /"ai_generation":true/);
+  assert.match(migration, /"credit_policy":"server_quoted_metered"/);
 });
 
 test("pricing hypotheses cannot be publicly purchased or silently overwrite existing plans", () => {
