@@ -21,15 +21,16 @@ test("database adjustment RPC independently verifies administrator role and idem
  assert.match(migration,/platform_admins a[\s\S]*?a\.user_id=p_actor_id[\s\S]*?a\.role in\('owner','platform_admin','billing_admin'\)/);
  assert.match(migration,/ADMIN_CREDIT_ADJUSTMENT_IDEMPOTENCY_CONFLICT/);
  assert.match(migration,/ADMIN_CREDIT_ADJUSTMENT_ARGUMENTS_INVALID/);
- assert.match(migration,/billing_credit_admin_adjustments/);
+ assert.match(migration,/pg_advisory_xact_lock/);
 });
 
 test("negative adjustments cannot spend active reservations and positive adjustments are non-revenue compensation",()=>{
- assert.match(migration,/sum\(r\.reserved_credits\)/);
+ assert.match(migration,/v_balance < abs\(p_delta_credits\)/);
  assert.match(migration,/ADMIN_CREDIT_ADJUSTMENT_EXCEEDS_AVAILABLE_BALANCE/);
  assert.match(migration,/sourceType',case when p_delta_credits>0 then 'admin_compensation'/);
  assert.match(migration,/event_type,reference_id,idempotency_key,description,evidence[\s\S]*?'admin_adjustment'/);
- assert.match(integration,/reserve_generation_credits/);\n assert.match(integration,/Debit must not consume reserved credits/);
+ assert.match(integration,/reserve_generation_credits/);
+ assert.match(integration,/Debit must not consume reserved credits/);
  assert.match(integration,/source_type='admin_compensation'[\s\S]*?revenue_status='non_revenue'/);
 });
 
