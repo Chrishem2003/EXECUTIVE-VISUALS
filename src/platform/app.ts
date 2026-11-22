@@ -1753,7 +1753,7 @@ document.addEventListener("submit",async e=>{const f=e.target as HTMLFormElement
    billingState.message="Payment reference "+String(result.payment?.reference||"pending")+" is "+String(result.payment?.status||"pending")+". Approve the mobile-money prompt on your phone. Credits appear only after provider verification.";
    await loadBillingWorkspace();
   }catch(error){billingState.error=error instanceof Error?error.message:"Credit top-up could not be started. Check transaction history before trying again.";render();}
-  finally{billingState.topupSubmitting=false;if(button){button.disabled=false;button.textContent="Continue to mobile-money checkout →";}}
+  finally{billingState.topupSubmitting=false;if(button){button.disabled=false;button.textContent="Continue to mobile-money checkout →";}if(state.tab==="billing")render();}
   return;
  }
  if(f.id==="project-member-add"){
