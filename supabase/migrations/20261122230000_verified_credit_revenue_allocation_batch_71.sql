@@ -482,6 +482,14 @@ begin
         reservation_row.owner_id,p_reservation_id,reservation_row.job_id,source_row.id,v_take,null,
         source_row.currency,'pending_subscription_split','credit-revenue:'||p_reservation_id::text||':'||source_row.id::text
       );
+    elsif source_row.revenue_status='unattributed' then
+      v_unattributed:=v_unattributed+v_take;
+      insert into billing_credit_revenue_allocations(
+        owner_id,reservation_id,job_id,source_id,credits_consumed,revenue_minor,currency,allocation_status,idempotency_key
+      ) values(
+        reservation_row.owner_id,p_reservation_id,reservation_row.job_id,source_row.id,v_take,null,
+        null,'unattributed','credit-revenue:'||p_reservation_id::text||':'||source_row.id::text
+      );
     else
       insert into billing_credit_revenue_allocations(
         owner_id,reservation_id,job_id,source_id,credits_consumed,revenue_minor,currency,allocation_status,idempotency_key
@@ -490,7 +498,9 @@ begin
         null,'non_revenue','credit-revenue:'||p_reservation_id::text||':'||source_row.id::text
       );
     end if;
-    v_allocated:=v_allocated+v_take;
+    if source_row.revenue_status<>'unattributed' then
+      v_allocated:=v_allocated+v_take;
+    end if;
     v_remaining:=v_remaining-v_take;
   end loop;
 
@@ -611,13 +621,13 @@ begin
       a.credits_consumed,
       case
         when a.allocation_status='non_revenue' then 'non_revenue'
-        when a.source_id is null then 'unattributed'
+        when a.source_id is null or s.revenue_status='unattributed' then 'unattributed'
         when s.revenue_status='verified' or split_review.source_id is not null then 'verified'
         else 'pending_subscription_split'
       end resolved_status,
       case
         when a.allocation_status='non_revenue' then 0::bigint
-        when a.source_id is null then null::bigint
+        when a.source_id is null or s.revenue_status='unattributed' then null::bigint
         when coalesce(s.allocatable_revenue_minor,split_review.approved_revenue_minor) is not null then
           floor(coalesce(s.allocatable_revenue_minor,split_review.approved_revenue_minor)::numeric
             * a.cumulative_credits::numeric / s.credits_granted::numeric)::bigint
