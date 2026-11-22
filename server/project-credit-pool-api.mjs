@@ -41,6 +41,19 @@ export function createProjectCreditPoolApi({url=process.env.SUPABASE_URL,service
   },
   async listMemberUsage({ownerId,projectId}={}){
    return rpc("list_project_credit_pool_member_usage",{p_owner_id:validId(ownerId,"Owner ID"),p_project_id:validId(projectId,"Project ID")});
+  },
+  async listMembers({ownerId,projectId}={}){
+   return rpc("list_project_members",{p_owner_id:validId(ownerId,"Owner ID"),p_project_id:validId(projectId,"Project ID")});
+  },
+  async addMember({ownerId,projectId,email,role="viewer"}={}){
+   const normalizedEmail=typeof email==="string"?email.trim().toLowerCase():"";
+   if(normalizedEmail.length<3||normalizedEmail.length>320||!normalizedEmail.includes("@")||!["editor","reviewer","viewer"].includes(role)){
+    throw Object.assign(new Error("Enter a registered account email and choose editor, reviewer or viewer."),{code:"PROJECT_CREDIT_POOL_ARGUMENT_INVALID",status:400});
+   }
+   return rpc("add_project_member",{p_owner_id:validId(ownerId,"Owner ID"),p_project_id:validId(projectId,"Project ID"),p_email:normalizedEmail,p_role:role});
+  },
+  async removeMember({ownerId,projectId,memberId}={}){
+   return rpc("remove_project_member",{p_owner_id:validId(ownerId,"Owner ID"),p_project_id:validId(projectId,"Project ID"),p_member_id:validId(memberId,"Member ID")});
   }
  });
 }
