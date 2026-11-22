@@ -47,3 +47,14 @@ The existing `reserve_generation_credits` RPC remains the production entry point
 The shared pool reservation mirrors the existing reservation identity so approval replay and cancellation continue to use the established contracts. Provider settlement and cancellation release reconcile the project pool reservation and mirror in the same transaction. Monthly spend caps serialize on the project-pool row and count settled actual credits or still-reserved credits for the current calendar month.
 
 This first increment is **project-owner controlled**. It does not yet grant project editors independent cloud-generation permission or per-member spend caps; the existing project owner authorization remains in force. Team-member authorization and attribution are a separate follow-up, not an implied capability. The migration is additive and CI-only until a separately approved staging migration.
+
+
+## Project member spend controls
+
+The project shared wallet is paid for by the project owner, while each generation remains attributed to the authenticated member who initiated the job. The reservation entry point therefore treats the job owner as the actor, checks that the actor is the project owner or an `editor`, and checks the paying owner's current AI-generation entitlement before reserving shared credits. Reviewers and viewers cannot submit billable generation jobs through this wallet.
+
+Project owners can set an individual member policy with an active/paused state and a monthly credit limit. A limit of zero means no member-specific cap; the project-wide monthly spend limit still applies. Pausing a member blocks new reservations but does not interrupt work already reserved. The reservation transaction locks the project pool before checking project and member usage, preventing concurrent requests from bypassing either hard limit.
+
+Usage counts reserved credits immediately, replaces that amount with provider-verified actual credits at settlement, and excludes released reservations. The append-only project ledger records the paying owner and the initiating actor separately. Existing job ownership and billing reservation identity remain the initiating actor so worker settlement, retries and cancellation continue to use the established job contract.
+
+This increment adds database controls and an owner-scoped usage RPC. It does not yet expose member controls in the customer UI or add invitation email delivery; those are separate application-surface tasks. It does not change live production migrations or activate payment collection.
