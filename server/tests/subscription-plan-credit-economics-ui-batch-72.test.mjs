@@ -26,6 +26,18 @@ test("plan simulator displays draft plan allowances, model coverage, provider co
  assert.match(app,/pricingPolicy\?\.supportReserveBps/);
 });
 
+test("mixed workload results render fee-aware contribution, margin target and credit-fit status",()=>{
+ assert.match(app,/Mixed monthly workload margin checks/);
+ assert.match(app,/estimatedProviderCostMinor/);
+ assert.match(app,/estimatedPaymentFeeMinor/);
+ assert.match(app,/estimatedSupportReserveMinor/);
+ assert.match(app,/estimatedContributionAfterProviderPaymentAndSupportUsd/);
+ assert.match(app,/estimatedContributionMarginBps/);
+ assert.match(app,/marginAssessment/);
+ assert.match(app,/credit shortfall/);
+ assert.match(app,/not net profit/);
+});
+
 test("plan simulator is a scenario-only control and does not activate plans or grant credits",()=>{
  const start=app.indexOf("Plan credit allowance simulator");
  const end=app.indexOf("REVENUE ASSURANCE · ADMIN ONLY",start);
