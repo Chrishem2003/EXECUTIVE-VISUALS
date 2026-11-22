@@ -650,7 +650,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        quoteId,ownerId,projectId,requestId,requestHash:workflowRequest.requestHash,
        provider:workflowRequest.provider,model:workflowRequest.model,operation:workflowRequest.operation,
        input:workflowRequest.input,estimatedAmount:Number(storedQuote.estimated_amount),
-       approvedMaxAmount,customerCreditBudgetCredits,expiresAt:storedQuote.expires_at,
+       approvedMaxAmount,customerCreditBudgetCredits,requiredCustomerCredits,expiresAt:storedQuote.expires_at,
        estimatedCredits:Number(storedQuote.estimated_credits),estimatedCustomerCredits:Number(storedQuote.estimated_customer_credits),
        routedProvider:storedQuote.routed_provider,routedModel:storedQuote.routed_model,
        quoteState:storedQuote.state,approvalNote
