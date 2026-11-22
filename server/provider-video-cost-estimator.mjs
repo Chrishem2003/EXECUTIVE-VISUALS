@@ -67,6 +67,8 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
   const clock=now instanceof Date?now.getTime():Date.parse(now);
   const from=Date.parse(effectiveFrom||"");
   const to=effectiveTo?Date.parse(effectiveTo):Infinity;
+  if(!new Set(["source_linked","contract_attested","admin_attested"]).has(verificationStatus))
+    fail("PROVIDER_VIDEO_RATE_CARD_UNVERIFIED","A currently effective, governed rate card with matching evidence is required.");
   if(provider.length<2||provider.length>80||!model||model.length>160||!/^[A-Z]{3}$/.test(currency)||
     !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,79}$/.test(version)||!["video_second","mixed"].includes(billingUnit)||
     !["source_linked","contract_attested","admin_attested"].includes(verificationStatus)||
@@ -105,6 +107,8 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
     add("reference_video_seconds",referenceVideoSeconds,rate);
   }
   if(inputVideoSeconds>0){
+    if(!Object.hasOwn(dimensions,"inputVideoSecondMinor")&&!Object.hasOwn(dimensions,"inputVideoSecondMinor_"+resolution))
+      fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price input-video seconds.");
     const rate=dimensions["inputVideoSecondMinor_"+resolution]??dimensions.inputVideoSecondMinor;
     if(rate===undefined)fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price input-video seconds.");
     const mode=dimensions.inputVideoBillingMode??0;
