@@ -271,6 +271,10 @@ let neonWorkflowJobLookup=null;
 let neonWorkflowJobCancel=null;
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "true";
+const projectCreditPoolApiEnabled=process.env.PROJECT_CREDIT_POOL_API_ENABLED==="true";
+if(projectCreditPoolApiEnabled&&(!cloudTimelineApiEnabled||AUTH_MODE!=="supabase")){
+ throw new Error("Project credit pool API requires the verified cloud timeline API and Supabase authentication.");
+}
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 if (cloudMediaJobsApiEnabled && (!cloudTimelineApiEnabled || AUTH_MODE !== "supabase")) throw new Error("Cloud media job submission requires the verified cloud timeline API and Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({
@@ -1157,7 +1161,7 @@ export function createAppServer() {
         send(res,uploadResult.status,uploadResult.body,cors);return;
       }
       if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations")||path.startsWith("/api/cloud/workflows")||path.startsWith("/api/cloud/reviews"))){
-        const isCloudMutation=(path.startsWith("/api/cloud/reviews")&&(req.method==="POST"||req.method==="PATCH"))||(path.startsWith("/api/cloud/workflows")&&req.method==="POST")||(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path.startsWith("/api/cloud/assets/")&&path.endsWith("/media-jobs")&&req.method==="POST")||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
+        const isCloudMutation=(path.startsWith("/api/cloud/reviews")&&(req.method==="POST"||req.method==="PATCH"))||(path.startsWith("/api/cloud/workflows")&&req.method==="POST")||(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path.startsWith("/api/cloud/assets/")&&path.endsWith("/media-jobs")&&req.method==="POST")||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&((req.method==="PATCH"||req.method==="DELETE")||((path.includes("/credit-pool")||path.endsWith("/members"))&&(req.method==="POST"||req.method==="PUT"))));
         const body=isCloudMutation?await readJson(req,5*1024*1024):{};
         const cloudResult=await cloudTimelineApi.handle({
           method:req.method,path,ownerId:user.id,body,query:Object.fromEntries(url.searchParams.entries()),

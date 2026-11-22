@@ -17,6 +17,7 @@ import { createLumaWorkflowQuoteAdapter } from "./luma-workflow-quote-adapter.mj
 import { createCloudReviewRepository } from "./cloud-reviews.mjs";
 import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
 import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
+import { createProjectCreditPoolApi } from "./project-credit-pool-api.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -112,6 +113,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  if(!Number.isSafeInteger(timelineCreditsPerSecond)||timelineCreditsPerSecond<0||timelineCreditsPerSecond>1000000)throw new Error("Cloud timeline credit rate must be an integer from 0 to 1000000; zero disables credit reservations.");
  const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl,maxBytes:maxUploadBytes,storageProvider:env.CLOUD_MEDIA_STORAGE_PROVIDER,r2:{accountId:env.R2_ACCOUNT_ID,accessKeyId:env.R2_ACCESS_KEY_ID,secretAccessKey:env.R2_SECRET_ACCESS_KEY,bucket:env.R2_BUCKET},b2:{region:env.B2_REGION,accessKeyId:env.B2_APPLICATION_KEY_ID,secretAccessKey:env.B2_APPLICATION_KEY,bucket:env.B2_BUCKET},neon:{endpoint:env.NEON_STORAGE_ENDPOINT,region:env.NEON_STORAGE_REGION||env.AWS_REGION,accessKeyId:env.NEON_STORAGE_ACCESS_KEY_ID||env.AWS_ACCESS_KEY_ID,secretAccessKey:env.NEON_STORAGE_SECRET_ACCESS_KEY||env.AWS_SECRET_ACCESS_KEY,bucket:env.NEON_STORAGE_BUCKET||"executive-visuals-media"}});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
+ const projectCreditPoolApiEnabled=env.PROJECT_CREDIT_POOL_API_ENABLED==="true";
+ const projectCreditPoolApi=projectCreditPoolApiEnabled?createProjectCreditPoolApi({url,serviceRoleKey,fetchImpl}):null;
  const reviews=service.projects?.get&&service.assets?.get&&service.timelines?.get
   ? createCloudReviewRepository({url,serviceRoleKey,fetchImpl,authorize:allow,projects:service.projects,assets:service.assets,timelines:service.timelines,timeoutMs})
   : null;
@@ -210,7 +213,49 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const projects=await service.projects.list({ownerId,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
     return response(200,{projects});
    }
-   const projectMatch=path.match(/^\/api\/cloud\/projects\/([0-9a-f-]+)$/i);
+       const projectMembersMatch=path.match(/^\/api\/cloud\/projects\/([0-9a-f-]+)\/members(?:\/([0-9a-f-]+))?$/i);
+    if(projectMembersMatch){
+     const projectId=projectMembersMatch[1],memberId=projectMembersMatch[2]||null;
+     if(!projectCreditPoolApi)return response(503,{error:{code:"PROJECT_CREDIT_POOL_API_DISABLED",message:"Cloud project team management is not enabled in this runtime."}});
+     const project=await service.projects.get({ownerId,projectId});
+     if(!project)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+     if(project.ownerId!==ownerId)return response(403,{error:{code:"PROJECT_CREDIT_POOL_OWNER_REQUIRED",message:"Only the project owner can manage project membership."}});
+     if(method==="GET"&&!memberId){
+      const members=await projectCreditPoolApi.listMembers({ownerId,projectId});
+      return response(200,{members});
+     }
+     if(method==="POST"&&!memberId){
+      const member=await projectCreditPoolApi.addMember({ownerId,projectId,email:body.email,role:body.role||"viewer"});
+      return response(201,{member});
+     }
+     if(method==="DELETE"&&memberId){
+      await projectCreditPoolApi.removeMember({ownerId,projectId,memberId});
+      return response(200,{ok:true,memberId});
+     }
+     return response(405,{error:{code:"PROJECT_MEMBER_METHOD_NOT_ALLOWED",message:"This method is not supported for cloud project membership."}});
+    }
+    const projectCreditPoolMatch=path.match(/^\/api\/cloud\/projects\/([0-9a-f-]+)\/credit-pool(?:\/(fund|members|members\/([0-9a-f-]+)\/policy))?$/i);
+    if(projectCreditPoolMatch){
+     const projectId=projectCreditPoolMatch[1],action=projectCreditPoolMatch[2]||"configure",memberId=projectCreditPoolMatch[3]||null;
+     if(!projectCreditPoolApi)return response(503,{error:{code:"PROJECT_CREDIT_POOL_API_DISABLED",message:"Shared project credits are not enabled in this runtime."}});
+     const project=await service.projects.get({ownerId,projectId});
+     if(!project)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+     if(project.ownerId!==ownerId)return response(403,{error:{code:"PROJECT_CREDIT_POOL_OWNER_REQUIRED",message:"Only the project owner can manage shared credits and member limits."}});
+     let result;
+     if(action==="configure"&&method==="POST"){
+      result=await projectCreditPoolApi.configure({ownerId,projectId,monthlySpendLimitCredits:body.monthlySpendLimitCredits??0});
+     }else if(action==="fund"&&method==="POST"){
+      result=await projectCreditPoolApi.fund({ownerId,projectId,credits:body.credits,idempotencyKey});
+     }else if(action==="members"&&method==="GET"){
+      result=await projectCreditPoolApi.listMemberUsage({ownerId,projectId});
+     }else if(memberId&&action.startsWith("members/")&&method==="PUT"){
+      result=await projectCreditPoolApi.setMemberPolicy({ownerId,projectId,memberId,monthlyLimitCredits:body.monthlyLimitCredits??0,status:body.status??"active"});
+     }else{
+      return response(405,{error:{code:"PROJECT_CREDIT_POOL_METHOD_NOT_ALLOWED",message:"This method is not supported for the project credit pool endpoint."}});
+     }
+     return response(200,{result});
+    }
+const projectMatch=path.match(/^\/api\/cloud\/projects\/([0-9a-f-]+)$/i);
    if(projectMatch&&safeId(projectMatch[1])){
     const projectId=projectMatch[1];
     if(method==="GET"){const project=await service.projects.get({ownerId,projectId});return project?response(200,{project}):response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});}
@@ -840,6 +885,9 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    if(error.code==="REVIEW_ASSET_VERSION_STALE"||error.code==="REVIEW_ASSET_VERSION_UNAVAILABLE"||error.code==="CLOUD_REVIEW_IDEMPOTENCY_CONFLICT"||error.code==="CLOUD_REVIEW_CONFLICT")return response(409,{error:{code:error.code,message:String(error.message||"Review changed. Refresh and retry.").slice(0,300)}});
    if(error.code==="CLOUD_REVIEW_TIMEOUT"||error.code==="CLOUD_REVIEW_DATABASE_ERROR")return response(503,{error:{code:error.code,message:String(error.message||"Cloud review service is unavailable.").slice(0,300)}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+   if(String(error.code||"").startsWith("PROJECT_CREDIT_POOL_")||String(error.code||"").startsWith("PROJECT_MEMBER_")||String(error.code||"").startsWith("PROJECT_OWNER_")||String(error.code||"").startsWith("BILLING_")){
+    return response(error.status||400,{error:{code:error.code||"PROJECT_CREDIT_POOL_OPERATION_FAILED",message:String(error.message||"Project credit pool operation failed.").slice(0,300)}});
+   }
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_ASSET_STORAGE_QUOTA_CONFIG_MISSING"||error.code==="CLOUD_ASSET_STORAGE_USAGE_INVALID")return response(503,{error:{code:"CLOUD_ASSET_QUOTA_UNAVAILABLE",message:"Private media storage quota is not ready."}});
    if(error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});

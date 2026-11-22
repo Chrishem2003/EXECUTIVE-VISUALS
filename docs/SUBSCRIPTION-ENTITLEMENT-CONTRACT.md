@@ -47,3 +47,35 @@ The existing `reserve_generation_credits` RPC remains the production entry point
 The shared pool reservation mirrors the existing reservation identity so approval replay and cancellation continue to use the established contracts. Provider settlement and cancellation release reconcile the project pool reservation and mirror in the same transaction. Monthly spend caps serialize on the project-pool row and count settled actual credits or still-reserved credits for the current calendar month.
 
 This first increment is **project-owner controlled**. It does not yet grant project editors independent cloud-generation permission or per-member spend caps; the existing project owner authorization remains in force. Team-member authorization and attribution are a separate follow-up, not an implied capability. The migration is additive and CI-only until a separately approved staging migration.
+
+
+## Project member spend controls
+
+The project shared wallet is paid for by the project owner, while each generation remains attributed to the authenticated member who initiated the job. The reservation entry point therefore treats the job owner as the actor, checks that the actor is the project owner or an `editor`, and checks the paying owner's current AI-generation entitlement before reserving shared credits. Reviewers and viewers cannot submit billable generation jobs through this wallet.
+
+Project owners can set an individual member policy with an active/paused state and a monthly credit limit. A limit of zero means no member-specific cap; the project-wide monthly spend limit still applies. Pausing a member blocks new reservations but does not interrupt work already reserved. The reservation transaction locks the project pool before checking project and member usage, preventing concurrent requests from bypassing either hard limit.
+
+Usage counts reserved credits immediately, replaces that amount with provider-verified actual credits at settlement, and excludes released reservations. The append-only project ledger records the paying owner and the initiating actor separately. Existing job ownership and billing reservation identity remain the initiating actor so worker settlement, retries and cancellation continue to use the established job contract.
+
+This increment adds database controls and an owner-scoped usage RPC. It does not yet expose member controls in the customer UI or add invitation email delivery; those are separate application-surface tasks. It does not change live production migrations or activate payment collection.
+
+
+### Owner-only project credit pool API
+
+The opt-in server API is guarded by `PROJECT_CREDIT_POOL_API_ENABLED=true`, verified Supabase authentication and server-side Supabase credentials. It is disabled by default and must only be enabled after the corresponding migrations are applied to the intended Supabase environment.
+
+- `POST /api/cloud/projects/:projectId/credit-pool` configures the pool monthly spend ceiling.
+- `POST /api/cloud/projects/:projectId/credit-pool/fund` transfers existing personal credits into the project pool and requires an idempotency key.
+- `GET /api/cloud/projects/:projectId/credit-pool/members` returns owner-scoped member usage, limits and remaining monthly allowance.
+- `PUT /api/cloud/projects/:projectId/credit-pool/members/:memberId/policy` sets a member monthly cap or pauses new spending.
+
+Every endpoint requires local project-owner access and repeats owner authorization in the database RPC. Member jobs remain owned by the initiating actor; only the owner-funded project pool pays. API enablement is not a production migration or deployment approval.
+
+
+Cloud team membership is managed through the same verified cloud-project boundary:
+
+- `GET /api/cloud/projects/:projectId/members` lists registered members and roles.
+- `POST /api/cloud/projects/:projectId/members` adds an existing account by email with the `editor`, `reviewer` or `viewer` role.
+- `DELETE /api/cloud/projects/:projectId/members/:memberId` removes future project access while preserving historical job and credit-ledger attribution.
+
+The recipient must already have an Executive Visuals account. This API does not send invitation emails. Membership and spend-policy changes are owner-only and rechecked by the database.
