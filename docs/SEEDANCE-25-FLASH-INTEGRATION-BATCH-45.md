@@ -20,7 +20,7 @@ Official references checked 2026-11-22:
 - Combined input/reference video duration is capped at 30 seconds.
 - Up to 10 reference images, 5 reference videos and 5 reference audio clips.
 - Video-to-video reserves one video slot for the source clip.
-- 4–30 second duration range; 1080p, 4K and draft mode are not supported.
+- 4–30 second duration range; 1080p, 4K and draft mode are not supported. The current worker contract emits MP4; MOV is documented by Runway but is not exposed by this adapter yet.
 - Runway provider credits are cost units; they are not Executive Visuals customer credits.
 
 ## Implementation
