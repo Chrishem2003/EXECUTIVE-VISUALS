@@ -204,11 +204,14 @@ declare
   v_balance bigint;
 begin
   select * into reservation_row from billing_credit_reservations
-   where id=p_reservation_id and state='settled' for update;
+   where id=p_reservation_id and state='settled';
   if not found or reservation_row.actual_credits is null then
     raise exception 'CREDIT_REVENUE_RESERVATION_NOT_SETTLED' using errcode='23514';
   end if;
   perform 1 from billing_credit_accounts where owner_id=reservation_row.owner_id for update;
+  select * into reservation_row from billing_credit_reservations
+   where id=p_reservation_id and state='settled' for update;
+  if not found then raise exception 'CREDIT_REVENUE_RESERVATION_NOT_SETTLED' using errcode='23514'; end if;
   select * into existing_run from billing_credit_revenue_allocation_runs where reservation_id=p_reservation_id;
   if found then
     return jsonb_build_object('reservationId',p_reservation_id,'status',existing_run.status,
@@ -294,9 +297,7 @@ begin
 end;
 $allocate_generation_credit_revenue_for_reservation$;
 revoke all on function executive_visuals.allocate_generation_credit_revenue_for_reservation(uuid)
-  from public,anon,authenticated;
-grant execute on function executive_visuals.allocate_generation_credit_revenue_for_reservation(uuid)
-  to service_role;
+  from public,anon,authenticated,service_role;
 
 -- Wrap the existing evidence-gated settlement atomically. A failure in attribution
 -- rolls back the credit settlement as well, preventing unaccounted successful jobs.
