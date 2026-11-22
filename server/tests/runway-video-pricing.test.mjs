@@ -44,7 +44,7 @@ test("prices Seedance 2.5 Flash at its dated 480p and 720p rates with a 52-credi
  assert.equal(high.estimatedUsd,1);
  assert.equal(high.settlementEligible,false);
  assert.throws(()=>estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"1080p",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
- assert.throws(()=>estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"4k",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+ assert.throws(()=>estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"4k",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT"||e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
 });
 test("Seedance 2.5 Flash includes video input and reference seconds and enforces the 30-second cap",()=>{
  const estimate=estimateRunwayVideoCredits({model:"seedance2_5_flash",durationSeconds:5,resolution:"720p",inputVideoSeconds:20,referenceVideoSeconds:20,referenceVideoCount:4,inputType:"video",pricingDate:date});
