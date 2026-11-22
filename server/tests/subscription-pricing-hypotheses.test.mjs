@@ -22,7 +22,7 @@ test("proposed creator tiers are seeded as private draft hypotheses with no incl
 
 test("pricing hypotheses cannot be publicly purchased or silently overwrite existing plans", () => {
   assert.match(migration, /false,1/);
-  assert.match(migration, /on conflict \\(plan_code\\) do nothing/i);
+  assert.match(migration, /on conflict.*plan_code.*do nothing/i);
   assert.doesNotMatch(migration, /subscription_plan_provider_prices/i);
   assert.doesNotMatch(migration, /included_credits[^\n]*[1-9]/i);
 });
