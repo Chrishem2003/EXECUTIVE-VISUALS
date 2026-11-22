@@ -61,6 +61,7 @@ The following are **Runway Dev API list rates**, checked against its current pri
 | Kling 4.0, 1080p | $0.235/sec | $1.175 | $2.35 |
 | Kling 4.0, 4K | $0.549/sec | $2.745 | $5.49 |
 | Kling 4.0 Flash, output-only | $0.094/sec | $0.47 | $0.94 |
+| Seedance 2.5, 480p | $0.20/sec | $1.00 | $2.00 |
 | Seedance 2.5, 720p | $0.30/sec | $1.50 | $3.00 |
 | Seedance 2.5, 1080p | $0.68/sec | $3.40 | $6.80 |
 | Wan 3.0, 1080p | $0.20/sec | $1.00 | $2.00 |
@@ -72,7 +73,7 @@ These simple examples assume output-only billing, no reference video, no optiona
 ### Provider-specific billing rules that affect the invoice
 
 - **Kling 4.0:** input-video jobs use a different rate and bill additional seconds based on output duration plus the longer of input-video duration and output duration. HDR adds a separate surcharge at supported resolutions. Kling 4.0 Flash has a distinct output-only rate and a different input-video formula.
-- **Seedance 2.5:** reference video is billed separately at half the output rate per second of reference video, and a minimum generation charge can apply.
+- **Seedance 2.5:** 480p/720p/1080p/4K output is $0.20/$0.30/$0.68/$1.10 per second, with an $0.80 minimum charge. Reference video is billed separately at half the output rate per second; image/audio references add no charge. Draft mode is two billable generations (480p preview plus 1080p enhancement), not a free preview. Moderation failures may still be charged, so they must not be automatically retried.
 - **Gemini Omni Flash 1.1:** resolution changes the rate; generated audio is included in the listed video rate, and input-video references can add charges.
 - **Wan 3.0:** model tier and resolution determine the rate; Prime is a separate higher-priced tier.
 - **Gen-4.5:** output resolution, audio, HDR / bit-depth and certain editorial-container options can change the final rate.
@@ -82,6 +83,7 @@ The pricing engine must use the exact provider/model/operation formula, supporte
 ### Official pricing evidence
 
 - Runway Dev current pricing article (updated November 4, 2026; pricing snapshot checked November 22): https://dev.runway.com/learn/ai-video-api-pricing
+- Runway Dev Seedance 2.5 API billing guide (pricing current November 21, 2026): https://dev.runwayml.com/learn/seedance-2-5-api
 - Runway Dev pricing and API rate card: https://dev.runway.com/pricing
 - Runway Dev Kling 4.0 API billing details: https://dev.runwayml.com/learn/kling-4-0-api
 - Runway API pricing guide: https://docs.dev.runwayml.com/guides/pricing/
