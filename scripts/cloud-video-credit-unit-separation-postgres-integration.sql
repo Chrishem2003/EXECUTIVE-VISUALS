@@ -83,21 +83,36 @@ begin
 end
 $credit_unit_replay_assertion$;
 
+select executive_visuals.record_video_workflow_quote(
+ '823e4567-e89b-42d3-a456-426614174001',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'legacy-unpriced-quote-001',repeat('a',64),
+ 'runway','model-router','text-to-video','runway','gen4.5',
+ 10,0.10,'USD','studio-video',
+ 'runway_model_router_dry_run',clock_timestamp()+interval '4 minutes'
+);
+
 do $legacy_quote_fail_closed$
 begin
  begin
-  perform executive_visuals.record_video_workflow_quote(
+  perform * from executive_visuals.approve_and_enqueue_video_workflow(
    '823e4567-e89b-42d3-a456-426614174001',
+   'f23e4567-e89b-42d3-a456-426614174001',
    '123e4567-e89b-42d3-a456-426614174000',
    '323e4567-e89b-42d3-a456-426614174000',
-   'legacy-unpriced-quote-001',repeat('a',64),
-   'runway','model-router','text-to-video','runway','gen4.5',
-   10,0.10,'USD','studio-video',
-   'runway_model_router_dry_run',clock_timestamp()+interval '4 minutes'
+   repeat('a',64),'studio-video','legacy-unpriced-quote-001',
+   jsonb_build_object(
+    'projectId','323e4567-e89b-42d3-a456-426614174000',
+    'provider','runway','model','model-router','requestHash',repeat('a',64),
+    'operation','text-to-video','durationSeconds',5,'outputFormat','mp4',
+    'workflowQuoteId','823e4567-e89b-42d3-a456-426614174001',
+    'workflowRequestId','legacy-unpriced-quote-001'
+   ),0.10,'Legacy quote without customer credit pricing must not enqueue'
   );
-  raise exception 'legacy provider-only quote unexpectedly succeeded';
+  raise exception 'legacy provider-only quote unexpectedly approved';
  exception when others then
-  if sqlerrm='legacy provider-only quote unexpectedly succeeded' then raise; end if;
+  if sqlerrm='legacy provider-only quote unexpectedly approved' then raise; end if;
   if sqlerrm<>'VIDEO_WORKFLOW_CUSTOMER_CREDIT_PRICING_REQUIRED' then raise; end if;
  end;
 end
