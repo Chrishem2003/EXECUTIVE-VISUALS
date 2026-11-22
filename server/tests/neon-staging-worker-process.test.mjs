@@ -7,7 +7,9 @@ const baseEnv = {
   NEON_STAGING_RUNTIME_ENABLED: "true",
   NEON_STAGING_BRANCH_NAME: "executive-visuals-staging",
   NEON_CUSTOMER_CREDITS_PER_USD: "100",
-  NEON_CUSTOMER_MIN_GROSS_MARGIN_BPS: "3000"
+  NEON_CUSTOMER_TARGET_MARGIN_BPS: "3000",
+  NEON_CUSTOMER_PAYMENT_FEE_BPS: "0",
+  NEON_CUSTOMER_SUPPORT_RESERVE_BPS: "0"
 };
 const provider = {
   adapters: [{ provider: "fal", model: "fal-ai/wan/v2.7/text-to-video" }],
@@ -50,7 +52,7 @@ test("starts only after durable Neon worker and private-storage readiness pass",
   });
   assert.equal(started, 1);
   assert.equal(received.includeStorage, true);
-  assert.equal(received.quoteCustomerCredits({ currency: "USD", amountMicros: 1250000 }), 179);
+  assert.equal(received.quoteCustomerCredits({ currency: "USD", amountMicros: 1250000 }), 143);
   assert.deepEqual(received.workerAdapters, provider.adapters);
   assert.equal(received.workerAuthorizeJob, provider.authorizeJob);
   assert.equal(received.workerId, "worker-test");
