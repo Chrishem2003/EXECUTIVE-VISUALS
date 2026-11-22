@@ -19,7 +19,7 @@ const sourceDraftTaskId="b23e4567-e89b-42d3-a456-426614174000";
 const video=Buffer.from("0000ftypisom0000");
 const sha256=createHash("sha256").update(video).digest("hex");
 
-function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutput=null,values={},assetProjectId=projectId,assetMediaType="video/mp4",existingAsset=null,sourceDraftJob=null,neonReceipt=false}={}){
+function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutput=null,values={},assetProjectId=projectId,assetMediaType="video/mp4",existingAsset=null,sourceDraftJob=null,neonReceipt=false,creditAvailability={status:"sufficient",requiredCredits:2750,availableCredits:3000,reservedCredits:250,ledgerBalance:3250,fundingSource:"personal",poolStatus:"active",canCoverQuote:true}}={}){
  const stored=[],calls=[];
  const localJob={status:jobStatus,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000",lease_expires_at:new Date(Date.now()+60000).toISOString(),lease_token:"a23e4567-e89b-42d3-a456-426614174000"};
  const db={prepare(sql){
@@ -38,7 +38,7 @@ function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutp
   async handle(input){
    calls.push(input);
    if(input.method==="GET"&&input.path==="/api/cloud/projects/"+projectId)return{status:200,body:{project:{id:projectId}}};
-   if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/quote"){const quotedRequest=createVideoWorkflowCloudRequest({node:input.body.node,values:input.body.values,projectId,requestId:input.body.requestId});return{status:200,body:{quote:{id:quoteId,requestId:quotedRequest.requestId,requestHash:quotedRequest.requestHash,provider:"runway",model:"seedance2_5",operation:input.body.node.config?.operation==="draft-enhancement"?"draft-enhancement":"generate",routedProvider:"runway",estimatedCredits:42,estimatedAmount:1,currency:"USD",pricingSource:"runway_model_router_dry_run",pricingUrl:"https://docs.dev.runwayml.com/guides/pricing/",expiresAt:"2026-11-30T23:59:00.000Z",paidExecutionEnabled:true,creditAvailability:{status:"sufficient",requiredCredits:2750,availableCredits:3000,reservedCredits:250,ledgerBalance:3250,fundingSource:"personal",poolStatus:"active",canCoverQuote:true},billable:false,requiresExplicitApproval:true,routedModel:"routed-video-model",configId:"runway-direct-seedance-2-5"}}};}
+   if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/quote"){const quotedRequest=createVideoWorkflowCloudRequest({node:input.body.node,values:input.body.values,projectId,requestId:input.body.requestId});return{status:200,body:{quote:{id:quoteId,requestId:quotedRequest.requestId,requestHash:quotedRequest.requestHash,provider:"runway",model:"seedance2_5",operation:input.body.node.config?.operation==="draft-enhancement"?"draft-enhancement":"generate",routedProvider:"runway",estimatedCredits:42,estimatedAmount:1,currency:"USD",pricingSource:"runway_model_router_dry_run",pricingUrl:"https://docs.dev.runwayml.com/guides/pricing/",expiresAt:"2026-11-30T23:59:00.000Z",paidExecutionEnabled:true,creditAvailability,billable:false,requiresExplicitApproval:true,routedModel:"routed-video-model",configId:"runway-direct-seedance-2-5"}}};}
    if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/approve"){
     if(input.body.approvedMaxAmount<1)return{status:409,body:{error:{code:"VIDEO_WORKFLOW_BUDGET_BELOW_QUOTE",message:"Budget below quote"}}};
     return{status:202,body:{job:{id:cloudJobId,status:"queued"}}};
@@ -241,6 +241,33 @@ test("cloud workflow node creates a non-billable quote and pauses without approv
  }finally{
   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
   await rm(mediaRoot,{recursive:true,force:true});
+ }
+});
+
+test("workflow approval receipt preserves unavailable and insufficient customer wallet states without approving",async()=>{
+ const cases=[
+  ["insufficient",{status:"insufficient",requiredCredits:2750,availableCredits:1000,reservedCredits:0,ledgerBalance:1000,fundingSource:"personal",poolStatus:"active",canCoverQuote:false}],
+  ["unavailable",null],
+  ["suspended",{status:"suspended",requiredCredits:2750,availableCredits:5000,reservedCredits:0,ledgerBalance:5000,fundingSource:"project_pool",poolStatus:"suspended",canCoverQuote:false}]
+ ];
+ for(const [label,creditAvailability] of cases){
+  const f=fixture({creditAvailability}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-credit-"+label+"-")),prior=process.env.SUPABASE_URL;
+  process.env.SUPABASE_URL="https://supabase.example";
+  let receipt=null;
+  try{
+   const result=await executeCloudVideoWorkflowNode({
+    db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+    run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+    onApprovalRequired:value=>{receipt=value;}
+   });
+   assert.equal(result.awaitingApproval,true,label);
+   assert.equal(receipt.creditAvailability,creditAvailability,label);
+   assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/approve"),false,label+" must not approve");
+   assert.equal(f.calls.some(call=>call.path==="/api/cloud/jobs/"+cloudJobId),false,label+" must not enqueue");
+  }finally{
+   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
+   await rm(mediaRoot,{recursive:true,force:true});
+  }
  }
 });
 
