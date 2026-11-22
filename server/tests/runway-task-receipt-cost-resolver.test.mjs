@@ -10,13 +10,12 @@ const context = {
   providerTaskId: taskId
 };
 
-test("converts the exact successful Runway task receipt into realized USD cost and credits", async () => {
+test("normalizes the exact successful Runway task receipt into provider USD cost without customer-credit conversion", async () => {
   const cost = await resolver(context);
   assert.deepEqual(cost, {
     amount: 1.37,
     currency: "USD",
-    actualCredits: 137,
-    creditsCharged: 137,
+    providerCredits: 137,
     model: "gen4.5",
     evidenceReference: "runway-task-receipt:" + taskId + ":credits:137"
   });
