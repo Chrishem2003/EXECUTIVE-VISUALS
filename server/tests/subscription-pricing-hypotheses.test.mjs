@@ -16,8 +16,8 @@ test("proposed creator tiers are seeded as private draft hypotheses with no incl
     assert.match(migration, new RegExp("'" + name + "'"));
     assert.match(migration, new RegExp("'draft'\\s*,\\s*'monthly'\\s*,\\s*" + amount + "\\s*,\\s*'USD'\\s*,\\s*0"));
   }
-  assert.match(migration, /'pricing_hypothesis'/);
-  assert.match(migration, /'credits_pending_cost_validation'/);
+  assert.match(migration, /"catalog_state":"pricing_hypothesis"/);
+  assert.match(migration, /"credits_pending_cost_validation":true/);
   assert.match(migration, /"ai_generation":true/);
   assert.match(migration, /"credit_policy":"server_quoted_metered"/);
 });
