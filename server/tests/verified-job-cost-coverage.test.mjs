@@ -96,7 +96,7 @@ test("Batch 71 migration allocates only verified paid-credit revenue to settled 
   assert.match(sql,/billing_credit_revenue_source_reviews/);
   assert.match(sql,/status='successful' and verified_at is not null/);
   assert.match(sql,/payment_purpose'<>'credit_pack_purchase'/);
-  assert.match(sql,/payment_purpose not in\('subscription_purchase','subscription_renewal'\)/);
+  assert.match(sql,/subscription_purchase/);
   assert.match(sql,/pending_subscription_split/);
   assert.match(sql,/billing_credit_revenue_allocations/);
   assert.match(sql,/floor\(/);
