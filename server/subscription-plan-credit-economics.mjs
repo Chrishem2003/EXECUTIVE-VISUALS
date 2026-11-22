@@ -59,7 +59,7 @@ export function calculateSubscriptionPlanCreditEconomics({
   return Object.freeze({
    provider,model,currency,operation:String(scenario.operation||"video"),durationSeconds,resolution,
    providerCostUsd:Number(amount.toFixed(6)),customerCreditsPerGeneration:customerCredits,
-   pricingSource,pricingDate,estimateType:"forecast_not_actual",billable:false,settlementEligible:false
+   pricingSource,pricingDate,discount:scenario.discount??null,estimateType:"forecast_not_actual",billable:false,settlementEligible:false
   });
  });
  const coverage=normalizedPlans.map(plan=>{
@@ -69,7 +69,7 @@ export function calculateSubscriptionPlanCreditEconomics({
    const providerSpendUsd=Number((generations*scenario.providerCostUsd).toFixed(6));
    return Object.freeze({
     provider:scenario.provider,model:scenario.model,operation:scenario.operation,
-    durationSeconds:scenario.durationSeconds,resolution:scenario.resolution,
+    durationSeconds:scenario.durationSeconds,resolution:scenario.resolution,discount:scenario.discount,
     customerCreditsPerGeneration:scenario.customerCreditsPerGeneration,
     maximumWholeGenerations:generations,creditsUsed,creditsRemaining:plan.proposedMonthlyCreditAllowance-creditsUsed,
     estimatedProviderSpendUsd:providerSpendUsd,pricingSource:scenario.pricingSource,pricingDate:scenario.pricingDate
