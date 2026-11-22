@@ -300,3 +300,59 @@ test("subscription economics does not write or activate private draft plan hypot
  assert.deepEqual(writes,[]);
  assert.ok(result.body.economics.limitations.some(value=>value.includes("never persisted or granted")||value.includes("no subscription plan")));
 });
+
+test("plan economics includes the exact governed Kling 4.0 HDR surcharge in the customer-cost forecast",async()=>{
+ const rateCard={
+  provider:"runway",model:"kling-4.0",currency:"USD",video_second_minor:235,
+  rate_card_version:"2026-11-23.kling4-hdr",billing_unit:"mixed",
+  verification_status:"source_linked",source_url:"https://dev.runwayml.com/learn/kling-4-0-api",
+  source_checked_at:"2026-11-22T00:00:00Z",source_fingerprint:"b".repeat(64),
+  effective_from:"2026-11-22T00:00:00Z",effective_to:null,
+  pricing_dimensions:{hdrSurchargeSecondMinor_1080p:47}
+ };
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url);calls.push({target,method:options.method||"GET",body:options.body});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.includes("/subscription_plans?"))return json(plans);
+  if(target.includes("/ai_model_price_catalog?"))return json([rateCard]);
+  if(target.includes("ai_usage_cost_events?"))return json([]);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
+  body:{creditBudgetShareBps:7000,scenarios:[{
+   provider:"runway",model:"kling-4.0",currency:"USD",rateCardVersion:"2026-11-23.kling4-hdr",
+   durationSeconds:10,resolution:"1080p",audio:false,hdr:true
+  }]}});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ const row=result.body.economics.scenarios[0];
+ assert.equal(row.providerCostUsd,2.82);
+ assert.equal(row.rateCardVersion,"2026-11-23.kling4-hdr");
+ const lookup=calls.find(call=>call.target.includes("/ai_model_price_catalog?"));
+ assert.ok(lookup.target.includes("rate_card_version=eq.2026-11-23.kling4-hdr"));
+ assert.equal(calls.filter(call=>call.method!=="GET").length,0,"plan economics remains read-only");
+});
+
+test("plan economics fails closed when HDR is requested without a governed surcharge",async()=>{
+ const rateCard={
+  provider:"runway",model:"kling-4.0",currency:"USD",video_second_minor:235,
+  rate_card_version:"2026-11-23.kling4-no-hdr",billing_unit:"video_second",
+  verification_status:"source_linked",source_url:"https://dev.runwayml.com/learn/kling-4-0-api",
+  source_checked_at:"2026-11-22T00:00:00Z",source_fingerprint:"c".repeat(64),
+  effective_from:"2026-11-22T00:00:00Z",effective_to:null,pricing_dimensions:{}
+ };
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.includes("/subscription_plans?"))return json(plans);
+  if(target.includes("/ai_model_price_catalog?"))return json([rateCard]);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
+  body:{creditBudgetShareBps:7000,scenarios:[{
+   provider:"runway",model:"kling-4.0",currency:"USD",rateCardVersion:"2026-11-23.kling4-no-hdr",
+   durationSeconds:10,resolution:"1080p",audio:false,hdr:true
+  }]}});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"PROVIDER_VIDEO_HDR_PRICING_UNRESOLVED");
+});
