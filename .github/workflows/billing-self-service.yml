@@ -36,6 +36,7 @@ on:
       - feat/customer-credit-expiry-wallet-batch-78-2026-11-22
       - feat/customer-credit-wallet-dashboard-batch-79-2026-11-22
       - feat/verified-credit-pack-topups-batch-80-2026-11-22
+      - feat/admin-credit-adjustments-batch-81-2026-11-23
   pull_request:
 
 permissions:
@@ -211,6 +212,12 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/credit-pack-verified-topup-postgres-integration-batch-80.sql
       - name: Test Batch 80 verified credit-pack top-up contract
         run: npm run verify:verified-credit-pack-topups
+      - name: Apply Batch 81 auditable administrator credit adjustments
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261123010000_admin_credit_adjustments_batch_81.sql
+      - name: Verify Batch 81 admin compensation, reserved-credit debit guard and audit trail
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/admin-credit-adjustments-postgres-integration-batch-81.sql
+      - name: Test Batch 81 administrator credit adjustment API and database contract
+        run: npm run verify:admin-credit-adjustments
       - name: Verify Paddle and Pesapal reservation, activation, renewal and lifecycle settlement
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/paddle-pesapal-subscription-postgres-integration.sql
       - name: Verify resource economics and shadow model routing
