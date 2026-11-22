@@ -72,3 +72,6 @@ export function createNeonCustomerCreditQuotePolicy({ env = process.env } = {}) 
     return Number(credits);
   });
 }
+
+// Generic alias shared by Supabase cloud quotes and the isolated Neon staging path.
+export const createCustomerCreditQuotePolicy = createNeonCustomerCreditQuotePolicy;
