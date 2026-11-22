@@ -31,7 +31,8 @@ on:
       - feat/executive-financial-intelligence-batch-47
       - feat/financial-governance-batch-48
       - feat/revenue-movement-cohort-intelligence-batch-39
-      - feat/verified-job-cost-coverage-batch-70-2026-11-22\n      - feat/verified-credit-revenue-allocation-batch-71-2026-11-22
+      - feat/verified-job-cost-coverage-batch-70-2026-11-22
+      - feat/verified-credit-revenue-allocation-batch-71-2026-11-22
   pull_request:
 
 permissions:
