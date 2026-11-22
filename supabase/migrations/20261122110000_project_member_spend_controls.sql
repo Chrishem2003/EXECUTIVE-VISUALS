@@ -293,11 +293,88 @@ begin
  return query select current_balance,false;
 end $$;
 
+-- Owner-managed membership for cloud projects. The recipient must already have
+-- an authenticated account; this creates access, not an email invitation.
+create or replace function executive_visuals.add_project_member(
+ p_owner_id uuid,p_project_id uuid,p_email text,p_role text default 'viewer'
+) returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals
+as $
+declare target auth.users; membership project_members;
+begin
+ if p_owner_id is null or p_project_id is null or p_email is null
+    or char_length(btrim(p_email)) not between 3 and 320
+    or p_role is null or p_role not in ('editor','reviewer','viewer') then
+  raise exception 'PROJECT_MEMBER_ARGUMENTS_INVALID' using errcode='22023';
+ end if;
+ if not exists(select 1 from projects where id=p_project_id and owner_id=p_owner_id) then
+  raise exception 'PROJECT_CREDIT_POOL_OWNER_REQUIRED' using errcode='42501';
+ end if;
+ select * into target from auth.users where lower(email)=lower(btrim(p_email)) limit 1;
+ if target.id is null then raise exception 'PROJECT_MEMBER_ACCOUNT_NOT_FOUND'; end if;
+ if target.id=p_owner_id then raise exception 'PROJECT_OWNER_ALREADY_HAS_ACCESS'; end if;
+ insert into project_members(project_id,member_id,role,invited_by)
+ values(p_project_id,target.id,p_role,p_owner_id)
+ on conflict(project_id,member_id) do update set role=excluded.role,invited_by=excluded.invited_by
+ returning * into membership;
+ return jsonb_build_object('projectId',membership.project_id,'memberId',membership.member_id,
+  'email',target.email,'role',membership.role,'createdAt',membership.created_at);
+end $;
+
+create or replace function executive_visuals.remove_project_member(
+ p_owner_id uuid,p_project_id uuid,p_member_id uuid
+) returns boolean
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals
+as $
+declare removed uuid;
+begin
+ if p_owner_id is null or p_project_id is null or p_member_id is null then
+  raise exception 'PROJECT_MEMBER_ARGUMENTS_INVALID' using errcode='22023';
+ end if;
+ if not exists(select 1 from projects where id=p_project_id and owner_id=p_owner_id) then
+  raise exception 'PROJECT_CREDIT_POOL_OWNER_REQUIRED' using errcode='42501';
+ end if;
+ if p_member_id=p_owner_id then raise exception 'PROJECT_OWNER_CANNOT_BE_REMOVED'; end if;
+ delete from project_members where project_id=p_project_id and member_id=p_member_id
+  returning member_id into removed;
+ if removed is null then raise exception 'PROJECT_MEMBER_NOT_FOUND'; end if;
+ -- Keep the member policy and immutable spend history for audit; membership
+ -- removal itself blocks all future shared-wallet reservations.
+ return true;
+end $;
+
+create or replace function executive_visuals.list_project_members(
+ p_owner_id uuid,p_project_id uuid
+) returns table(member_id uuid,email text,role text,created_at timestamptz)
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals
+as $
+begin
+ if p_owner_id is null or p_project_id is null then
+  raise exception 'PROJECT_MEMBER_ARGUMENTS_INVALID' using errcode='22023';
+ end if;
+ if not exists(select 1 from projects where id=p_project_id and owner_id=p_owner_id) then
+  raise exception 'PROJECT_CREDIT_POOL_OWNER_REQUIRED' using errcode='42501';
+ end if;
+ return query
+ select m.member_id,u.email,m.role,m.created_at
+ from project_members m join auth.users u on u.id=m.member_id
+ where m.project_id=p_project_id order by m.created_at,m.member_id;
+end $;
+
+revoke all on function executive_visuals.add_project_member(uuid,uuid,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.remove_project_member(uuid,uuid,uuid) from public,anon,authenticated;
+revoke all on function executive_visuals.list_project_members(uuid,uuid) from public,anon,authenticated;
 revoke all on function executive_visuals.configure_project_credit_pool_member_policy(uuid,uuid,uuid,bigint,text) from public,anon,authenticated;
 revoke all on function executive_visuals.list_project_credit_pool_member_usage(uuid,uuid) from public,anon,authenticated;
 revoke all on function executive_visuals.reserve_generation_credits(uuid,uuid,bigint,text) from public,anon,authenticated;
 revoke all on function executive_visuals.settle_project_credit_pool_reservation(uuid,bigint,jsonb) from public,anon,authenticated;
 revoke all on function executive_visuals.release_generation_credit_reservation(uuid,text) from public,anon,authenticated;
+grant execute on function executive_visuals.add_project_member(uuid,uuid,text,text) to service_role;
+grant execute on function executive_visuals.remove_project_member(uuid,uuid,uuid) to service_role;
+grant execute on function executive_visuals.list_project_members(uuid,uuid) to service_role;
 grant execute on function executive_visuals.configure_project_credit_pool_member_policy(uuid,uuid,uuid,bigint,text) to service_role;
 grant execute on function executive_visuals.list_project_credit_pool_member_usage(uuid,uuid) to service_role;
 grant execute on function executive_visuals.reserve_generation_credits(uuid,uuid,bigint,text) to service_role;
