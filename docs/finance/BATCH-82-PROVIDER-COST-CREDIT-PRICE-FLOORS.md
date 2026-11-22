@@ -61,3 +61,9 @@ Before subscription allowances or top-up packs are activated:
 6. Obtain finance approval and then activate products in a separate, explicitly reviewed change.
 
 No customer-facing credit allowance, rate card, plan price, product activation, provider call, payment, production migration or deployment is created by this batch.
+
+## Source references
+
+- Runway Dev, [AI video API pricing comparison](https://dev.runwayml.com/learn/ai-video-api-pricing), checked November 9, 2026.
+- Runway Dev, [Seedance 2.5 API pricing](https://dev.runwayml.com/learn/seedance-2-5-api), rates current November 22, 2026.
+- Flutterwave Uganda, [collections and transfer pricing](https://flutterwave.com/ug/pricing/), checked November 23, 2026.
