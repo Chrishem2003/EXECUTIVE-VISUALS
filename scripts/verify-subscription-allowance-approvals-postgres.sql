@@ -186,5 +186,5 @@ begin
  exception when object_not_in_prerequisite_state then
   if sqlerrm not like '%immutable%' then raise; end if;
  end;
- raise notice 'Batch 59 persistent subscription allowance approval integration passed: proposal %, hash %',v_proposal_id,v_proposal_hash;
+ raise notice 'Batch 59/60 persistent subscription allowance approval and publication integration passed: proposal %, hash %',v_proposal_id,v_proposal_hash;
 end $$;
