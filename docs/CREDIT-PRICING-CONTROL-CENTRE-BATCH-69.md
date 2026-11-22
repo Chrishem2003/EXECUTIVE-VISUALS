@@ -17,13 +17,13 @@ These are unvalidated proposals, not published or approved prices. The subscript
 
 ## Provider rate-card catalogue
 
-The panel loads `GET /api/admin/finance/model-rate-cards?limit=200`, which is restricted to owner, platform-admin and billing-admin roles. It displays existing records, including provider/model, currency, version, verification status, effective dates and source reference. The catalogue is read-only in this batch. Unverified/legacy records remain visibly distinguished; missing records are not interpreted as zero cost.
+The panel loads `GET /api/admin/finance/model-rate-cards?limit=200`, which is restricted to owner, platform-admin and billing-admin roles. It displays existing records, including provider/model, currency, input/output token rates, image/video/render unit rates, version, verification status, effective dates and source reference. The catalogue is read-only in this batch. Unverified/legacy records remain visibly distinguished; missing records are not interpreted as zero cost.
 
 ## Scenario workflows
 
 ### Subscription allowance ceiling
 
-The selected plan's proposed monthly price is sent as integer USD cents to `POST /api/admin/finance/credit-pricing/scenario` with `mode=subscription`. The operator must supply measured monthly fixed cost and positive measured blended variable cost per credit, plus explicit fee and target-margin assumptions. The output is a mathematical maximum allowance, not a recommendation to grant the full ceiling.
+The selected plan's proposed monthly price is sent as integer USD cents to `POST /api/admin/finance/credit-pricing/scenario` with `mode=subscription`. The operator must supply measured monthly fixed cost, positive measured blended variable cost per credit, percentage payment fee, fixed payment fee, VAT on that fee and target-margin assumptions. The output is a mathematical maximum allowance, not a recommendation to grant the full ceiling.
 
 ### Prepaid credit-pack price floor
 
