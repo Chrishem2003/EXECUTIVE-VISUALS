@@ -9,7 +9,7 @@ end
 $roles$;
 
 create schema auth;
-create table auth.users (id uuid primary key);
+create table auth.users (id uuid primary key,email text);
 create or replace function auth.uid()
 returns uuid
 language sql stable
