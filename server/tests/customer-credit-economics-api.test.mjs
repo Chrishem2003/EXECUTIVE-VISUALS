@@ -19,9 +19,9 @@ const pricing=[
   ratesPerSecond:{"1080p":0.10},minimumCharge:0,audioSurchargePerSecond:0,referenceImageFee:0,billingIncrementSeconds:1}
 ];
 const qualityEvidence=[
- {provider:"runway",model:"kling_4",verified:true,sampleCount:45,qualityScore:0.96,p95LatencyMs:5500,evaluationVersion:"studio-eval-2026-11"},
- {provider:"runway",model:"gen4.5",verified:true,sampleCount:60,qualityScore:0.94,p95LatencyMs:4200,evaluationVersion:"studio-eval-2026-11"},
- {provider:"runway",model:"wan3",verified:true,sampleCount:70,qualityScore:0.86,p95LatencyMs:3500,evaluationVersion:"studio-eval-2026-11"}
+ {provider:"runway",model:"kling_4",verified:true,sampleCount:45,qualityScore:0.96,p95LatencyMs:5500,evaluationVersion:"studio-eval-2026-11",evidenceReference:"https://evidence.example/studio/kling",evidenceSha256:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+ {provider:"runway",model:"gen4.5",verified:true,sampleCount:60,qualityScore:0.94,p95LatencyMs:4200,evaluationVersion:"studio-eval-2026-11",evidenceReference:"https://evidence.example/studio/kling",evidenceSha256:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+ {provider:"runway",model:"wan3",verified:true,sampleCount:70,qualityScore:0.86,p95LatencyMs:3500,evaluationVersion:"studio-eval-2026-11",evidenceReference:"https://evidence.example/studio/kling",evidenceSha256:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
 ];
 const policy={
  CUSTOMER_CREDIT_CURRENCY:"USD",
