@@ -14,6 +14,7 @@
     "verify:capabilities": "node scripts/verify-capability-atlas.mjs",
     "verify:workload-economics": "node --test server/tests/ai-workload-economics.test.mjs",
     "verify:workload-variance": "node --test server/tests/workload-cost-variance.test.mjs",
+    "verify:verified-job-profitability": "node --test server/tests/verified-job-profitability.test.mjs",
     "verify:provider-rate-cards": "node --test server/tests/provider-rate-cards.test.mjs",
     "verify:provider-video-cost-estimator": "node --test server/tests/provider-video-cost-estimator.test.mjs server/tests/provider-video-cost-estimator-api.test.mjs",
     "verify:workload-telemetry": "node --test server/tests/ai-workload-telemetry.test.mjs",
