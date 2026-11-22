@@ -1290,7 +1290,7 @@ export function createFinancialIntelligenceApi({
           return error(400,"SUBSCRIPTION_ECONOMICS_INPUT_INVALID","Only scenario assumptions and a reporting month are accepted. Provider cost evidence must be derived from server-side invoice reconciliation, never browser input.");
         try{
           const periodMonth=String(body.periodMonth||new Date().toISOString().slice(0,7)+"-01");
-          if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
+          if(!/^\d{4}-\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
              new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
             return error(400,"SUBSCRIPTION_COST_EVIDENCE_PERIOD_INVALID","Choose a valid reporting month.");
           const candidateResult=await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month&job_id=not.is.null&period_month=eq."+encodeURIComponent(periodMonth)+"&order=occurred_at.asc,id.asc&limit=1001");
