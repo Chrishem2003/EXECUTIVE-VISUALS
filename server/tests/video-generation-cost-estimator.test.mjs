@@ -37,6 +37,7 @@ test("shared preflight applies the dated Kling 4.0 promotion, input billing and 
   const expectedText=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",pricingDate});
   assert.equal(text.credits,expectedText.estimatedCredits);
   assert.equal(text.amount,expectedText.estimatedUsd);
+  assert.equal(text.discount,expectedText.discount??null);
   assert.equal(text.billable,false);
   assert.equal(text.settlementEligible,false);
   const edit=estimateVideoGenerationCost({
@@ -46,6 +47,7 @@ test("shared preflight applies the dated Kling 4.0 promotion, input billing and 
   const expectedEdit=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",inputType:"video",inputVideoSeconds:6,pricingDate});
   assert.equal(edit.credits,expectedEdit.estimatedCredits);
   assert.equal(edit.amount,expectedEdit.estimatedUsd);
+  assert.equal(edit.discount,expectedEdit.discount??null);
   const hdr=estimateVideoGenerationCost({
     provider:"runway",model:"kling_4",durationSeconds:10,resolution:"4k",hdr:true
   });
