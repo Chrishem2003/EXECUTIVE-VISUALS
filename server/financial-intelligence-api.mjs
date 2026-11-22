@@ -17,6 +17,7 @@ import { exportFinancialAuditBundle } from "./financial-audit-export.mjs";
 import { calculateFinancialScenarioIntelligence } from "./financial-scenario-intelligence.mjs";
 import { buildPublicSubscriptionCatalogue } from "./subscription-plan-catalogue.mjs";
 import { simulateSubscriptionAllowances } from "./subscription-allowance-profitability.mjs";
+import { deriveInvoiceBackedCreditCostEvidence } from "./subscription-credit-cost-evidence.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -1284,21 +1285,48 @@ export function createFinancialIntelligenceApi({
       }
       if(path==="/api/admin/finance/subscription-allowance-simulation"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
-        const allowed=new Set(["targetGrossMarginBps","paymentFeeBps","fixedPaymentFeeMinor","refundReserveBps","supportReserveMinor","infrastructureReserveMinor"]);
+        const allowed=new Set(["targetGrossMarginBps","paymentFeeBps","fixedPaymentFeeMinor","refundReserveBps","supportReserveMinor","infrastructureReserveMinor","periodMonth"]);
         if(!body||typeof body!=="object"||Array.isArray(body)||Object.keys(body).some(key=>!allowed.has(key)))
-          return error(400,"SUBSCRIPTION_ECONOMICS_INPUT_INVALID","Only scenario assumptions are accepted. Provider cost evidence must come from verified invoice reconciliation, never browser input.");
+          return error(400,"SUBSCRIPTION_ECONOMICS_INPUT_INVALID","Only scenario assumptions and a reporting month are accepted. Provider cost evidence must be derived from server-side invoice reconciliation, never browser input.");
         try{
+          const periodMonth=String(body.periodMonth||new Date().toISOString().slice(0,7)+"-01");
+          if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
+             new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
+            return error(400,"SUBSCRIPTION_COST_EVIDENCE_PERIOD_INVALID","Choose a valid reporting month.");
+          const usageResult=await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month&status=eq.succeeded&job_id=not.is.null&period_month=eq."+encodeURIComponent(periodMonth)+"&order=occurred_at.asc,id.asc&limit=1001");
+          const rawEvents=Array.isArray(usageResult.data)?usageResult.data:[];
+          const sampleComplete=rawEvents.length<=1000;
+          const usageEvents=rawEvents.slice(0,1000);
+          const usageIds=usageEvents.map(row=>String(row.id||"")).filter(id=>UUID.test(id));
+          const jobIds=[...new Set(usageEvents.map(row=>String(row.job_id||"")).filter(id=>UUID.test(id)))];
+          const [attributionResult,reservationResult]=await Promise.all([
+            usageIds.length?dbRequest("financial_cost_attribution_links?select=usage_event_id,amount_minor,currency,invoice_import_id,invoice_line_id&usage_event_id=in.("+usageIds.join(",")+")"):Promise.resolve({data:[]}),
+            jobIds.length?dbRequest("billing_credit_reservations?select=job_id,actual_credits,state&job_id=in.("+jobIds.join(",")+")"):Promise.resolve({data:[]})
+          ]);
+          const costEvidence=deriveInvoiceBackedCreditCostEvidence({
+            periodMonth,usageEvents,invoiceAttributions:Array.isArray(attributionResult.data)?attributionResult.data:[],
+            creditReservations:Array.isArray(reservationResult.data)?reservationResult.data:[],sampleComplete
+          });
           const simulation=simulateSubscriptionAllowances({
             targetGrossMarginBps:body.targetGrossMarginBps,
             paymentFeeBps:body.paymentFeeBps,
             fixedPaymentFeeMinor:body.fixedPaymentFeeMinor??0,
             refundReserveBps:body.refundReserveBps??0,
             supportReserveMinor:body.supportReserveMinor??0,
-            infrastructureReserveMinor:body.infrastructureReserveMinor??0
+            infrastructureReserveMinor:body.infrastructureReserveMinor??0,
+            providerCostPerCustomerCreditMinor:costEvidence.providerCostPerCustomerCreditMinor??undefined,
+            costEvidence:costEvidence.evidence??undefined
           });
-          return response(200,{simulation,source:"read-only scenario using proposed test prices",providerCostEvidence:"not supplied; verified invoice evidence required before calculating credit allowances"});
+          return response(200,{simulation,source:"read-only scenario using proposed test prices",
+            costEvidenceSummary:{status:costEvidence.status,periodMonth:costEvidence.periodMonth,
+              sampleJobs:costEvidence.sampleJobs,sampleCredits:costEvidence.sampleCredits,
+              totalProviderCostMinor:costEvidence.totalProviderCostMinor,
+              providerCostPerCustomerCreditMinor:costEvidence.providerCostPerCustomerCreditMinor,
+              excludedJobs:costEvidence.excludedJobs,minimumSampleJobs:costEvidence.minimumSampleJobs,
+              rateCardVersion:costEvidence.evidence?.rateCardVersion||null,
+              limitations:["Only complete jobs with exactly one immutable USD invoice attribution per usage event and one settled customer-credit reservation are included.","At least five verified jobs are required; partial, ambiguous, non-USD and unsettled records are excluded.","The blended cost per platform credit is rounded upward to the next USD cent, intentionally conservative.","This is a measured historical sample, not a guarantee of future provider cost; allowances remain unpublished pending approval."]}});
         }catch(err){
-          return error(400,err.code||"SUBSCRIPTION_ECONOMICS_INPUT_INVALID",err.message||"Subscription allowance assumptions are invalid.");
+          return error(400,err.code||"SUBSCRIPTION_ECONOMICS_INPUT_INVALID",err.message||"Subscription allowance scenario could not be calculated from verified invoice evidence.");
         }
       }
       if(path==="/api/admin/finance/scenario-baseline"&&method==="GET"){
