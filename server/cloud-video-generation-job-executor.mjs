@@ -251,9 +251,11 @@ export async function executeCloudVideoGenerationJob({
     if (typeof quoteCustomerCredits !== "function") {
       throw fail("Verified provider cost cannot be settled without the shared customer-credit pricing policy.", "VIDEO_CUSTOMER_CREDIT_POLICY_UNCONFIGURED");
     }
-    const amountMicros = Math.round(cost.amount * 1000000);
-    if (!Number.isSafeInteger(amountMicros) || amountMicros < 1 ||
-        Math.abs(cost.amount * 1000000 - amountMicros) > 0.0001) {
+    const amountMicrosFloat = cost.amount * 1000000;
+    // Round provider costs upward to the next USD micro-unit (with a tiny
+    // floating-point tolerance) so precision loss cannot understate cost.
+    const amountMicros = Math.ceil(amountMicrosFloat - 0.000001);
+    if (!Number.isSafeInteger(amountMicros) || amountMicros < 1) {
       throw fail("Verified provider cost cannot be normalized to integer USD micro-units.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
     }
     try {
