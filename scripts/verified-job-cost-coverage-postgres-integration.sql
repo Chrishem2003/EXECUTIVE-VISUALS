@@ -9,10 +9,13 @@ declare
   v_job_cost_only constant uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
   v_import_usd uuid:=gen_random_uuid();
   v_import_ugx uuid:=gen_random_uuid();
+  v_import_cost_only uuid:=gen_random_uuid();
   v_line_usd uuid:=gen_random_uuid();
   v_line_ugx uuid:=gen_random_uuid();
+  v_line_cost_only uuid:=gen_random_uuid();
   v_usage_usd uuid:=gen_random_uuid();
   v_usage_ugx uuid:=gen_random_uuid();
+  v_usage_cost_only uuid:=gen_random_uuid();
   v_report jsonb;
   v_row jsonb;
 begin
@@ -49,28 +52,34 @@ begin
      0,0,0,5,0,'USD',680,'provider_reported','batch70-usd-line','batch70-usd-trace','batch70-usage-usd'),
     (v_usage_ugx,'2026-11-22T10:01:00Z','2026-11-01',v_actor,null,v_job_mixed,
      'batch70-ugx-op','runway','seedance2_5','seedance2_5','video','succeeded',
-     0,0,0,5,0,'UGX',4000,'provider_reported','batch70-ugx-line','batch70-ugx-trace','batch70-usage-ugx');
+     0,0,0,5,0,'UGX',4000,'provider_reported','batch70-ugx-line','batch70-ugx-trace','batch70-usage-ugx'),
+    (v_usage_cost_only,'2026-11-22T10:02:00Z','2026-11-01',v_actor,null,v_job_cost_only,
+     'batch70-cost-only-op','runway','seedance2_5','seedance2_5','video','succeeded',
+     0,0,0,5,0,'USD',250,'provider_reported','batch70-cost-only-line','batch70-cost-only-trace','batch70-usage-cost-only');
 
   insert into executive_visuals.ai_provider_invoice_imports(
     id,provider,invoice_reference,currency,period_start,period_end,total_minor,
     imported_line_count,matched_line_count,reconciliation_status,source_fingerprint,imported_by
   ) values
     (v_import_usd,'runway','BATCH70-USD-'||v_import_usd::text,'USD','2026-11-01','2026-11-30',680,1,0,'pending',repeat('c',64),v_actor),
-    (v_import_ugx,'runway','BATCH70-UGX-'||v_import_ugx::text,'UGX','2026-11-01','2026-11-30',4000,1,0,'pending',repeat('d',64),v_actor);
+    (v_import_ugx,'runway','BATCH70-UGX-'||v_import_ugx::text,'UGX','2026-11-01','2026-11-30',4000,1,0,'pending',repeat('d',64),v_actor),
+    (v_import_cost_only,'runway','BATCH70-COST-'||v_import_cost_only::text,'USD','2026-11-01','2026-11-30',250,1,0,'pending',repeat('e',64),v_actor);
 
   insert into executive_visuals.ai_provider_invoice_lines(
     id,import_id,provider_line_reference,usage_period,owner_id,project_id,job_id,
     provider,model,operation,currency,amount_minor,usage_quantity,usage_unit
   ) values
     (v_line_usd,v_import_usd,'batch70-usd-line','2026-11-22',v_actor,null,v_job_mixed,'runway','seedance2_5','video','USD',680,5,'seconds'),
-    (v_line_ugx,v_import_ugx,'batch70-ugx-line','2026-11-22',v_actor,null,v_job_mixed,'runway','seedance2_5','video','UGX',4000,5,'seconds');
+    (v_line_ugx,v_import_ugx,'batch70-ugx-line','2026-11-22',v_actor,null,v_job_mixed,'runway','seedance2_5','video','UGX',4000,5,'seconds'),
+    (v_line_cost_only,v_import_cost_only,'batch70-cost-only-line','2026-11-22',v_actor,null,v_job_cost_only,'runway','seedance2_5','video','USD',250,5,'seconds');
 
   insert into executive_visuals.ai_provider_invoice_reconciliation_events(
     invoice_import_id,invoice_line_id,usage_event_id,match_status,candidate_count,
     expected_amount_minor,observed_amount_minor,currency,evidence,idempotency_key
   ) values
     (v_import_usd,v_line_usd,v_usage_usd,'matched',1,680,680,'USD','{"matchMethod":"exact_provider_line_reference"}','batch70-recon-usd'),
-    (v_import_ugx,v_line_ugx,v_usage_ugx,'matched',1,4000,4000,'UGX','{"matchMethod":"exact_provider_line_reference"}','batch70-recon-ugx');
+    (v_import_ugx,v_line_ugx,v_usage_ugx,'matched',1,4000,4000,'UGX','{"matchMethod":"exact_provider_line_reference"}','batch70-recon-ugx'),
+    (v_import_cost_only,v_line_cost_only,v_usage_cost_only,'matched',1,250,250,'USD','{"matchMethod":"exact_provider_line_reference"}','batch70-recon-cost-only');
 
   v_report:=executive_visuals.get_verified_job_cost_coverage(v_actor,'2026-11-01',100);
   if (v_report->>'profitabilityAvailable')::boolean is distinct from false
@@ -96,8 +105,8 @@ begin
   end if;
 
   select value into v_row from jsonb_array_elements(v_report->'rows') where value->>'job_id'=v_job_cost_only::text;
-  if v_row is not null then
-    raise exception 'A job without a settled credit reservation should not be invented from unrelated data: %',v_row;
+  if v_row is null or v_row->>'evidence_status'<>'missing_settled_credit_usage' then
+    raise exception 'Invoice-backed job without settled credits was not surfaced for review: %',v_row;
   end if;
 
   begin
