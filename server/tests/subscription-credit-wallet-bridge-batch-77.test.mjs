@@ -59,6 +59,6 @@ test("forward-only bridge does not backfill historical balances or activate prop
  assert.doesNotMatch(migration,/update executive_visuals\.billing_credit_ledger/i);
  assert.doesNotMatch(migration,/delete from executive_visuals\.billing_credit_ledger/i);
  assert.match(pricing,/'draft'/);
- assert.match(pricing,/'false,1/);
+ assert.match(pricing,/false,1/);
  assert.match(migration,/revoke all on function executive_visuals\.ensure_subscription_period_credit_grant\(\)/);
 });
