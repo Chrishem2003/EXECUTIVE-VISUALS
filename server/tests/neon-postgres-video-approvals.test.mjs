@@ -130,7 +130,7 @@ test("workflow-node enqueue binds the exact request to one Neon job and reserves
 });
 
 test("workflow-node enqueue rejects expired quotes, changed model families and ceilings below the quote before database writes",async()=>{
- const f=fixture();
+ const f=fixture({quoteCustomerCredits:()=>300});
  const baseQuote={quoteId:approval,ownerId:owner,projectId:project,requestId:"workflow-approval-002",
   requestHash:"d".repeat(64),provider:"runway",model:"model-router",operation:"text-to-video",
   input:{prompt:"A cinematic sunrise"},estimatedAmount:1.25,approvedMaxAmount:1.5,customerCreditBudgetCredits:300,
