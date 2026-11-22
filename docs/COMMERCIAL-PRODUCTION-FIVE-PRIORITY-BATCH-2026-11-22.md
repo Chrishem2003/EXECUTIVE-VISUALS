@@ -60,6 +60,9 @@ Added `compareCommercialProductionCandidates`:
 - ranks eligible models by customer-credit cost and then measured quality;
 - returns no recommendation when quality evidence is missing or insufficient;
 - always returns `automaticRouting=false`.
+- The authenticated `/api/video-model-recommendations` endpoint evaluates the current server rate-card catalog against server-configured quality evidence; it does not accept browser-supplied scores.
+- Evidence records require a verified flag, at least 25 samples, a version, p95 latency, an HTTPS evidence reference and a SHA-256 evidence digest.
+- The Video Studio exposes a comparison action and displays a recommendation only when the quality, sample, latency, rate-card and credit-price gates all pass.
 
 This complements the existing model-router shadow evaluation and cost/quality guardrails. It does not silently route customers to a cheaper but unproven model. Production recommendation data must come from trusted evaluation records, not browser-submitted scores.
 
@@ -72,6 +75,14 @@ The Video Studio now has an **Estimate generation cost & credits** action.
 - It does not submit a job, reserve credits, call a provider or trigger a payment.
 
 The existing Creative Director and storyboard compiler remain the planning stages; the existing approved workflow and cloud queue remain the execution path. The customer must still review and approve the exact production quote before any paid provider execution.
+
+Model evaluation configuration:
+- `VIDEO_MODEL_QUALITY_EVIDENCE_JSON` — server-maintained JSON array of verified provider/model evaluations with `sampleCount`, `qualityScore`, `p95LatencyMs`, `evaluationVersion`, `evidenceReference` and `evidenceSha256`.
+- `VIDEO_MODEL_MIN_QUALITY_SCORE` — defaults to 0.90.
+- `VIDEO_MODEL_MIN_EVALUATION_SAMPLES` — defaults to 25.
+- `VIDEO_MODEL_MAX_P95_LATENCY_MS` — defaults to 30000.
+
+If this trusted evaluation evidence is missing or invalid, the endpoint returns no recommendation. It never falls back to cheapest-only routing.
 
 ## Provider pricing evidence
 
