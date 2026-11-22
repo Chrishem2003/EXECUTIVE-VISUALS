@@ -15,7 +15,7 @@ begin
       add constraint video_workflow_quotes_customer_credits_check
       check(estimated_customer_credits is null or estimated_customer_credits between 1 and 100000000);
   end if;
-end $;
+end; $;
 
 -- Read the same append-only wallet used by cloud generation reservations.
 -- billing_credit_ledger already records active reservations as negative entries;
