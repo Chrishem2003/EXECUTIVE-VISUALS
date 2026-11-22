@@ -100,7 +100,7 @@ export async function runCloudVideoWorkerCycle({
     const persistedOutput = {
       provider: output.provider, model: output.model, providerTaskId: output.providerTaskId,
       assetIds: output.assetIds, usage: output.usage || null,
-      actualAmount: output.actualAmount, actualCredits: output.actualCredits, providerCredits: output.providerCredits, currency: output.currency,
+      actualAmount: output.actualAmount, actualCredits: output.actualCredits, ...(Number.isSafeInteger(output.providerCredits) ? { providerCredits: output.providerCredits } : {}), currency: output.currency,
       costEvidenceReference: output.costEvidenceReference,
       customerCreditSettlement: output.customerCreditSettlement || null
     };
