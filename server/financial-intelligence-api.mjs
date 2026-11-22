@@ -14,6 +14,7 @@ import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.
 import { calculateSubscriptionPlanCreditEconomics } from "./subscription-plan-credit-economics.mjs";
 import { calculateMixedSubscriptionWorkloadEconomics } from "./mixed-subscription-workload-economics.mjs";
 import { deriveInvoiceBackedCreditCostEvidence } from "./subscription-credit-cost-evidence.mjs";
+import { deriveInvoiceBackedModelCostEvidence } from "./model-invoice-cost-evidence.mjs";
 import { analyzeWorkloadCostVariance } from "./workload-cost-variance.mjs";
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
@@ -945,20 +946,22 @@ export function createFinancialIntelligenceApi({
              !Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
              new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
             return error(400,"SUBSCRIPTION_COST_EVIDENCE_PERIOD_INVALID","Choose a valid reporting month.");
-          const candidateResult=await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month&job_id=not.is.null&period_month=eq."+encodeURIComponent(periodMonth)+"&order=occurred_at.asc,id.asc&limit=1000");
+          const candidateResult=await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month,provider,requested_model,response_model,operation,currency,cost_basis,cost_minor&period_month=eq."+encodeURIComponent(periodMonth)+"&order=occurred_at.asc,id.asc&limit=1000");
           const candidates=Array.isArray(candidateResult.data)?candidateResult.data:[];
           let sampleComplete=candidates.length<1000;
           const candidateJobIds=[...new Set(candidates.map(row=>String(row.job_id||"")).filter(id=>UUID.test(id)))];
           const allUsageResult=sampleComplete&&candidateJobIds.length
-            ?await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month&job_id=in.("+candidateJobIds.join(",")+")&order=occurred_at.asc,id.asc&limit=1000")
+            ?await dbRequest("ai_usage_cost_events?select=id,job_id,status,period_month,provider,requested_model,response_model,operation,currency,cost_basis,cost_minor&job_id=in.("+candidateJobIds.join(",")+")&order=occurred_at.asc,id.asc&limit=1000")
             :{data:[]};
           const allRawEvents=Array.isArray(allUsageResult.data)?allUsageResult.data:[];
           sampleComplete=sampleComplete&&allRawEvents.length<1000;
-          const usageEvents=allRawEvents.slice(0,1000);
+          const usageById=new Map();
+          for(const event of [...allRawEvents,...candidates])if(UUID.test(String(event.id||"")))usageById.set(String(event.id),event);
+          const usageEvents=[...usageById.values()];
           const usageIds=usageEvents.map(row=>String(row.id||"")).filter(id=>UUID.test(id));
           const jobIds=[...new Set(usageEvents.map(row=>String(row.job_id||"")).filter(id=>UUID.test(id)))];
           const [attributionResult,reservationResult]=sampleComplete?await Promise.all([
-            usageIds.length?dbRequest("financial_cost_attribution_links?select=usage_event_id,amount_minor,currency,invoice_import_id,invoice_line_id&usage_event_id=in.("+usageIds.join(",")+")"):Promise.resolve({data:[]}),
+            usageIds.length?dbRequest("financial_cost_attribution_links?select=usage_event_id,provider,model,operation,amount_minor,currency,invoice_import_id,invoice_line_id,reconciliation_event_id,service_cost_event_id&usage_event_id=in.("+usageIds.join(",")+")"):Promise.resolve({data:[]}),
             jobIds.length?dbRequest("billing_credit_reservations?select=job_id,actual_credits,state&job_id=in.("+jobIds.join(",")+")"):Promise.resolve({data:[]})
           ]):[{data:[]},{data:[]}];
           const invoiceAttributions=Array.isArray(attributionResult.data)?attributionResult.data:[];
@@ -968,6 +971,10 @@ export function createFinancialIntelligenceApi({
             periodMonth,usageEvents:sampleComplete?usageEvents:[],
             invoiceAttributions:sampleComplete?invoiceAttributions:[],
             creditReservations:sampleComplete?creditReservations:[],sampleComplete
+          });
+          const modelCostEvidence=deriveInvoiceBackedModelCostEvidence({
+            periodMonth,usageEvents:sampleComplete?candidates:[],
+            invoiceAttributions:sampleComplete?invoiceAttributions:[],sampleComplete
           });
           const verifiedInvoiceCoverage=costEvidence.sampleJobs+Number(costEvidence.excludedJobs||0);
           const evidenceTimestamp=new Date().toISOString();
@@ -980,8 +987,8 @@ export function createFinancialIntelligenceApi({
             excludedJobs:costEvidence.excludedJobs,minimumSampleJobs:costEvidence.minimumSampleJobs,
             verifiedInvoiceCoverage:verifiedInvoiceCoverage>0?Number((costEvidence.sampleJobs/verifiedInvoiceCoverage).toFixed(6)):null,
             evidenceTimestamp,rateCardVersion:costEvidence.evidence?.rateCardVersion||null,
-            sampleComplete,perModelAttributionAvailable:false,
-            workloadCostStatus:"unpriced_model_operation_attribution_unavailable",
+            sampleComplete,perModelAttributionAvailable:modelCostEvidence.verifiedModelGroups>0,
+            workloadCostStatus:modelCostEvidence.verifiedModelGroups>0?"verified_model_operation_actual_cost_available":modelCostEvidence.status,
             limitations:[
               "Actual cost is a historical blended platform-credit measure from immutable USD invoice attribution and settled reservations, not a model-specific rate.",
               "Provider list-price estimates in economics and mixedEconomics remain forecasts and are never silently replaced by invoice-backed blended cost.",
@@ -992,7 +999,7 @@ export function createFinancialIntelligenceApi({
           };
           return response(200,{
             economics,mixedEconomics,
-            actualCostEvidence,
+            actualCostEvidence,modelActualCostEvidence:modelCostEvidence,
             allowanceReadiness:{
               status:costEvidence.status==="verified_measured"
                 ?"measured_blended_cost_available_requires_finance_product_approval"
