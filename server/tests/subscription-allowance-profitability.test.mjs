@@ -21,7 +21,7 @@ test("uses the four fixed-price tiers but leaves allowances unset without approv
  assert.ok(result.plans.every(p=>p.publishable===false&&p.allowanceStatus==="awaiting_approved_cost_evidence"));
 });
 
-test("calculates conservative credit scenarios from approved cost evidence and integer minor-unit arithmetic",()=>{
+test("calculates conservative credit scenarios from verified evidence while keeping plans unpublished",()=>{
  const result=simulateSubscriptionAllowances({...base,providerCostPerCustomerCreditMinor:2,costEvidence:evidence});
  assert.equal(result.creditAllowanceCalculated,true);
  assert.deepEqual(result.plans.map(p=>p.estimatedIncludedCredits),[98,381,1090,2791]);
@@ -30,9 +30,9 @@ test("calculates conservative credit scenarios from approved cost evidence and i
  assert.equal(result.costEvidence.rateCardVersion,"runway-2026-11-v1");
 });
 
-test("never accepts unapproved, incomplete or time-inverted cost evidence",()=>{
+test("rejects approval-marked, incomplete or time-inverted cost evidence",()=>{
  for(const costEvidence of [
-  {...evidence,approved:false},
+  {...evidence,approved:true},
   {...evidence,status:"forecast"},
   {...evidence,source:""},
   {...evidence,rateCardVersion:""},
