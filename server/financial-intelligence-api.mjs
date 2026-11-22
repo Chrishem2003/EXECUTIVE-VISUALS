@@ -908,9 +908,12 @@ export function createFinancialIntelligenceApi({
         if(!Array.isArray(planRows.data)||planRows.data.length===0)
           return error(409,"SUBSCRIPTION_PLAN_HYPOTHESES_NOT_FOUND","No private draft subscription plan hypotheses are available for evaluation.");
         const estimates=[];
+        const allowedScenarioFields=new Set(["provider","model","operation","durationSeconds","outputFormat","resolution","audio","inputVideoSeconds","referenceVideoSeconds","referenceImageCount","referenceAudioCount","hasStartFrame","outputFrames","sourceWidth","sourceHeight","sourceDynamicRange","outputWidth","outputHeight","targetFramerate","inputType","hdr","exrExport"]);
         try{
           for(const scenario of body.scenarios){
-            if(!scenario||typeof scenario!=="object"||Array.isArray(scenario))throw Object.assign(new Error("Each provider scenario must be a JSON object."),{code:"SUBSCRIPTION_ECONOMICS_SCENARIO_INVALID"});
+            if(!scenario||typeof scenario!=="object"||Array.isArray(scenario)||
+              Object.keys(scenario).some(key=>!allowedScenarioFields.has(key)))
+              throw Object.assign(new Error("Each provider scenario must be a JSON object containing only supported workload fields."),{code:"SUBSCRIPTION_ECONOMICS_SCENARIO_INVALID"});
             const estimate=estimateVideoGenerationCost(scenario);
             estimates.push({
               ...estimate,provider:estimate.provider||scenario.provider,model:estimate.model||scenario.model,
