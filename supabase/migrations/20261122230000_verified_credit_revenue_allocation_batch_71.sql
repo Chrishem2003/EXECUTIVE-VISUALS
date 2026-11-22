@@ -430,7 +430,6 @@ begin
     left join invoice_costs c on c.job_id=j.job_id and c.owner_id=j.owner_id
     left join credit_usage u on u.job_id=j.job_id and u.owner_id=j.owner_id
     left join revenue_by_job r on r.job_id=j.job_id and r.owner_id=j.owner_id
-  )
   ), coverage as (
     select
       coalesce(bool_and(recognized_revenue_minor is not null and profitability_status not in(
