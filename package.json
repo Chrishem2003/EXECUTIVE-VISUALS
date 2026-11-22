@@ -150,7 +150,8 @@
     "verify:customer-credit-expiry-wallet": "node --test server/tests/customer-credit-expiry-wallet-batch-78.test.mjs",
     "verify:customer-credit-wallet-dashboard": "node --test server/tests/customer-credit-wallet-dashboard-batch-79.test.mjs server/tests/financial-intelligence-api.test.mjs",
     "verify:verified-credit-pack-topups": "node --test server/tests/verified-credit-pack-topups-batch-80.test.mjs server/tests/financial-intelligence-api.test.mjs",
-    "verify:admin-credit-adjustments": "node --test server/tests/admin-credit-adjustments-batch-81.test.mjs server/tests/financial-intelligence-api.test.mjs"
+    "verify:admin-credit-adjustments": "node --test server/tests/admin-credit-adjustments-batch-81.test.mjs server/tests/financial-intelligence-api.test.mjs",
+    "verify:provider-cost-credit-price-floors": "node --test server/tests/provider-cost-credit-price-floors-batch-82.test.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
