@@ -91,6 +91,8 @@ test("Batch 71 migration allocates only verified paid-credit revenue to settled 
   const sql=await readFile(new URL("../../supabase/migrations/20261122230000_verified_credit_revenue_allocation_batch_71.sql",import.meta.url),"utf8");
   assert.match(sql,/register_generation_credit_revenue_source/);
   assert.match(sql,/sync_verified_payment_credit_grant_to_generation_wallet/);
+  assert.match(sql,/sync_generation_wallet_grant_source/);
+  assert.match(sql,/Pre-Batch71 grant; payment provenance was not reconstructed/);
   assert.match(sql,/after insert on executive_visuals\.credit_ledger/);
   assert.match(sql,/approve_subscription_credit_revenue_split/);
   assert.match(sql,/billing_credit_revenue_source_reviews/);
