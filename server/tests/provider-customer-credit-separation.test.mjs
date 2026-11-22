@@ -3,16 +3,18 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const root = new URL("../../", import.meta.url);
-const [migration, api, index, app, policy] = await Promise.all([
+const [migration, api, index, app, policy, billingApi] = await Promise.all([
   readFile(new URL("supabase/migrations/20261122120000_provider_customer_credit_separation.sql", root), "utf8"),
   readFile(new URL("server/cloud-timeline-api.mjs", root), "utf8"),
   readFile(new URL("server/index.mjs", root), "utf8"),
   readFile(new URL("src/platform/app.ts", root), "utf8"),
-  readFile(new URL("server/neon-customer-credit-policy.mjs", root), "utf8")
+  readFile(new URL("server/neon-customer-credit-policy.mjs", root), "utf8"),
+  readFile(new URL("server/financial-intelligence-api.mjs", root), "utf8")
 ]);
 
 test("cloud workflow quote schema stores provider credits and customer credits separately", () => {
   assert.match(migration, /add column if not exists estimated_customer_credits bigint/i);
+  assert.match(migration, /get_generation_credit_balance/);
   assert.match(migration, /record_video_workflow_quote_with_customer_credits/i);
   assert.match(migration, /set estimated_customer_credits=p_estimated_customer_credits/i);
   assert.match(migration, /quote_row\.estimated_customer_credits,\s*'video-workflow:'/);
@@ -30,6 +32,7 @@ test("cloud quote API computes customer credits server-side and calls the provid
   assert.match(api, /estimatedProviderCredits:estimate\.estimatedCredits,estimatedCustomerCredits/);
   assert.match(index, /createCustomerCreditQuotePolicy/);
   assert.match(index, /CUSTOMER_CREDITS_PER_USD/);
+  assert.match(billingApi, /rpc\("get_generation_credit_balance"/);
 });
 
 test("customer credit conversion reuses shared cost-plus margin and fee economics", () => {
