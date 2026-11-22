@@ -6,87 +6,9 @@
 -- Existing subscription purchase/renewal finalizers remain the payment authority.
 -- The bridge only runs for successful, verified subscription payment grants.
 
-create or replace function executive_visuals.bridge_subscription_credit_grant_to_generation_wallet()
-returns trigger
-language plpgsql
-security definer
-set search_path=pg_catalog,executive_visuals
-as $bridge_subscription_credit_grant_to_generation_wallet$
-declare
-  payment_row executive_visuals.payment_transactions%rowtype;
-  wallet_grant record;
-  source_evidence jsonb;
-begin
-  if new.entry_type<>'purchase_grant'
-     or new.payment_transaction_id is null
-     or new.credit_delta<=0 then
-    return new;
-  end if;
-
-  select * into payment_row
-    from executive_visuals.payment_transactions
-   where id=new.payment_transaction_id and owner_id=new.owner_id;
-
-  if not found
-     or payment_row.status<>'successful'
-     or payment_row.verified_at is null
-     or payment_row.metadata->>'payment_purpose' not in ('subscription_purchase','subscription_renewal')
-     or coalesce((payment_row.metadata->>'subscription_applied')::boolean,false) is not true then
-    return new;
-  end if;
-
-  if nullif(payment_row.metadata->>'subscription_id','') is null then
-    raise exception 'SUBSCRIPTION_CREDIT_PAYMENT_REFERENCE_MISSING' using errcode='23514';
-  end if;
-
-  source_evidence:=jsonb_build_object(
-    'source','verified_subscription_payment',
-    'sourceLedger','credit_ledger',
-    'sourceLedgerId',new.id,
-    'paymentId',payment_row.id,
-    'subscriptionId',payment_row.metadata->>'subscription_id',
-    'paymentPurpose',payment_row.metadata->>'payment_purpose',
-    'provider',payment_row.provider,
-    'verifiedAt',payment_row.verified_at,
-    'periodStart',coalesce(new.metadata->>'period_start',payment_row.metadata->>'subscription_verified_at'),
-    'periodEnd',new.metadata->>'period_end'
-  );
-
-  select * into wallet_grant
-    from executive_visuals.grant_generation_credits(
-      new.owner_id,
-      new.credit_delta,
-      'subscription-generation-grant:'||new.id::text,
-      'Verified subscription allowance for generation wallet',
-      source_evidence
-    );
-
-  if wallet_grant.ledger_id is null then
-    raise exception 'SUBSCRIPTION_GENERATION_CREDIT_GRANT_FAILED';
-  end if;
-
-  perform executive_visuals.register_generation_credit_revenue_source(
-    new.owner_id,
-    wallet_grant.ledger_id,
-    'subscription_allowance',
-    payment_row.id,
-    null,
-    payment_row.currency,
-    source_evidence
-  );
-
-  return new;
-end;
-$bridge_subscription_credit_grant_to_generation_wallet$;
-
-revoke all on function executive_visuals.bridge_subscription_credit_grant_to_generation_wallet()
-  from public,anon,authenticated,service_role;
-drop trigger if exists ev_bridge_subscription_credit_grant_to_generation_wallet
-  on executive_visuals.credit_ledger;
-create trigger ev_bridge_subscription_credit_grant_to_generation_wallet
-  after insert on executive_visuals.credit_ledger
-  for each row execute function executive_visuals.bridge_subscription_credit_grant_to_generation_wallet();
-
+-- Batch 71 already mirrors every verified payment-linked credit_ledger grant
+-- into billing_credit_ledger and registers its revenue source. Do not add a
+-- second mirror trigger here: that would double-credit subscription customers.
 
 -- The legacy Flutterwave manual-renewal finalizer advances the paid period but
 -- did not create a matching credit_ledger purchase_grant. Ensure every verified
@@ -223,7 +145,5 @@ create trigger ev_ensure_subscription_period_credit_grant
   after insert on executive_visuals.subscription_events
   for each row execute function executive_visuals.ensure_subscription_period_credit_grant();
 
-comment on function executive_visuals.bridge_subscription_credit_grant_to_generation_wallet()
-  is 'Batch 77: atomically bridge verified subscription credit_ledger grants into the generation wallet and pending subscription revenue allocation.';
 comment on function executive_visuals.ensure_subscription_period_credit_grant()
   is 'Batch 77: ensure verified provider subscription activation and renewal events issue one period allowance, including legacy Flutterwave manual renewals.';
