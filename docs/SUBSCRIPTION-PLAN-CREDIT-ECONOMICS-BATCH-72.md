@@ -70,20 +70,21 @@ The result is a comparison aid, not an entitlement recommendation. It assumes th
 
 ## Provider price correction
 
-The current Runway Dev public pricing guide checked on 2026-11-22 lists:
-- Kling 4.0: $0.157/sec at 720p, $0.235/sec at 1080p and $0.549/sec at 4K.
-- Kling 4.0 input-video rates: $0.094/sec, $0.141/sec and $0.329/sec respectively; output and input charges are additive, with the input billed for the greater of input or output duration.
-- Kling 4.0 HDR surcharge: $0.047/sec at 1080p and $0.078/sec at 4K.
+The current Runway Dev pricing page and Kling 4.0 API guide checked on 2026-11-22 list:
+- Kling 4.0 list rates: $0.157/sec at 720p, $0.235/sec at 1080p and $0.549/sec at 4K.
+- A verified 20% promotion applies through 2026-11-30 UTC. The calculator applies the dated promotion only through that cutoff and automatically reverts to list rates on 2026-12-01.
+- For input-video requests, billed seconds are output duration plus the greater of total input-video duration and output duration, at the published input-video rate: $0.094/sec at 720p, $0.141/sec at 1080p and $0.329/sec at 4K.
+- Kling 4.0 HDR surcharge: $0.047 per output second at 1080p and $0.078 at 4K.
 - Seedance 2.5 1080p: $0.68/sec, with its documented minimum and reference-video charges.
 - Gen-4.5: $0.12/sec under the published output-video rate.
 
-The existing Kling 4 estimator previously applied an unverified 20% promotion and used the input rate for both output and input seconds. Batch 72 removes that unverified discount, applies the published output rate plus the separate input rate, adds the documented HDR surcharge, and rejects an explicit request to disable Kling's native audio. No temporary discount is assumed without a dated, source-backed rate-card version.
+The earlier Kling 4 estimate correction in this batch must preserve the provider's dated promotion: the prior formula was wrong only in how it handled input-video billing, not because the promotion was unsupported. The revised calculator uses the combined-duration input-video formula, applies the documented 20% promotion through November 30, 2026 UTC, adds the HDR surcharge, rejects an explicit request to disable Kling's native audio, and reverts to list pricing after the promotion expires.
 
 Official evidence:
-- https://dev.runway.com/learn/ai-video-api-pricing
-- https://dev.runwayml.com/learn/kling-4-0-api
-- https://dev.runwayml.com/learn/seedance-2-5-api
-
+- https://dev.runway.com/pricing
+- https://dev.runway.com/learn/kling-4-0-api
+- https://dev.runway.com/learn/seedance-2-5-api
+- https://dev.runway.com/learn/best-ai-video-generation-apis
 ## Response semantics and safety
 
 The response includes:
