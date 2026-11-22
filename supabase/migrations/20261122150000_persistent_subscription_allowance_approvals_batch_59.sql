@@ -188,15 +188,6 @@ begin
  if p_actor_id=v_proposal.created_by then
   raise exception using errcode='42501',message='subscription_allowance_creator_cannot_approve';
  end if;
- select * into v_other from executive_visuals.subscription_allowance_approvals
-  where proposal_id=p_proposal_id and stage<>p_stage;
- if found and v_other.actor_id=p_actor_id then
-  raise exception using errcode='42501',message='subscription_allowance_approvers_must_be_distinct';
- end if;
- if exists(select 1 from executive_visuals.subscription_allowance_approvals
-  where proposal_id=p_proposal_id and decision='rejected') then
-  raise exception using errcode='22023',message='subscription_allowance_proposal_already_rejected';
- end if;
  if p_event_envelope->>'eventType' is distinct from 'subscription_allowance.approval_recorded'
   or p_event_envelope->>'actorId' is distinct from p_actor_id::text
   or p_event_envelope->'payload'->>'proposalId' is distinct from p_proposal_id::text
@@ -210,6 +201,15 @@ begin
  );
  if coalesce((v_event->>'duplicate')::boolean,false) then
   return jsonb_build_object('duplicate',true,'audit',v_event);
+ end if;
+ select * into v_other from executive_visuals.subscription_allowance_approvals
+  where proposal_id=p_proposal_id and stage<>p_stage;
+ if found and v_other.actor_id=p_actor_id then
+  raise exception using errcode='42501',message='subscription_allowance_approvers_must_be_distinct';
+ end if;
+ if exists(select 1 from executive_visuals.subscription_allowance_approvals
+  where proposal_id=p_proposal_id and decision='rejected') then
+  raise exception using errcode='22023',message='subscription_allowance_proposal_already_rejected';
  end if;
  if exists(select 1 from executive_visuals.subscription_allowance_approvals
   where proposal_id=p_proposal_id and stage=p_stage) then
