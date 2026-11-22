@@ -543,16 +543,16 @@ begin
         else null::bigint
       end revenue_minor
     from (
-      select a.*,
+      select a.*,r.created_at as run_created_at,
         sum(a.credits_consumed) over(partition by a.source_id order by a.created_at,a.id rows between unbounded preceding and current row) cumulative_credits,
         sum(a.credits_consumed) over(partition by a.source_id order by a.created_at,a.id rows between unbounded preceding and 1 preceding) prior_credits
       from billing_credit_revenue_allocations a
       join billing_credit_revenue_allocation_runs r on r.reservation_id=a.reservation_id
-      where r.created_at>=p_period_month::timestamptz
-        and r.created_at<(p_period_month+interval '1 month')::timestamptz
     ) a
     left join billing_credit_revenue_sources s on s.id=a.source_id
     left join billing_credit_revenue_source_reviews split_review on split_review.source_id=s.id
+    where a.run_created_at>=p_period_month::timestamptz
+      and a.run_created_at<(p_period_month+interval '1 month')::timestamptz
   ), revenue_currency as (
     select job_id,owner_id,currency,sum(revenue_minor)::bigint revenue_minor,
       count(*) filter(where resolved_status not in('verified','non_revenue') or revenue_minor is null)::integer incomplete_count,
