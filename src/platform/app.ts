@@ -634,7 +634,7 @@ function video(){
  const initialLuma=selected?.provider.provider==="luma",initialRunwayEdit=selected?.provider.provider==="runway"&&getVideoWorkflowOperationOptions("runway",selected.model.id).some(value=>value.id==="video-to-video"),initialKling3=selected?.model.id.startsWith("kling3.0_")===true,initialAudio=selected?.provider.provider==="runway"&&["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(selected.model.id);
  const initialOperations=initialLuma?'<option value="generate">Generate new video</option><option value="edit">Edit existing video</option><option value="reframe">Reframe existing video</option>':initialRunwayEdit?'<option value="generate">Generate new video</option><option value="video-to-video">Edit private source video</option>':'<option value="generate">Generate new video</option>';
  return header("FRAME-ACCURATE EDITORIAL WORKSPACE","Video studio & editor","Generate new footage, edit an existing private source clip or reframe it for another aspect ratio — then continue in the multitrack timeline.",'<span class="count-pill">GOVERNED GENERATION + EDITOR</span>')+
- '<section class="panel"><div class="eyebrow">AI VIDEO GENERATION & SOURCE EDITING</div><form id="video-generate"><label>Scene, edit direction or reframing instruction</label><textarea name="prompt" rows="5" required maxlength="26000" placeholder="Describe the scene to generate, the changes to make to existing footage, or how to recompose the shot..."></textarea><div class="form-grid"><div><label>Generation model</label><select name="model">'+renderVideoModelOptions()+'</select></div><div><label>Video operation</label><select name="operation" data-luma-operation>'+initialOperations+'</select></div><div><label>Seedance source mode</label><select name="mode" disabled><option value="reference">Reference · create a new conditioned clip</option><option value="extend">Extend · continue the source clip</option><option value="edit">Edit · change the source clip in place</option></select></div><div><label>Private source video · authorized project asset</label><select name="sourceVideoAssetId" data-luma-source disabled ><option value="">Choose a video in this project…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'">'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></div><div><label>Edit strength · Luma edit</label><select name="editStrength" data-luma-edit disabled >'+options(["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"])+'</select></div><div><label>Reference image / first frame (optional)</label><select name="referenceAssetId">'+renderReferenceImageOptions()+'</select></div><div><label>Duration / source duration (seconds)</label><select name="duration">'+renderVideoDurationOptions()+'</select></div><div><label>Aspect ratio / target reframe</label><select name="aspectRatio">'+renderVideoAspectRatioOptions()+'</select></div><div><label>Resolution</label><select name="resolution">'+renderVideoResolutionOptions()+'</select></div></div><label>Multi-shot prompt segments · Kling 3.0 only<textarea name="multiPrompt" rows="4"'+(initialKling3?'':' disabled')+' placeholder="[{&quot;prompt&quot;:&quot;Wide establishing shot of the scene&quot;,&quot;duration&quot;:5},{&quot;prompt&quot;:&quot;Close-up detail shot&quot;,&quot;duration&quot;:5}]"></textarea></label><label>Multi-shot mode<select name="shotType"'+(initialKling3?'':' disabled')+' ><option value="customize">Customize · each segment controls its own shot</option><option value="intelligence">Intelligence · use the main prompt to direct the sequence</option></select></label><label class="rights-confirm"><input type="checkbox" name="audio"'+(initialAudio?' checked':'')+(initialAudio?'':' disabled')+'> Generate native audio when the selected model supports an audio toggle.</label><label class="rights-confirm"><input type="checkbox" name="rightsConfirmed"> I have the rights to use the selected source/reference media.</label><p class="muted">Kling 3.0 multi-shot accepts up to six 3–512 character shot prompts with a combined duration of 3–15 seconds. Luma Ray 3.2 supports source edit/reframe; Seedance 2.5 and Kling 4 support source-video transformations; Runway Model Router can route source-video edits to eligible models. Choose a private project video for source edits and confirm usage rights. The server verifies asset ownership, source duration, pricing and provider readiness. A non-billable quote identifies the selected route and estimated cost before explicit project-owner approval.</p><button class="primary">Prepare governed video operation →</button></form><p class="muted">'+renderVideoModelNote()+'</p><p class="muted">Provider charges are separate from any Executive Visuals subscription. No provider request is submitted until the exact quote is approved by the project owner.</p></section>'+renderTimelineWorkspacePanel();
+ '<section class="panel"><div class="eyebrow">AI VIDEO GENERATION & SOURCE EDITING</div><form id="video-generate"><label>Scene, edit direction or reframing instruction</label><textarea name="prompt" rows="5" required maxlength="26000" placeholder="Describe the scene to generate, the changes to make to existing footage, or how to recompose the shot..."></textarea><div class="form-grid"><div><label>Generation model</label><select name="model">'+renderVideoModelOptions()+'</select></div><div><label>Video operation</label><select name="operation" data-luma-operation>'+initialOperations+'</select></div><div><label>Seedance source mode</label><select name="mode" disabled><option value="reference">Reference · create a new conditioned clip</option><option value="extend">Extend · continue the source clip</option><option value="edit">Edit · change the source clip in place</option></select></div><div><label>Private source video · authorized project asset</label><select name="sourceVideoAssetId" data-luma-source disabled ><option value="">Choose a video in this project…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'">'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></div><div><label>Edit strength · Luma edit</label><select name="editStrength" data-luma-edit disabled >'+options(["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"])+'</select></div><div><label>Reference image / first frame (optional)</label><select name="referenceAssetId">'+renderReferenceImageOptions()+'</select></div><div><label>Duration / source duration (seconds)</label><select name="duration">'+renderVideoDurationOptions()+'</select></div><div><label>Aspect ratio / target reframe</label><select name="aspectRatio">'+renderVideoAspectRatioOptions()+'</select></div><div><label>Resolution</label><select name="resolution">'+renderVideoResolutionOptions()+'</select></div></div><label>Multi-shot prompt segments · Kling 3.0 only<textarea name="multiPrompt" rows="4"'+(initialKling3?'':' disabled')+' placeholder="[{&quot;prompt&quot;:&quot;Wide establishing shot of the scene&quot;,&quot;duration&quot;:5},{&quot;prompt&quot;:&quot;Close-up detail shot&quot;,&quot;duration&quot;:5}]"></textarea></label><label>Multi-shot mode<select name="shotType"'+(initialKling3?'':' disabled')+' ><option value="customize">Customize · each segment controls its own shot</option><option value="intelligence">Intelligence · use the main prompt to direct the sequence</option></select></label><label class="rights-confirm"><input type="checkbox" name="audio"'+(initialAudio?' checked':'')+(initialAudio?'':' disabled')+'> Generate native audio when the selected model supports an audio toggle.</label><label class="rights-confirm"><input type="checkbox" name="rightsConfirmed"> I have the rights to use the selected source/reference media.</label><p class="muted">Kling 3.0 multi-shot accepts up to six 3–512 character shot prompts with a combined duration of 3–15 seconds. Luma Ray 3.2 supports source edit/reframe; Seedance 2.5 and Kling 4 support source-video transformations; Runway Model Router can route source-video edits to eligible models. Choose a private project video for source edits and confirm usage rights. The server verifies asset ownership, source duration, pricing and provider readiness. A non-billable quote identifies the selected route and estimated cost before explicit project-owner approval.</p><div class="form-actions"><button type="button" class="secondary" data-video-credit-preview>Estimate generation cost & credits</button><button type="button" class="secondary" data-video-model-compare>Compare qualified models</button><button class="primary">Prepare governed video operation →</button></div><div class="notice" data-video-credit-preview-result role="status" aria-live="polite" hidden></div></form><p class="muted">'+renderVideoModelNote()+'</p><p class="muted">Provider charges are separate from any Executive Visuals subscription. No provider request is submitted until the exact quote is approved by the project owner.</p></section>'+renderTimelineWorkspacePanel();
 }
 function voice(){
  const audioAssets=state.cloudAssets.filter(asset=>asset.mediaType.toLowerCase().startsWith("audio/"));
@@ -1923,5 +1923,80 @@ document.addEventListener("click",event=>{
   if(state.activeBrandKitPresetId===id)state.activeBrandKitPresetId="";
   save();render();
  }
+});
+document.addEventListener("click",event=>{
+ const button=(event.target as HTMLElement).closest<HTMLElement>("[data-video-credit-preview]");
+ if(!button)return;
+ event.preventDefault();
+ const form=document.querySelector<HTMLFormElement>("#video-generate");
+ const result=document.querySelector<HTMLElement>("[data-video-credit-preview-result]");
+ if(!form||!result)return;
+ const data=new FormData(form);
+ const modelSelect=form.querySelector<HTMLSelectElement>('select[name="model"]');
+ const payload={
+  provider:String(modelSelect?.selectedOptions[0]?.dataset.provider||""),
+  model:String(data.get("model")||""),
+  durationSeconds:Number(data.get("duration")||5),
+  resolution:String(data.get("resolution")||"provider_default"),
+  audioMode:data.get("audio")==="on"?"generated":"none",
+  referenceImageCount:String(data.get("referenceAssetId")||"")?1:0
+ };
+ button.setAttribute("aria-busy","true");
+ (button as HTMLButtonElement).disabled=true;
+ result.hidden=false;result.textContent="Checking the current provider rate card and customer credit policy…";
+ void apiRequest<any>("/api/video-cost-estimate",{
+  method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)
+ }).then(quote=>{
+  if(!quote.available){result.textContent="Cost unavailable: "+String(quote.reason||"No verified rate card matches this model and configuration.")+" No generation was submitted.";return;}
+  const providerCost=new Intl.NumberFormat(undefined,{style:"currency",currency:quote.currency,maximumFractionDigits:4}).format(Number(quote.amount));
+  const customer=quote.customerCreditQuote;
+  if(customer?.available===true){
+   result.textContent="Estimated provider cost: "+providerCost+" · Customer price: "+new Intl.NumberFormat(undefined,{style:"currency",currency:customer.currency,maximumFractionDigits:2}).format(customer.customerPriceMinor/customer.minorUnitsPerMajor)+" · "+Number(customer.customerCredits).toLocaleString()+" credits · Estimated margin "+(Number(customer.estimatedMarginBps)/100).toFixed(1)+"%. Preview only; credits are not reserved and generation has not started.";
+  }else{
+   result.textContent="Estimated provider cost: "+providerCost+". Customer credit pricing is not configured or validated yet ("+String(customer?.reason||"unavailable")+"). No customer credit amount will be guessed. No generation was submitted.";
+  }
+ }).catch(error=>{
+  result.textContent=error instanceof Error?error.message:"The generation quote could not be loaded.";
+ }).finally(()=>{
+  button.removeAttribute("aria-busy");
+  (button as HTMLButtonElement).disabled=false;
+ });
+});
+document.addEventListener("click",event=>{
+ const button=(event.target as HTMLElement).closest<HTMLElement>("[data-video-model-compare]");
+ if(!button)return;
+ event.preventDefault();
+ const form=document.querySelector<HTMLFormElement>("#video-generate");
+ const result=document.querySelector<HTMLElement>("[data-video-credit-preview-result]");
+ if(!form||!result)return;
+ const data=new FormData(form);
+ const modelSelect=form.querySelector<HTMLSelectElement>('select[name="model"]');
+ const payload={
+  provider:String(modelSelect?.selectedOptions[0]?.dataset.provider||""),
+  model:String(data.get("model")||""),
+  durationSeconds:Number(data.get("duration")||5),
+  resolution:String(data.get("resolution")||"provider_default"),
+  audioMode:data.get("audio")==="on"?"generated":"none",
+  referenceImageCount:String(data.get("referenceAssetId")||"")?1:0
+ };
+ button.setAttribute("aria-busy","true");
+ (button as HTMLButtonElement).disabled=true;
+ result.hidden=false;result.textContent="Comparing current rate cards against trusted quality and latency evaluations…";
+ void apiRequest<any>("/api/video-model-recommendations",{
+  method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)
+ }).then(response=>{
+  const recommendation=response.recommendation;
+  const chosen=recommendation?.recommended;
+  if(chosen){
+   result.textContent="Recommended model: "+chosen.model+" ("+chosen.provider+") · "+Number(chosen.customerCredits).toLocaleString()+" estimated customer credits · quality "+(Number(chosen.qualityScore)*100).toFixed(1)+"% · p95 latency "+Number(chosen.p95LatencyMs).toLocaleString()+" ms. Recommendation only; automatic routing remains disabled.";
+  }else{
+   result.textContent=String(recommendation?.reason||"No qualified model recommendation is available.")+" "+(response.evidenceConfigured?"":"Trusted model evaluation evidence has not been configured.")+" No model was selected automatically.";
+  }
+ }).catch(error=>{
+  result.textContent=error instanceof Error?error.message:"Model comparison could not be completed.";
+ }).finally(()=>{
+  button.removeAttribute("aria-busy");
+  (button as HTMLButtonElement).disabled=false;
+ });
 });
 render();initNavigation();window.addEventListener("ev:admin-operations-capability",()=>renderNav());void initializeAdminOperationsCapability();void initRuntime();
