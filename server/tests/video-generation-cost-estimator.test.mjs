@@ -28,6 +28,24 @@ test("Kling 4.0 Flash estimates published 720p rates and its 29-credit minimum",
   assert.equal(edit.amount, 0.82);
 });
 
+test("shared preflight prices Seedance 2.5 Flash and passes source/reference video quantities",()=>{
+ const text=estimateVideoGenerationCost({
+  provider:"runway",model:"seedance2_5_flash",durationSeconds:5,resolution:"720p"
+ });
+ assert.equal(text.credits,100);
+ assert.equal(text.amount,1);
+ assert.equal(text.billable,false);
+ assert.equal(text.settlementEligible,false);
+ const edit=estimateVideoGenerationCost({
+  provider:"runway",model:"seedance2_5_flash",durationSeconds:5,resolution:"720p",
+  inputType:"video",inputVideoSeconds:8,referenceVideoSeconds:4,referenceVideoCount:2
+ });
+ assert.equal(edit.credits,250);
+ assert.equal(edit.amount,2.5);
+ assert.throws(()=>estimateVideoGenerationCost({
+  provider:"runway",model:"seedance2_5_flash",durationSeconds:5,resolution:"1080p"
+ }),error=>error.code==="VIDEO_PRICE_INPUT_INVALID"||error.code==="RUNWAY_PRICE_INVALID_INPUT");
+});
 test("shared preflight supports Luma Ray 3.2 published generation and edit prices", () => {
   const generation = estimateVideoGenerationCost({
     provider: "luma", model: "ray-3.2", operation: "video", resolution: "720p", durationSeconds: 5
