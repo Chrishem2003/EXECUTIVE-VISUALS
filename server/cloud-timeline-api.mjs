@@ -213,7 +213,28 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const projects=await service.projects.list({ownerId,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
     return response(200,{projects});
    }
-       const projectCreditPoolMatch=path.match(/^\/api\/cloud\/projects\/([0-9a-f-]+)\/credit-pool(?:\/(fund|members|members\/([0-9a-f-]+)\/policy))?$/i);
+       const projectMembersMatch=path.match(/^\/api\/cloud\/projects\/([0-9a-f-]+)\/members(?:\/([0-9a-f-]+))?$/i);
+    if(projectMembersMatch){
+     const projectId=projectMembersMatch[1],memberId=projectMembersMatch[2]||null;
+     if(!projectCreditPoolApi)return response(503,{error:{code:"PROJECT_CREDIT_POOL_API_DISABLED",message:"Cloud project team management is not enabled in this runtime."}});
+     const project=await service.projects.get({ownerId,projectId});
+     if(!project)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+     if(project.ownerId!==ownerId)return response(403,{error:{code:"PROJECT_CREDIT_POOL_OWNER_REQUIRED",message:"Only the project owner can manage project membership."}});
+     if(method==="GET"&&!memberId){
+      const members=await projectCreditPoolApi.listMembers({ownerId,projectId});
+      return response(200,{members});
+     }
+     if(method==="POST"&&!memberId){
+      const member=await projectCreditPoolApi.addMember({ownerId,projectId,email:body.email,role:body.role||"viewer"});
+      return response(201,{member});
+     }
+     if(method==="DELETE"&&memberId){
+      await projectCreditPoolApi.removeMember({ownerId,projectId,memberId});
+      return response(200,{ok:true,memberId});
+     }
+     return response(405,{error:{code:"PROJECT_MEMBER_METHOD_NOT_ALLOWED",message:"This method is not supported for cloud project membership."}});
+    }
+    const projectCreditPoolMatch=path.match(/^\/api\/cloud\/projects\/([0-9a-f-]+)\/credit-pool(?:\/(fund|members|members\/([0-9a-f-]+)\/policy))?$/i);
     if(projectCreditPoolMatch){
      const projectId=projectCreditPoolMatch[1],action=projectCreditPoolMatch[2]||"configure",memberId=projectCreditPoolMatch[3]||null;
      if(!projectCreditPoolApi)return response(503,{error:{code:"PROJECT_CREDIT_POOL_API_DISABLED",message:"Shared project credits are not enabled in this runtime."}});
@@ -864,7 +885,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    if(error.code==="REVIEW_ASSET_VERSION_STALE"||error.code==="REVIEW_ASSET_VERSION_UNAVAILABLE"||error.code==="CLOUD_REVIEW_IDEMPOTENCY_CONFLICT"||error.code==="CLOUD_REVIEW_CONFLICT")return response(409,{error:{code:error.code,message:String(error.message||"Review changed. Refresh and retry.").slice(0,300)}});
    if(error.code==="CLOUD_REVIEW_TIMEOUT"||error.code==="CLOUD_REVIEW_DATABASE_ERROR")return response(503,{error:{code:error.code,message:String(error.message||"Cloud review service is unavailable.").slice(0,300)}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
-   if(String(error.code||"").startsWith("PROJECT_CREDIT_POOL_")||String(error.code||"").startsWith("BILLING_")){
+   if(String(error.code||"").startsWith("PROJECT_CREDIT_POOL_")||String(error.code||"").startsWith("PROJECT_MEMBER_")||String(error.code||"").startsWith("PROJECT_OWNER_")||String(error.code||"").startsWith("BILLING_")){
     return response(error.status||400,{error:{code:error.code||"PROJECT_CREDIT_POOL_OPERATION_FAILED",message:String(error.message||"Project credit pool operation failed.").slice(0,300)}});
    }
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
