@@ -72,13 +72,13 @@ The result is a comparison aid, not an entitlement recommendation. It assumes th
 
 The current Runway Dev pricing page and Kling 4.0 API guide checked on 2026-11-22 list:
 - Kling 4.0 list rates: $0.157/sec at 720p, $0.235/sec at 1080p and $0.549/sec at 4K.
-- A verified 20% promotion applies through 2026-11-30 UTC. The calculator applies the dated promotion only through that cutoff and automatically reverts to list rates on 2026-12-01.
+- A verified 20% promotion applies to the documented 720p and 1080p tiers through 2026-11-30 UTC; 4K remains at list price. The calculator applies the dated promotion only through that cutoff and automatically reverts to list rates on 2026-12-01.
 - For input-video requests, billed seconds are output duration plus the greater of total input-video duration and output duration, at the published input-video rate: $0.094/sec at 720p, $0.141/sec at 1080p and $0.329/sec at 4K.
 - Kling 4.0 HDR surcharge: $0.047 per output second at 1080p and $0.078 at 4K.
 - Seedance 2.5 1080p: $0.68/sec, with its documented minimum and reference-video charges.
 - Gen-4.5: $0.12/sec under the published output-video rate.
 
-The earlier Kling 4 estimate correction in this batch must preserve the provider's dated promotion: the prior formula was wrong only in how it handled input-video billing, not because the promotion was unsupported. The revised calculator uses the combined-duration input-video formula, applies the documented 20% promotion through November 30, 2026 UTC, adds the HDR surcharge, rejects an explicit request to disable Kling's native audio, and reverts to list pricing after the promotion expires.
+The earlier Kling 4 estimate correction in this batch must preserve the provider's dated promotion: the prior formula was wrong only in how it handled input-video billing, not because the promotion was unsupported. The revised calculator uses the combined-duration input-video formula, applies the documented 20% promotion to 720p and 1080p through November 30, 2026 UTC, adds the HDR surcharge, rejects an explicit request to disable Kling's native audio, and reverts to list pricing after the promotion expires.
 
 Official evidence:
 - https://dev.runway.com/pricing
