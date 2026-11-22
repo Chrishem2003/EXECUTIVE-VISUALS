@@ -160,7 +160,7 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
   },
   async enqueueWorkflowNode(raw){
    if(!raw||typeof raw!=="object"||Array.isArray(raw))throw fail("Neon workflow dispatch requires a quote-bound approval object.","VIDEO_WORKFLOW_APPROVAL_INVALID");
-   const {quoteId,ownerId,projectId,requestId,requestHash,provider,model,operation,input,estimatedAmount,approvedMaxAmount,customerCreditBudgetCredits,expiresAt,quoteState}=raw;
+   const {quoteId,ownerId,projectId,requestId,requestHash,provider,model,operation,input,estimatedAmount,approvedMaxAmount,customerCreditBudgetCredits,requiredCustomerCredits:serverRequiredCustomerCredits,expiresAt,quoteState}=raw;
    if(!UUID.test(String(quoteId||""))||!UUID.test(String(ownerId||""))||!UUID.test(String(projectId||"")))throw fail("Neon workflow dispatch requires valid quote, owner and project IDs.","VIDEO_WORKFLOW_APPROVAL_INVALID");
    if(typeof requestId!=="string"||requestId.length<8||requestId.length>200||!/^[A-Za-z0-9._:-]+$/.test(requestId)||!HASH.test(String(requestHash||"")))throw fail("Neon workflow request identity is invalid.","VIDEO_WORKFLOW_APPROVAL_INVALID");
    if(provider!=="runway"||model!=="model-router"||!["text-to-video","image-to-video","video-to-video"].includes(operation))throw fail("This Neon workflow adapter only admits the explicitly registered Runway Model Router contract.","VIDEO_WORKFLOW_MODEL_UNSUPPORTED");
@@ -182,6 +182,8 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
    if(requiredCustomerCredits&&typeof requiredCustomerCredits.then==="function")throw fail("Customer-credit quote policy must be synchronous and deterministic.","VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID");
    if(!Number.isSafeInteger(requiredCustomerCredits)||requiredCustomerCredits<1||requiredCustomerCredits>100000000)
     throw fail("The server could not calculate a safe customer-credit ceiling for this workflow.","VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID");
+   if(serverRequiredCustomerCredits!==undefined&&serverRequiredCustomerCredits!==requiredCustomerCredits)
+    throw fail("The API and Neon staging customer-credit policies returned different requirements; obtain a fresh quote.","VIDEO_CUSTOMER_CREDIT_QUOTE_MISMATCH");
    if(!Number.isSafeInteger(customerCreditBudgetCredits)||customerCreditBudgetCredits<requiredCustomerCredits||customerCreditBudgetCredits>100000000)
     throw fail("The approved customer-credit ceiling must be an integer of at least "+requiredCustomerCredits+" credits for the approved USD spending ceiling.","VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED");
    const shot={...input,id:quoteId,provider,model,operation,estimatedCostMicros:quotedAmountMicros,
