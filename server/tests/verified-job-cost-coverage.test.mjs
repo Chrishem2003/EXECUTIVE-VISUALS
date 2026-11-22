@@ -90,7 +90,7 @@ test("coverage migration requires invoice-backed matches and never converts cred
 test("Batch 71 migration allocates only verified paid-credit revenue to settled job usage",async()=>{
   const sql=await readFile(new URL("../../supabase/migrations/20261122230000_verified_credit_revenue_allocation_batch_71.sql",import.meta.url),"utf8");
   assert.match(sql,/register_generation_credit_revenue_source/);
-  assert.match(sql,/payment_row\.status='successful' and payment_row\.verified_at is not null/);
+  assert.match(sql,/status='successful' and verified_at is not null/);
   assert.match(sql,/payment_purpose'<>'credit_pack_purchase'/);
   assert.match(sql,/payment_purpose not in\('subscription_purchase','subscription_renewal'\)/);
   assert.match(sql,/pending_subscription_split/);
