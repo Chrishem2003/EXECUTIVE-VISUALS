@@ -47,7 +47,7 @@ export function createProjectCreditPoolApi({url=process.env.SUPABASE_URL,service
   },
   async addMember({ownerId,projectId,email,role="viewer"}={}){
    const normalizedEmail=typeof email==="string"?email.trim().toLowerCase():"";
-   if(normalizedEmail.length<3||normalizedEmail.length>320||!normalizedEmail.includes("@")||!["editor","reviewer","viewer"].includes(role)){
+   if(normalizedEmail.length<3||normalizedEmail.length>320||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)||!["editor","reviewer","viewer"].includes(role)){
     throw Object.assign(new Error("Enter a registered account email and choose editor, reviewer or viewer."),{code:"PROJECT_CREDIT_POOL_ARGUMENT_INVALID",status:400});
    }
    return rpc("add_project_member",{p_owner_id:validId(ownerId,"Owner ID"),p_project_id:validId(projectId,"Project ID"),p_email:normalizedEmail,p_role:role});
