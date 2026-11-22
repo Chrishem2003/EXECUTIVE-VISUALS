@@ -42,7 +42,7 @@ import { createCloudVideoGenerationRepositories } from "./cloud-video-generation
 import { createCloudVideoGenerationDispatch } from "./cloud-video-generation-dispatch.mjs";
 import { createSubscriptionEntitlementReader } from "./subscription-entitlements.mjs";
 import { createNeonStagingApprovalDispatch } from "./neon-staging-application-runtime.mjs";
-import { createCustomerCreditQuotePolicy } from "./neon-customer-credit-policy.mjs";
+import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
