@@ -109,6 +109,57 @@ export function createProviderSubscriptionBilling({
     return Array.isArray(result.data)?result.data[0]||null:null;
   }
 
+  async function reserveCreditPackCheckout({ownerId,productCode,email,idempotencyKey}){
+    const result=await rpc("reserve_credit_pack_purchase",{
+      p_owner_id:ownerId,p_product_code:productCode,p_provider:"pesapal",
+      p_customer_email:email,p_idempotency_key:idempotencyKey,
+      p_tx_ref:"EVC"+randomUUID().replaceAll("-","")
+    });
+    if(!result||typeof result!=="object")throw Object.assign(new Error("Credit-pack reservation returned no payment."),{code:"CREDIT_PACK_RESERVATION_EMPTY",status:502});
+    return result;
+  }
+
+  async function attachCreditPackCheckout({ownerId,paymentId,providerCheckout}){
+    const payment=await getPayment(paymentId,ownerId);
+    if(!payment||payment.provider!=="pesapal"||payment.status!=="pending"||payment.metadata?.payment_purpose!=="credit_pack_purchase")
+      throw Object.assign(new Error("Pending credit-pack payment could not be matched."),{code:"CREDIT_PACK_PAYMENT_NOT_PENDING",status:409});
+    if(!providerCheckout?.trackingId||!providerCheckout?.checkoutUrl)
+      throw Object.assign(new Error("Pesapal did not return a hosted checkout identifier and URL."),{code:"CREDIT_PACK_CHECKOUT_RESPONSE_INVALID",status:502});
+    await dbRequest("payment_transactions?id=eq."+encodeURIComponent(paymentId)+"&owner_id=eq."+encodeURIComponent(ownerId),{
+      method:"PATCH",body:{
+        provider_transaction_id:String(providerCheckout.trackingId),
+        metadata:{...payment.metadata,provider_checkout_id:String(providerCheckout.trackingId),
+          provider_checkout_url:String(providerCheckout.checkoutUrl),
+          provider_checkout_status:String(providerCheckout.status||"pending"),
+          provider_checkout_created_at:new Date(now()).toISOString()},
+        updated_at:new Date(now()).toISOString()
+      },prefer:"return=minimal"
+    });
+    return true;
+  }
+
+  async function findPendingCreditPackPayment({merchantReference}){
+    const result=await dbRequest("payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref,amount_minor,currency,status,metadata&provider=eq.pesapal&status=eq.pending&tx_ref=eq."+encodeURIComponent(merchantReference)+"&limit=1");
+    const payment=Array.isArray(result.data)?result.data[0]||null:null;
+    if(!payment||payment.metadata?.payment_purpose!=="credit_pack_purchase")return null;
+    return payment;
+  }
+
+  async function finalizeCreditPackPayment({payment,verified}){
+    return rpc("finalize_credit_pack_purchase",{
+      p_payment_id:payment.id,
+      p_provider_transaction_id:String(verified.trackingId),
+      p_provider_payload:{
+        status:"succeeded",amount_minor:Number(verified.amount),
+        currency:String(verified.currency).toUpperCase(),
+        reference:String(verified.merchantReference),
+        confirmation_code:verified.confirmationCode||null,
+        payment_method:verified.paymentMethod||null
+      },
+      p_verified_at:new Date(now()).toISOString()
+    });
+  }
+
   const repository={
     async reserveCheckout({provider,ownerId,planCode,email,idempotencyKey}){
       const result=await rpc("reserve_subscription_purchase_for_provider",{
