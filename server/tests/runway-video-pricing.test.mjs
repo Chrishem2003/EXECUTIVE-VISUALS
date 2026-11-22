@@ -45,16 +45,25 @@ test("accounts for reference media charges on Grok and Hailuo models",()=>{
   assert.equal(estimateRunwayVideoCredits({model:"hailuo3",durationSeconds:5,resolution:"768p",referenceImageCount:2,inputVideoSeconds:5,pricingDate:date}).estimatedCredits,104);
 });
 
-test("uses the dated Kling 4 promotion and automatically reverts to list pricing",()=>{
-  const promo=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-11-04"});
-  const regular=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-12-01"});
-  assert.equal(promo.estimatedCredits,64);
-  assert.equal(promo.discount,"20% promotion through 2026-11-30 UTC");
-  assert.equal(regular.estimatedCredits,79);
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:date}).estimatedCredits,95);
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:"2026-12-01"}).estimatedCredits,118);
+test("prices Kling 4.0 at the current dated list rates without an unverified promotion",()=>{
+  const november=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-11-04"});
+  const december=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-12-01"});
+  assert.equal(november.estimatedCredits,79);
+  assert.equal(november.discount,null);
+  assert.equal(december.estimatedCredits,79);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:date}).estimatedCredits,118);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",pricingDate:date}).estimatedCredits,235);
   const referenced=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,referenceVideoSeconds:10,resolution:"720p",pricingDate:date});
-  assert.equal(referenced.estimatedCredits,113);
+  assert.equal(referenced.estimatedCredits,173);
+});
+
+test("Kling 4.0 input video adds its lower input rate to the output rate and HDR is itemized",()=>{
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,inputVideoSeconds:6,resolution:"1080p",pricingDate:date}).estimatedCredits,376);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"4k",pricingDate:date}).estimatedCredits,549);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"4k",hdr:true,pricingDate:date}).estimatedCredits,627);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",hdr:true,pricingDate:date}).estimatedCredits,282);
+  assert.throws(()=>estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",audio:false,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  assert.throws(()=>estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",hdr:"yes",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
 });
 
 test("refuses unsupported models and malformed or missing price inputs",()=>{
