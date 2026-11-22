@@ -12,6 +12,7 @@ declare
   v_paid_grant uuid;
   v_subscription_grant uuid;
   v_promo_grant uuid;
+  v_unattributed_grant uuid;
   v_paid_reservation uuid;
   v_pending_reservation uuid;
   v_source jsonb;
@@ -135,6 +136,16 @@ begin
     where reservation_id=v_pending_reservation
       and allocation_status='pending_subscription_split' and revenue_minor is not null
   ) then raise exception 'Subscription revenue was inferred without an approved credit-component split'; end if;
+
+  select ledger_id into v_unattributed_grant
+    from executive_visuals.grant_generation_credits(
+      v_owner,5,'batch71-wallet-unattributed','Unclassified test grant','{}'
+    );
+  if not exists(
+    select 1 from executive_visuals.billing_credit_revenue_sources
+     where grant_ledger_id=v_unattributed_grant and source_type='unattributed'
+       and revenue_status='unattributed' and allocatable_revenue_minor is null
+  ) then raise exception 'Unclassified wallet grant was not explicitly marked unattributed'; end if;
 
   -- Source registration must reject a mismatched currency and unverified payment.
   begin
