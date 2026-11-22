@@ -2,10 +2,12 @@ const RESOLUTIONS = new Set(["360p","480p","540p","720p","1080p","1440p","4k"]);
 const DIMENSION_KEYS = new Set([
   "minimumGenerationMinor","referenceVideoSecondMinor","audioSurchargeSecondMinor",
   "audioIncluded","inputVideoSecondMinor","inputVideoBillingMode","inputImageMinor",
+  "hdrSurchargeSecondMinor",
   ...[...RESOLUTIONS].flatMap(value=>[
     "videoSecondMinor_"+value,
     "referenceVideoSecondMinor_"+value,
-    "inputVideoSecondMinor_"+value
+    "inputVideoSecondMinor_"+value,
+    "hdrSurchargeSecondMinor_"+value
   ])
 ]);
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
@@ -91,6 +93,11 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
   const hasAudio=request.hasAudio===true;
   if(hasAudio&&!Object.hasOwn(dimensions,"audioIncluded")&&!Object.hasOwn(dimensions,"audioSurchargeSecondMinor"))
     fail("PROVIDER_VIDEO_AUDIO_PRICING_UNRESOLVED","Audio was requested but the rate card does not state whether audio is included or separately priced.");
+  if(request.hdr!==undefined&&typeof request.hdr!=="boolean")
+    fail("PROVIDER_VIDEO_HDR_INVALID","hdr must be a boolean.");
+  const hdr=request.hdr===true;
+  if(hdr&&!Object.hasOwn(dimensions,"hdrSurchargeSecondMinor")&&!Object.hasOwn(dimensions,"hdrSurchargeSecondMinor_"+resolution))
+    fail("PROVIDER_VIDEO_HDR_PRICING_UNRESOLVED","HDR was requested but the rate card does not contain an explicit HDR surcharge.");
   if(inputImageCount>0&&!Object.hasOwn(dimensions,"inputImageMinor"))
     fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price input images.");
   if(referenceVideoSeconds>0&&!Object.hasOwn(dimensions,"referenceVideoSecondMinor")&&!Object.hasOwn(dimensions,"referenceVideoSecondMinor_"+resolution))
@@ -128,6 +135,10 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
       fail("PROVIDER_VIDEO_AUDIO_PRICING_UNRESOLVED","Audio was requested but the rate card does not state whether audio is included or separately priced.");
     }
   }
+  if(hdr){
+    const surcharge=dimensions["hdrSurchargeSecondMinor_"+resolution]??dimensions.hdrSurchargeSecondMinor;
+    add("hdr_output_seconds",outputSeconds,surcharge);
+  }
   let subtotal=lines.reduce((sum,line)=>sum+line.amountMinor,0);
   if(!Number.isSafeInteger(subtotal))fail("PROVIDER_VIDEO_COST_OVERFLOW","Estimated provider cost exceeds safe integer bounds.");
   const minimum=dimensions.minimumGenerationMinor===undefined?0:positiveRate(dimensions.minimumGenerationMinor,"minimumGenerationMinor",{allowZero:true});
@@ -139,7 +150,7 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
     provider,model,currency,rateCardVersion:version,billingUnit,verificationStatus,
     source:{url:sourceUrl||null,checkedAt:sourceCheckedAt||null,fingerprint:rateCard.sourceFingerprint||rateCard.source_fingerprint||null},
     effectiveFrom:new Date(from).toISOString(),effectiveTo:Number.isFinite(to)?new Date(to).toISOString():null,
-    request:{outputSeconds,referenceVideoSeconds,inputVideoSeconds,inputImageCount,resolution,hasAudio},
+    request:{outputSeconds,referenceVideoSeconds,inputVideoSeconds,inputImageCount,resolution,hasAudio,hdr},
     costLines:Object.freeze(lines.map(line=>Object.freeze(line))),
     estimatedProviderCostMinor:total,
     limitations:Object.freeze([

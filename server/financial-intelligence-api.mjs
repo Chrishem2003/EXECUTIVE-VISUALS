@@ -998,7 +998,7 @@ export function createFinancialIntelligenceApi({
                 throw Object.assign(new Error("The exact governed provider rate-card version was not found."),{code:"SUBSCRIPTION_ECONOMICS_RATE_CARD_NOT_FOUND"});
               const estimate=estimateProviderVideoCost({rateCard,request:{
                 outputSeconds:Number(scenario.durationSeconds),resolution:scenario.resolution,
-                hasAudio:scenario.audio===true,inputVideoSeconds:scenario.inputVideoSeconds,
+                hasAudio:scenario.audio===true,hdr:scenario.hdr===true,inputVideoSeconds:scenario.inputVideoSeconds,
                 referenceVideoSeconds:scenario.referenceVideoSeconds,inputImageCount:scenario.referenceImageCount
               },now:new Date()});
               estimates.push({
