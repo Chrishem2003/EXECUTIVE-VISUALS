@@ -152,7 +152,7 @@ language plpgsql security definer
 set search_path=pg_catalog,executive_visuals
 as $$
 declare job_row jobs; pool project_credit_pools; existing project_credit_pool_reservations;
- account_status text; current_balance bigint; new_id uuid; used_this_month bigint;
+ current_balance bigint; new_id uuid; used_this_month bigint;
 begin
  if p_owner_id is null or p_job_id is null or p_credits is null or p_credits<=0 or p_credits>100000000
     or p_idempotency_key is null or char_length(p_idempotency_key) not between 1 and 200 then
@@ -205,7 +205,7 @@ begin
   from reserve_generation_credits_without_entitlement(p_owner_id,p_job_id,p_credits,p_idempotency_key) r;
  return;
 
-end $$;;
+end $;
 
 create or replace function executive_visuals.settle_project_credit_pool_reservation(
  p_reservation_id uuid,p_actual_credits bigint,p_evidence jsonb
