@@ -17,7 +17,7 @@ test("normalizes the exact successful Runway task receipt into provider USD cost
     currency: "USD",
     providerCredits: 137,
     model: "gen4.5",
-    evidenceReference: "runway-task-receipt:" + taskId + ":credits:137"
+    evidenceReference: "runway-task-receipt:" + taskId + ":provider-credits:137"
   });
 });
 
