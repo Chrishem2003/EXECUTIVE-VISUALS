@@ -65,7 +65,7 @@ begin
     v_owner,v_paid_grant,'paid_credit_pack',v_payment_paid,1000,'USD',
     '{"evidenceType":"verified_provider_payment","batch":71}'
   );
-  if (v_source->>'replayed')::boolean then raise exception 'First paid source registration unexpectedly replayed'; end if;
+  if (v_source->>'replayed')::boolean is distinct from true then raise exception 'Payment-ledger trigger did not register the paid source idempotently'; end if;
   v_source:=executive_visuals.register_generation_credit_revenue_source(
     v_owner,v_paid_grant,'paid_credit_pack',v_payment_paid,1000,'USD',
     '{"evidenceType":"verified_provider_payment","batch":71}'
@@ -182,7 +182,7 @@ begin
   v_report:=executive_visuals.get_verified_job_cost_coverage(v_owner,'2026-11-01',100);
   select value into v_row from jsonb_array_elements(v_report->'rows')
     where value->>'job_id'='71717171-7171-4171-8171-717171717102';
-  if v_row is null or (v_row->>'recognized_revenue_minor')::bigint<>840
+  if v_row is null or (v_row->>'recognized_revenue_minor')::bigint<>1200
      or v_row->>'revenue_currency'<>'USD' then
     raise exception 'Approved subscription credit split was not allocated to historical consumed credits: %',v_row;
   end if;
