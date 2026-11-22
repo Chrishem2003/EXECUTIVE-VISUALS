@@ -935,7 +935,7 @@ export function createFinancialIntelligenceApi({
             responseModel:row.response_model==null?null:String(row.response_model),
             operation:String(row.operation||""),status:String(row.status||""),
             videoSeconds:Number(row.video_seconds||0),currency:row.currency==null?null:String(row.currency),
-            costBasis:String(row.cost_basis||"unpriced"),estimateMinor,providerReportedMinor,
+            costBasis:String(row.cost_basis||"unpriced"),estimateMinor,providerReportedMinor:reportedMinor,
             invoiceConfirmedMinor:invoiceMinor,invoiceCurrency:invoiceConfirmed?String(invoiceConfirmed.currency):null,
             invoiceImportId:invoiceConfirmed?String(invoiceConfirmed.invoice_import_id):null,
             invoiceLineId:invoiceConfirmed?String(invoiceConfirmed.invoice_line_id):null,
@@ -953,7 +953,7 @@ export function createFinancialIntelligenceApi({
             providerReportedNotInvoicePosted:eventsOut.filter(x=>x.costBasis==="provider_reported"&&x.invoiceEvidenceStatus==="not_invoice_posted").length,
             unpriced:eventsOut.filter(x=>x.costBasis==="unpriced").length,
             ambiguousInvoiceAttribution:eventsOut.filter(x=>x.invoiceEvidenceStatus==="ambiguous_invoice_attribution").length}});
-        }catch(err){console.error("AI_USAGE_RECONCILIATION_TRANSFORM_FAILED",err);throw Object.assign(err instanceof Error?err:new Error("Reconciliation mapping failed."),{code:err?.code||"AI_USAGE_RECONCILIATION_TRANSFORM_FAILED"});}
+        }catch(err){throw Object.assign(err instanceof Error?err:new Error("Reconciliation mapping failed."),{code:err?.code||"AI_USAGE_RECONCILIATION_TRANSFORM_FAILED"});}
       }
       if(path==="/api/admin/finance/ai-cost-intelligence"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
