@@ -568,6 +568,19 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        Math.abs(approvedMaxAmount*1000000-Math.round(approvedMaxAmount*1000000))>0.0001){
      return response(400,{error:{code:"VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID",message:"Provide a positive USD approval ceiling with at most six decimal places."}});
     }
+    const customerCreditBudgetCredits=body.customerCreditBudgetCredits;
+    if(!Number.isSafeInteger(customerCreditBudgetCredits)||customerCreditBudgetCredits<1||customerCreditBudgetCredits>100000000)
+     return response(400,{error:{code:"VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_INVALID",message:"Provide an explicit positive integer customer-credit ceiling."}});
+    if(typeof quoteCustomerCredits!=="function")
+     return response(503,{error:{code:"CUSTOMER_CREDIT_PRICING_UNCONFIGURED",message:"Customer-credit pricing is unavailable; workflow approval remains blocked."}});
+    const approvedMaxAmountMicros=Math.round(approvedMaxAmount*1000000);
+    let requiredCustomerCredits;
+    try{requiredCustomerCredits=quoteCustomerCredits({currency:"USD",amountMicros:approvedMaxAmountMicros});}
+    catch{return response(503,{error:{code:"CUSTOMER_CREDIT_QUOTE_UNAVAILABLE",message:"The server could not calculate the required customer credits for this USD ceiling."}});}
+    if(!Number.isSafeInteger(requiredCustomerCredits)||requiredCustomerCredits<1||requiredCustomerCredits>100000000)
+     return response(503,{error:{code:"CUSTOMER_CREDIT_QUOTE_INVALID",message:"The server returned an invalid customer-credit requirement."}});
+    if(customerCreditBudgetCredits<requiredCustomerCredits)
+     return response(409,{error:{code:"VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED",message:"The approved credit ceiling must be at least "+requiredCustomerCredits.toLocaleString()+" credits for the USD spending ceiling.",requiredCustomerCreditBudgetCredits:requiredCustomerCredits}});
     const approvalNote=typeof body.approvalNote==="string"?body.approvalNote.trim():"Approved by project editor in Video Studio";
     if(!approvalNote||approvalNote.length>1000)return response(400,{error:{code:"VIDEO_WORKFLOW_APPROVAL_NOTE_INVALID",message:"Approval note must contain 1 to 1,000 characters."}});
     try{
@@ -612,6 +625,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      const prepared=quoteAdapter?await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}}):workflowRequest.input;
      if(!prepared||typeof prepared!=="object"||Array.isArray(prepared))return response(503,{error:{code:"VIDEO_INPUT_ASSET_RESOLUTION_FAILED",message:"Private workflow inputs could not be revalidated for approval."}});
      const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId,approvedMaxAmount};
+     if(typeof workflowNodeDispatch!=="function"||workflowNodeDispatchEnabled()!==true)
+      return response(503,{error:{code:"VIDEO_WORKFLOW_CREDIT_CEILING_DISPATCH_REQUIRED",message:"Workflow generation is held until the staging Neon dispatch enforces the customer-approved credit ceiling atomically. No provider request was submitted."}});
      if(typeof workflowNodeDispatch==="function"&&workflowNodeDispatchEnabled()===true){
       const storedQuotes=await request("video_workflow_quotes?select=id,owner_id,project_id,request_id,request_hash,provider,model,operation,routed_provider,routed_model,estimated_credits,estimated_customer_credits,estimated_amount,currency,config_id,pricing_source,state,expires_at&id=eq."+encodeURIComponent(quoteId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&limit=1");
       const storedQuote=Array.isArray(storedQuotes)?storedQuotes[0]:null;
@@ -636,7 +651,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        quoteId,ownerId,projectId,requestId,requestHash:workflowRequest.requestHash,
        provider:workflowRequest.provider,model:workflowRequest.model,operation:workflowRequest.operation,
        input:workflowRequest.input,estimatedAmount:Number(storedQuote.estimated_amount),
-       approvedMaxAmount,expiresAt:storedQuote.expires_at,
+       approvedMaxAmount,customerCreditBudgetCredits,expiresAt:storedQuote.expires_at,
        estimatedCredits:Number(storedQuote.estimated_credits),estimatedCustomerCredits:Number(storedQuote.estimated_customer_credits),
        routedProvider:storedQuote.routed_provider,routedModel:storedQuote.routed_model,
        quoteState:storedQuote.state,approvalNote
