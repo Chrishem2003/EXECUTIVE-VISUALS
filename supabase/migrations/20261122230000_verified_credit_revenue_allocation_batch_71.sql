@@ -530,9 +530,11 @@ begin
       case when count(*) filter(where currency is not null)=1
         and sum(incomplete_count)=0
         then max(currency) end revenue_currency,
-      case when count(*) filter(where currency is not null)=1
-        and sum(incomplete_count)=0
-        then max(revenue_minor) end recognized_revenue_minor,
+      case
+        when sum(incomplete_count)=0 and count(*) filter(where currency is not null)=0 then 0::bigint
+        when count(*) filter(where currency is not null)=1 and sum(incomplete_count)=0 then max(revenue_minor)
+        else null
+      end recognized_revenue_minor,
       sum(incomplete_count)::integer incomplete_allocation_count
     from revenue_currency group by job_id,owner_id
   ), all_jobs as (
@@ -554,6 +556,7 @@ begin
         when r.incomplete_allocation_count>0 or r.recognized_revenue_minor is null then 'revenue_allocation_incomplete'
         when c.currency_count>1 then 'mixed_currency_cost_review'
         when c.actual_provider_cost_minor is null then 'missing_invoice_backed_actual_cost'
+        when r.recognized_revenue_minor=0 then 'zero_revenue_no_margin'
         when r.revenue_currency<>c.currency then 'currency_mismatch_review'
         else 'revenue_and_cost_evidence_available' end profitability_status,
       case when c.job_id is null then 'missing_invoice_backed_actual_cost'
