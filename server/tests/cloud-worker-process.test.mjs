@@ -188,3 +188,15 @@ test("cloud worker supervisor supports maintenance-only operation",async()=>{
  assert.ok(events.some(event=>event.kind==="maintenance"&&event.result.deleted===2));
  await supervisor.stop();
 });
+
+
+test("cloud video subscription enforcement requires the dedicated video worker family",()=>{
+ assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_VIDEO_SUBSCRIPTION_ENTITLEMENTS_REQUIRED:"true"}),/requires CLOUD_VIDEO_WORKER_ENABLED=true/);
+ const enabled=readCloudWorkerConfig({
+  ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"fal.media",
+  FAL_VIDEO_MODEL:"fal-ai/wan/v2.7/text-to-video",FAL_KEY:"worker-key",FAL_BILLING_KEY:"billing-key",
+  CLOUD_VIDEO_SUBSCRIPTION_ENTITLEMENTS_REQUIRED:"true"
+ });
+ assert.equal(enabled.video,true);
+});
