@@ -87,6 +87,12 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
   if(request.hasAudio!==undefined&&typeof request.hasAudio!=="boolean")
     fail("PROVIDER_VIDEO_AUDIO_INVALID","hasAudio must be a boolean.");
   const hasAudio=request.hasAudio===true;
+  if(hasAudio&&!Object.hasOwn(dimensions,"audioIncluded")&&!Object.hasOwn(dimensions,"audioSurchargeSecondMinor"))
+    fail("PROVIDER_VIDEO_AUDIO_PRICING_UNRESOLVED","Audio was requested but the rate card does not state whether audio is included or separately priced.");
+  if(inputImageCount>0&&!Object.hasOwn(dimensions,"inputImageMinor"))
+    fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price input images.");
+  if(referenceVideoSeconds>0&&!Object.hasOwn(dimensions,"referenceVideoSecondMinor")&&!Object.hasOwn(dimensions,"referenceVideoSecondMinor_"+resolution))
+    fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price reference-video seconds.");
   const baseRate=rateCard.videoSecondMinor??rateCard.video_second_minor;
   const outputRate=dimensions["videoSecondMinor_"+resolution]??baseRate;
   positiveRate(outputRate,"videoSecondMinor");
