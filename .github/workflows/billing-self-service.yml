@@ -122,6 +122,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-bootstrap.sql
       - name: Apply financial intelligence foundation
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110120000_financial_intelligence_foundation.sql
+      - name: Apply server-priced UGX credit-pack catalogue and legacy settlement
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110150000_flutterwave_ugx_checkout.sql
       - name: Apply atomic payment refund migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110130000_financial_refund_atomicity.sql
       - name: Apply payment recovery and grace-period migration
@@ -174,6 +176,10 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261121120000_paddle_pesapal_provider_billing.sql
       - name: Verify Paddle and Pesapal reservation, activation, renewal and lifecycle settlement
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/paddle-pesapal-subscription-postgres-integration.sql
+      - name: Apply Batch 65 verified credit-pack top-up RPCs
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122200000_verified_credit_pack_topups_batch_65.sql
+      - name: Verify Batch 65 top-up pricing, payment matching, grant and replay safety
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-credit-pack-topups-postgres-integration.sql
       - name: Verify resource economics and shadow model routing
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/ai-resource-economics-postgres-integration.sql
       - name: Verify Batch 25 invoice-to-ledger reconciliation and profitability trends
