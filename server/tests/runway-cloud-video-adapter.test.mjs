@@ -111,6 +111,32 @@ test("maps queued, running and succeeded task states and exposes only HTTPS outp
   });
 });
 
+test("exposes task-level realized credits without mistaking estimates for settlement", async () => {
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    fetchImpl: async () => new Response(JSON.stringify({
+      id, status: "SUCCEEDED", output: [output], cost: { credits: 137 },
+      estimatedCost: { credits: 999 }
+    }))
+  });
+  const task = await adapter.getStatus(id);
+  assert.equal(task.status, "succeeded");
+  assert.equal(task.actualCostCredits, 137);
+  assert.notEqual(task.actualCostCredits, 999);
+});
+
+test("does not promote estimated router cost to a realized task receipt", async () => {
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    fetchImpl: async () => new Response(JSON.stringify({
+      id, status: "SUCCEEDED", output: [output], estimatedCost: { credits: 137 }
+    }))
+  });
+  const task = await adapter.getStatus(id);
+  assert.equal(task.status, "succeeded");
+  assert.equal(Object.hasOwn(task, "actualCostCredits"), false);
+});
+
 test("requires authoritative task-level billing evidence and private ingestion", () => {
   assert.throws(() => createRunwayCloudVideoAdapter({ model: "gen4.5", apiKey: "key", enabled: true, allowRemote: true, ingestOutputs: async () => ({}) }), error => error.code === "RUNWAY_EXECUTION_GATES_MISSING");
   assert.throws(() => createRunwayCloudVideoAdapter({ model: "gen4.5", apiKey: "key", enabled: true, allowRemote: true, resolveActualCost: async () => ({}) }), error => error.code === "RUNWAY_EXECUTION_GATES_MISSING");
