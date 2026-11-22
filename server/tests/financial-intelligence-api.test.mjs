@@ -424,7 +424,7 @@ test("credit wallet endpoint returns owner-scoped spendable balance, lots and sa
 
 test("credit wallet endpoint fails closed on malformed wallet and balance values",async()=>{
   const service=api(async(url)=>String(url).endsWith("/rpc/get_customer_credit_wallet")
-    ?json({availableCredits:"bad",reservedCredits:0,consumedCredits:0,expiringWithinSevenDays:0,
+    ?json({availableCredits:0,reservedCredits:0,consumedCredits:"bad",expiringWithinSevenDays:0,
       pendingExpiryCredits:0,expiryDeferred:false,creditLots:[],recentTransactions:[]})
     :json({ledger_balance:0,reserved_credits:0,available_credits:0}));
   const result=await service.handle({method:"GET",path:"/api/billing/credits",ownerId:owner});
