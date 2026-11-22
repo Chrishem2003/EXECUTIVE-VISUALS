@@ -25,6 +25,9 @@ test("derives a conservative blended USD-cent cost per platform credit from five
  assert.equal(result.evidence.status,"verified_measured");
  assert.equal(result.evidence.approved,false);
  assert.equal(result.evidence.rateCardVersion,"invoice-attribution-derived-v1");
+ assert.equal(result.evidence.sampleCredits,5000);
+ assert.equal(result.evidence.totalProviderCostMinor,500);
+ assert.match(result.evidence.evidenceDigest,/^[a-f0-9]{64}$/);
 });
 
 test("excludes partial, ambiguous, non-USD and unsettled jobs instead of estimating missing costs",()=>{
@@ -78,4 +81,14 @@ test("requires a valid month boundary and invoice-backed USD minor-unit records"
  const result=deriveInvoiceBackedCreditCostEvidence(data);
  assert.equal(result.sampleJobs,4);
  assert.equal(result.providerCostPerCustomerCreditMinor,null);
+});
+
+test("fingerprints the exact accepted invoice lines and settled-credit sample deterministically",()=>{
+ const first=deriveInvoiceBackedCreditCostEvidence(fixture());
+ const repeated=deriveInvoiceBackedCreditCostEvidence(fixture());
+ assert.equal(first.evidence.evidenceDigest,repeated.evidence.evidenceDigest);
+ const changed=fixture();
+ changed.invoiceAttributions[0].invoice_line_id=uuid(999);
+ const second=deriveInvoiceBackedCreditCostEvidence(changed);
+ assert.notEqual(first.evidence.evidenceDigest,second.evidence.evidenceDigest);
 });

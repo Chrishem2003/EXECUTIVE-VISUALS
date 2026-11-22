@@ -6,7 +6,8 @@ const ALLOWED=new Set([
  "close_period.created","close_period.submitted","close_period.locked","close_period.reopened",
  "close_task.assigned","close_task.completed","close_task.waived",
  "close_approval.assigned","close_approval.recorded","reconciliation.recorded","reconciliation.reviewed",
- "evidence.attached","evidence.retention_changed"
+ "evidence.attached","evidence.retention_changed",
+ "subscription_allowance.proposal_created","subscription_allowance.approval_recorded"
 ]);
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 const plain=(v)=>v!==null&&typeof v==="object"&&!Array.isArray(v)&&(Object.getPrototypeOf(v)===Object.prototype||Object.getPrototypeOf(v)===null);

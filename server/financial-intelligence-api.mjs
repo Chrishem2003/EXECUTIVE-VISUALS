@@ -312,10 +312,12 @@ export function createFinancialIntelligenceApi({
     return {checked:results.length,results};
   }
 
-  async function requireAdmin(ownerId){
+  async function getAdminRole(ownerId){
     const result=await dbRequest("platform_admins?select=role&user_id=eq."+encodeURIComponent(ownerId)+"&limit=1");
-    const role=Array.isArray(result.data)?result.data[0]?.role:null;
-    return ["owner","platform_admin","billing_admin"].includes(role);
+    return Array.isArray(result.data)?result.data[0]?.role:null;
+  }
+  async function requireAdmin(ownerId){
+    return ["owner","platform_admin","billing_admin"].includes(await getAdminRole(ownerId));
   }
 
   async function handle({method,path,ownerId,body={},query={},idempotencyKey=""}={}){
@@ -1337,6 +1339,91 @@ export function createFinancialIntelligenceApi({
           return error(status,code||"SUBSCRIPTION_COST_EVIDENCE_UNAVAILABLE",
             err.message||"Verified invoice cost evidence is temporarily unavailable; no allowance has been calculated.");
         }
+      }
+      if(path==="/api/admin/finance/subscription-allowance-proposals"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const limit=Math.max(1,Math.min(50,Number(query.limit)||25));
+        const rows=await dbRequest("subscription_allowance_proposals?select=id,proposal_hash,plan_code,plan_version,currency,monthly_price_minor,included_credits,provider_cost_per_credit_minor,created_by,created_at&order=created_at.desc&limit="+limit);
+        const proposals=Array.isArray(rows.data)?rows.data:[];
+        const statuses=await Promise.all(proposals.map(row=>rpc("get_subscription_allowance_approval_status",{p_proposal_id:row.id})));
+        return response(200,{proposals:proposals.map((row,index)=>({...row,approvalStatus:statuses[index]?.status||"awaiting_dual_approval",eligibleToPublish:Boolean(statuses[index]?.eligibleToPublish),publishable:false})),limit});
+      }
+      if(path==="/api/admin/finance/subscription-allowance-proposals"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const allowed=new Set(["planCode","periodMonth","targetGrossMarginBps","paymentFeeBps","fixedPaymentFeeMinor","refundReserveBps","supportReserveMinor","infrastructureReserveMinor"]);
+        if(!body||typeof body!=="object"||Array.isArray(body)||Object.keys(body).some(key=>!allowed.has(key))||typeof body.planCode!=="string")
+          return error(400,"SUBSCRIPTION_ALLOWANCE_PROPOSAL_INPUT_INVALID","Provide a plan code and scenario assumptions. Provider cost evidence is derived server-side from reconciled invoices.");
+        try{
+          const simulationBody=Object.fromEntries(Object.entries(body).filter(([key])=>key!=="planCode"));
+          const simulated=await handle({method:"POST",path:"/api/admin/finance/subscription-allowance-simulation",ownerId,body:simulationBody});
+          if(simulated.status!==200)return simulated;
+          const plan=simulated.body.simulation?.plans?.find(item=>item.planCode===body.planCode);
+          const packet=plan?.approvalPacket;
+          if(!packet||packet.publishable!==false||packet.status!=="awaiting_dual_approval")
+            return error(409,"SUBSCRIPTION_ALLOWANCE_COST_EVIDENCE_REQUIRED","This plan has no positive allowance backed by sufficient verified invoice evidence. No proposal was stored.");
+          const key=String(idempotencyKey||"");
+          if(key.length<8||key.length>160)return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","Provide an 8–160 character idempotency key in the request header.");
+          const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
+          const event=createFinancialAuditEvent({
+            ownerId,actorId:ownerId,eventType:"subscription_allowance.proposal_created",
+            payload:{proposalHash:packet.proposalHash,planCode:packet.proposal.planCode,planVersion:packet.proposal.planVersion},
+            idempotencyKey:key,occurredAt:new Date().toISOString(),
+            sequence:Number(head?.sequence||0)+1,previousHash:head?.headHash||"0".repeat(64)
+          });
+          const envelope=Object.fromEntries(Object.entries(event).filter(([field])=>!["eventHash","canonicalEvent"].includes(field)));
+          const result=await rpc("create_subscription_allowance_proposal",{
+            p_actor_id:ownerId,p_proposal:packet.proposal,p_canonical_proposal:JSON.stringify(packet.proposal),
+            p_proposal_hash:packet.proposalHash,p_event_envelope:envelope,
+            p_canonical_event:event.canonicalEvent,p_event_hash:event.eventHash
+          });
+          return response(result?.duplicate?200:201,{proposal:result,proposalHash:packet.proposalHash,approvalPacket:packet});
+        }catch(err){
+          const code=String(err?.code||"");
+          return error(err.status||(code.startsWith("SUBSCRIPTION_")?400:409),code||"SUBSCRIPTION_ALLOWANCE_PROPOSAL_FAILED",
+            err.message||"The subscription allowance proposal could not be persisted.");
+        }
+      }
+      const allowanceApprovalMatch=String(path||"").match(/^\/api\/admin\/finance\/subscription-allowance-proposals\/([0-9a-f-]{36})(?:\/(approvals))?$/i);
+      if(allowanceApprovalMatch&&allowanceApprovalMatch[2]&&method==="POST"){
+        const proposalId=allowanceApprovalMatch[1];
+        const stage=String(body.stage||"");
+        const decision=String(body.decision||"");
+        const expectedRole=stage==="finance"?"billing_admin":stage==="product"?"platform_admin":null;
+        if(!expectedRole||!["approved","rejected"].includes(decision)||Object.keys(body).some(key=>!["stage","decision","note"].includes(key)))
+          return error(400,"SUBSCRIPTION_ALLOWANCE_APPROVAL_INPUT_INVALID","Provide a valid finance/product stage and approve/reject decision.");
+        if(await getAdminRole(ownerId)!==expectedRole)
+          return error(403,"SUBSCRIPTION_ALLOWANCE_APPROVAL_ROLE_REQUIRED","This approval stage requires the matching administrator role.");
+        try{
+          const current=await rpc("get_subscription_allowance_approval_status",{p_proposal_id:proposalId});
+          if(!current?.proposal)return error(404,"SUBSCRIPTION_ALLOWANCE_PROPOSAL_NOT_FOUND","The subscription allowance proposal was not found.");
+          const proposalHash=current.proposal.proposal_hash;
+          const key=String(idempotencyKey||"");
+          if(key.length<8||key.length>160)return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","Provide an 8–160 character idempotency key in the request header.");
+          const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
+          const event=createFinancialAuditEvent({
+            ownerId,actorId:ownerId,eventType:"subscription_allowance.approval_recorded",
+            payload:{proposalId,proposalHash,stage,decision},
+            idempotencyKey:key,occurredAt:new Date().toISOString(),
+            sequence:Number(head?.sequence||0)+1,previousHash:head?.headHash||"0".repeat(64)
+          });
+          const envelope=Object.fromEntries(Object.entries(event).filter(([field])=>!["eventHash","canonicalEvent"].includes(field)));
+          const result=await rpc("record_subscription_allowance_approval",{
+            p_actor_id:ownerId,p_proposal_id:proposalId,p_stage:stage,p_decision:decision,
+            p_decision_note:String(body.note||"").slice(0,1000),p_event_envelope:envelope,
+            p_canonical_event:event.canonicalEvent,p_event_hash:event.eventHash
+          });
+          return response(result?.duplicate?200:201,{approval:result});
+        }catch(err){
+          const code=String(err?.code||"");
+          return error(err.status||(code.startsWith("SUBSCRIPTION_")?409:409),code||"SUBSCRIPTION_ALLOWANCE_APPROVAL_FAILED",
+            err.message||"The subscription allowance approval could not be recorded.");
+        }
+      }
+      if(allowanceApprovalMatch&&!allowanceApprovalMatch[2]&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const result=await rpc("get_subscription_allowance_approval_status",{p_proposal_id:allowanceApprovalMatch[1]});
+        if(!result)return error(404,"SUBSCRIPTION_ALLOWANCE_PROPOSAL_NOT_FOUND","The subscription allowance proposal was not found.");
+        return response(200,{approvalStatus:result});
       }
       if(path==="/api/admin/finance/scenario-baseline"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");

@@ -41,6 +41,9 @@ export function createSubscriptionAllowanceApprovalPacket({
  if(!costEvidence||typeof costEvidence!=="object"||Array.isArray(costEvidence)||
     costEvidence.status!=="verified_measured"||costEvidence.approved!==false||
     !Number.isSafeInteger(costEvidence.sampleJobs)||costEvidence.sampleJobs<5||
+    !Number.isSafeInteger(costEvidence.sampleCredits)||costEvidence.sampleCredits<1||
+    !Number.isSafeInteger(costEvidence.totalProviderCostMinor)||costEvidence.totalProviderCostMinor<1||
+    typeof costEvidence.evidenceDigest!=="string"||!/^[a-f0-9]{64}$/.test(costEvidence.evidenceDigest)||
     typeof costEvidence.source!=="string"||!costEvidence.source.trim()||
     typeof costEvidence.rateCardVersion!=="string"||!costEvidence.rateCardVersion.trim())
   fail("SUBSCRIPTION_ALLOWANCE_COST_EVIDENCE_INVALID","At least five jobs of verified, unapproved invoice-backed cost evidence are required.");
@@ -53,8 +56,9 @@ export function createSubscriptionAllowanceApprovalPacket({
   costEvidence:Object.freeze({
    status:"verified_measured",approved:false,source:text(costEvidence.source,"cost evidence source"),
    rateCardVersion:text(costEvidence.rateCardVersion,"cost evidence version",100),
-   sampleJobs:costEvidence.sampleJobs,periodStart:new Date(start).toISOString(),
-   periodEnd:new Date(end).toISOString()
+   sampleJobs:costEvidence.sampleJobs,sampleCredits:costEvidence.sampleCredits,
+   totalProviderCostMinor:costEvidence.totalProviderCostMinor,evidenceDigest:costEvidence.evidenceDigest,
+   periodStart:new Date(start).toISOString(),periodEnd:new Date(end).toISOString()
   }),
   assumptions:Object.freeze({
    targetGrossMarginBps:margin,paymentFeeBps:payment,refundReserveBps:refund,
