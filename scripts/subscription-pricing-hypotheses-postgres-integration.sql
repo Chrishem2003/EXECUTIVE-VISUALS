@@ -30,7 +30,7 @@ begin
   from executive_visuals.subscription_plan_provider_prices pp
   join executive_visuals.subscription_plans p on p.id=pp.plan_id
   where p.plan_code in ('starter_creator','professional_creator','studio','agency','enterprise')
-    and pp.active=true;
+;
 
   if priced_count <> 0 then
     raise exception 'COMMERCIAL_DRAFT_PLAN_HAS_ACTIVE_PROVIDER_PRICE';
