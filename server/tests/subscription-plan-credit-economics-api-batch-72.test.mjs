@@ -50,6 +50,9 @@ test("admin-only plan economics uses persisted draft hypotheses and server-owned
  assert.equal(economics.calculationType,"subscription_plan_credit_scenario_not_activation");
  assert.deepEqual(economics.plans.map(plan=>plan.proposedMonthlyCreditAllowance),[630,2030,5530,13930,0]);
  assert.equal(economics.scenarios[0].providerCostUsd,1.2);
+ assert.deepEqual(economics.pricingPolicy,{
+  creditsPerUsd:100,targetMarginBps:6500,paymentFeeBps:300,supportReserveBps:500,fixedPaymentFeeMicros:0
+ });
  assert.equal(economics.scenarios[0].customerCreditsPerGeneration,394);
  assert.equal(economics.scenarios[1].providerCostUsd,6.8);
  assert.equal(economics.scenarios[1].customerCreditsPerGeneration,2232);
