@@ -13,6 +13,15 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 create table auth.users(id uuid primary key,email text,created_at timestamptz not null default now());
 
+-- Minimal job identity fixture required by the generation-credit reservation migration.
+-- This bootstrap is disposable CI only; production job schema remains owned by application migrations.
+create table if not exists executive_visuals.jobs(
+ id uuid primary key,
+ owner_id uuid not null references auth.users(id),
+ job_type text not null default 'video.generate'
+);
+
+
 create table executive_visuals.subscription_plans(
  id uuid primary key default gen_random_uuid(),
  plan_code text not null unique,
