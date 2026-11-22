@@ -1,0 +1,60 @@
+# Batch 90 — subscription profitability benchmark
+
+Status: read-only benchmark and regression coverage; not a commercial price approval.
+
+## Dated provider evidence
+
+The benchmark uses the Runway Dev published API pricing guide, checked 22 November 2026:
+
+- Runway Gen-4.5, 720p: USD 0.12 per output second; USD 1.20 for 10 seconds.
+- Kling 4.0, 1080p: USD 0.235 per output second; USD 2.35 for 10 seconds.
+- Seedance 2.5, 1080p: USD 0.68 per output second; USD 6.80 for 10 seconds.
+
+Source: https://dev.runway.com/learn/ai-video-api-pricing
+
+The guide says 1 Runway Dev credit equals USD 0.01 and that the prices are list prices before volume discounts. This benchmark uses provider API list prices, not Runway consumer-app credits. Model names, provider routing, billing dimensions, and rate-card versions must still match the exact production adapter before a quote is billable.
+
+## Hypothetical plan-credit scenario
+
+The regression suite uses the existing server-owned quote policy assumptions:
+
+- 100 customer credits per USD of minimum sale price
+- 65% target contribution margin
+- 3% payment-fee reserve
+- 5% support reserve
+- 70% of monthly plan price earmarked for the illustrative included-credit budget
+
+The resulting *hypothetical* monthly credit budgets are:
+
+| Plan | Proposed monthly price | Scenario credit budget |
+|---|---:|---:|
+| Starter Creator | USD 9 | 630 |
+| Professional Creator | USD 29 | 2,030 |
+| Studio | USD 79 | 5,530 |
+| Agency | USD 199 | 13,930 |
+| Enterprise | Custom | 0 until priced |
+
+These are scenario outputs, not published entitlements. The 70% budget share is an explicit test assumption, not a recommendation or approved customer allowance.
+
+## Why a single-model allowance is not enough
+
+At the dated 10-second list prices, one generation costs USD 1.20, USD 2.35, or USD 6.80 before retries, input-video charges, taxes, FX, storage, delivery, or other overhead. A customer who mixes models can consume the same credit budget much faster than one who uses only a low-cost model.
+
+The regression suite therefore checks:
+1. Dated provider costs remain explicitly marked forecast-only and non-billable.
+2. The five proposed tiers remain private draft hypotheses with no persisted credits.
+3. The same credit quote policy prices each model independently.
+4. A mixed workload can fail a plan's credit allowance even where a per-model-only comparison looks affordable.
+5. Contribution margin and credit sufficiency remain separate assessments.
+6. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
+
+## Release and finance controls
+
+- Add or update governed provider rate cards only after exact model IDs, provider billing dimensions, source URL, checked timestamp, and effective dates are verified.
+- Do not automatically seed this benchmark into a production rate-card table.
+- Compare forecast to posted invoice attribution by provider, model, operation, and request dimensions.
+- Include failed-but-billable requests, retries, refunds, reference-video inputs, and discounts in actual settlement before setting commercial allowances.
+- Keep storage, delivery, taxes, acquisition, infrastructure, refunds, and overhead outside the displayed contribution metric until their measured costs are available.
+- Require finance/product approval before any plan price or credit allowance is published.
+
+This batch adds regression evidence only. It does not activate billing, change live plans, grant credits, call a generation provider, or deploy production changes.
