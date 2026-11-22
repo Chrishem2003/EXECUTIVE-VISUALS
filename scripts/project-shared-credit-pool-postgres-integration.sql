@@ -2,6 +2,10 @@
 -- Run after cloud-video-postgres-integration.sql and the shared-pool migration.
 set role service_role;
 
+create temporary table project_pool_personal_before as
+select coalesce(sum(amount),0)::bigint balance from executive_visuals.billing_credit_ledger
+where owner_id='123e4567-e89b-42d3-a456-426614174000';
+
 select * from executive_visuals.configure_project_credit_pool(
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',2000
@@ -18,14 +22,14 @@ begin
   '123e4567-e89b-42d3-a456-426614174000',
   '323e4567-e89b-42d3-a456-426614174000',1000,'project-pool-topup-0001'
  );
- if not result.replayed or result.pool_balance<>1000 or result.personal_balance<>99000 then
+ if not result.replayed or result.pool_balance<>1000 or result.personal_balance<>(select balance-1000 from project_pool_personal_before) then
   raise exception 'Project pool top-up replay changed either wallet balance';
  end if;
  select coalesce(sum(amount),0) into personal_balance from executive_visuals.billing_credit_ledger
   where owner_id='123e4567-e89b-42d3-a456-426614174000';
  select coalesce(sum(amount),0) into pool_balance from executive_visuals.project_credit_pool_ledger
   where project_id='323e4567-e89b-42d3-a456-426614174000';
- if personal_balance<>99000 or pool_balance<>1000 then
+ if personal_balance<>(select balance-1000 from project_pool_personal_before) or pool_balance<>1000 then
   raise exception 'Project pool transfer was not balanced across personal and shared ledgers';
  end if;
 end
@@ -53,7 +57,7 @@ begin
   where owner_id='123e4567-e89b-42d3-a456-426614174000';
  select count(*) into mirror_count from executive_visuals.billing_credit_reservations
   where id=result.reservation_id and job_id='e23e4567-e89b-42d3-a456-426614174001';
- if result.balance<>900 or result.replayed or pool_balance<>900 or personal_balance<>99000 or mirror_count<>1 then
+ if result.balance<>900 or result.replayed or pool_balance<>900 or personal_balance<>(select balance-1000 from project_pool_personal_before) or mirror_count<>1 then
   raise exception 'Generation reservation did not use the project wallet and compatibility mirror';
  end if;
 end
@@ -88,7 +92,7 @@ begin
   where owner_id='123e4567-e89b-42d3-a456-426614174000';
  select r.state,r.actual_credits into state,actual from executive_visuals.project_credit_pool_reservations r
   where r.job_id='e23e4567-e89b-42d3-a456-426614174001';
- if pool_balance<>920 or personal_balance<>99000 or state<>'settled' or actual<>80 then
+ if pool_balance<>920 or personal_balance<>(select balance-1000 from project_pool_personal_before) or state<>'settled' or actual<>80 then
   raise exception 'Verified provider settlement did not reconcile the shared project wallet';
  end if;
  if not exists(select 1 from executive_visuals.billing_credit_reservations
