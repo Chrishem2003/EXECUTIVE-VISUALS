@@ -14,6 +14,7 @@ import { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs"
 import { createRunwayModelRouterVideoAdapter } from "./runway-model-router-video-adapter.mjs";
 import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
 import { createRunwayTaskActualCostResolver } from "./runway-task-actual-cost-resolver.mjs";
+import { createRunwayTaskReceiptCostResolver } from "./runway-task-receipt-cost-resolver.mjs";
 import { createGoogleOmniCloudVideoComposition } from "./google-omni-cloud-video-composition.mjs";
 import { createGeminiOmniFlashClient } from "./google-omni-flash-client.mjs";
 import { createGoogleVideoInteractionRepository } from "./google-video-interaction-repository.mjs";
@@ -205,14 +206,17 @@ export function createProviderAwareCloudVideoWorkerComposition({
     }
     if (runwayModels.length) {
       const veoOnly = runwayModels.every(model => model === "veo3.1" || model === "veo3.1_fast");
-      const runwayActualCostResolver = resolveRunwayActualCost || (veoOnly && providerEnv.RUNWAY_WORKSPACE_USAGE_ENABLED === "true"
-        ? createRunwayTaskActualCostResolver({
-            apiKey: providerEnv.RUNWAY_API_KEY || providerEnv.RUNWAYML_API_SECRET,
-            enabled: true, fetchImpl: providerFetch, timeoutMs: Math.min(timeoutMs, 30000)
-          })
-        : null);
-      if (typeof runwayActualCostResolver !== "function") {
-        throw new Error("Runway cloud registration requires an authoritative task-level billing resolver; Veo requires the linked Enterprise workspace usage gate.");
+      const runwayActualCostResolver = resolveRunwayActualCost || createRunwayTaskReceiptCostResolver();
+      const runwayBillingReadiness = veoOnly
+        ? (runwayActualCostResolver.assertAvailable || (providerEnv.RUNWAY_WORKSPACE_USAGE_ENABLED === "true"
+            ? createRunwayTaskActualCostResolver({
+                apiKey: providerEnv.RUNWAY_API_KEY || providerEnv.RUNWAYML_API_SECRET,
+                enabled: true, fetchImpl: providerFetch, timeoutMs: Math.min(timeoutMs, 30000)
+              }).assertAvailable
+            : null))
+        : null;
+      if (veoOnly && typeof runwayBillingReadiness !== "function") {
+        throw new Error("Veo cloud registration requires the linked Enterprise workspace usage readiness gate.");
       }
       if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative", "ruby", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(model)) &&
           typeof prepareInput !== "function") {
@@ -232,7 +236,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
           prepareInput,
           ingestOutputs: ingest,
           resolveActualCost: runwayActualCostResolver,
-          assertActualCostReady: runwayActualCostResolver.assertAvailable,
+          assertActualCostReady: runwayBillingReadiness,
           timeoutMs: Math.min(timeoutMs, 30000)
         }));
       }
