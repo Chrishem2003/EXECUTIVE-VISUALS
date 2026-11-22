@@ -197,7 +197,7 @@ test("rejects Veo registration without authoritative task-level billing evidence
     ...base,
     createAdapters: undefined,
     env: { ...env, RUNWAY_VIDEO_MODELS: "veo3.1", RUNWAY_API_KEY: "runway-test-key" }
-  }), /linked Enterprise workspace usage readiness gate/);
+  }), /Enterprise workspace usage gate/);
 });
 
 test("Veo worker composition creates the exact-task Enterprise billing resolver only behind its opt-in", () => {
