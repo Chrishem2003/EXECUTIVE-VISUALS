@@ -70,21 +70,21 @@ The result is a comparison aid, not an entitlement recommendation. It assumes th
 
 ## Provider price correction
 
-The current Runway Dev pricing page and Kling 4.0 API guide checked on 2026-11-22 list:
-- Kling 4.0 list rates: $0.157/sec at 720p, $0.235/sec at 1080p and $0.549/sec at 4K.
-- A verified 20% promotion applies to the documented 720p and 1080p tiers through 2026-11-30 UTC; 4K remains at list price. The calculator applies the dated promotion only through that cutoff and automatically reverts to list rates on 2026-12-01.
-- For input-video requests, billed seconds are output duration plus the greater of total input-video duration and output duration, at the published input-video rate: $0.094/sec at 720p, $0.141/sec at 1080p and $0.329/sec at 4K.
-- Kling 4.0 HDR surcharge: $0.047 per output second at 1080p and $0.078 at 4K.
-- Seedance 2.5 1080p: $0.68/sec, with its documented minimum and reference-video charges.
-- Gen-4.5: $0.12/sec under the published output-video rate.
+The current Runway Dev pricing page and Kling 4.0 guide were checked on 2026-11-22:
+- Kling 4.0 has a documented **20% promotion through November 30, 2026** on 720p and 1080p. The list rates are $0.157/sec and $0.235/sec; promotional rates are $0.1256/sec and $0.188/sec respectively.
+- Kling 4.0 4K remains at its $0.549/sec list rate; the current promotion is not applied to 4K.
+- For Kling 4.0 requests with input video, the published input rates are $0.094/sec at 720p, $0.141/sec at 1080p and $0.329/sec at 4K. The billed duration is output duration plus the greater of input-video duration and output duration, charged at the input-video rate.
+- Kling 4.0 HDR adds $0.047/sec at 1080p and $0.078/sec at 4K. The estimator keeps this as a separate surcharge rather than silently discounting it.
+- Seedance 2.5 1080p is $0.68/sec, with its documented minimum and reference-video charges.
+- Gen-4.5 is $0.12/sec under the published output-video rate.
 
-The earlier Kling 4 estimate correction in this batch must preserve the provider's dated promotion: the prior formula was wrong only in how it handled input-video billing, not because the promotion was unsupported. The revised calculator uses the combined-duration input-video formula, applies the documented 20% promotion to 720p and 1080p through November 30, 2026 UTC, adds the HDR surcharge, rejects an explicit request to disable Kling's native audio, and reverts to list pricing after the promotion expires.
+The estimator now applies the dated promotion only to the documented HD tiers, preserves 4K list pricing, uses the documented input-video billing formula, includes HDR surcharges, and rejects an explicit request to disable Kling's native audio. When the promotion expires, the date-driven calculation automatically reverts to list price. Temporary discounts are never carried forward without current source evidence.
 
 Official evidence:
 - https://dev.runway.com/pricing
-- https://dev.runway.com/learn/kling-4-0-api
-- https://dev.runway.com/learn/seedance-2-5-api
-- https://dev.runway.com/learn/best-ai-video-generation-apis
+- https://dev.runwayml.com/learn/kling-4-0-api
+- https://dev.runwayml.com/learn/seedance-2-5-api
+
 ## Response semantics and safety
 
 The response includes:
