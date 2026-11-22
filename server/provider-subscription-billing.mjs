@@ -139,7 +139,7 @@ export function createProviderSubscriptionBilling({
   }
 
   async function findPendingCreditPackPayment({merchantReference}){
-    const result=await dbRequest("payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref,amount_minor,currency,status,metadata&provider=eq.pesapal&status=eq.pending&tx_ref=eq."+encodeURIComponent(merchantReference)+"&limit=1");
+    const result=await dbRequest("payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref,amount_minor,currency,status,metadata&provider=eq.pesapal&tx_ref=eq."+encodeURIComponent(merchantReference)+"&limit=1");
     const payment=Array.isArray(result.data)?result.data[0]||null:null;
     if(!payment||payment.metadata?.payment_purpose!=="credit_pack_purchase")return null;
     return payment;
@@ -419,6 +419,47 @@ export function createProviderSubscriptionBilling({
   const service=createUnifiedSubscriptionBilling({providers,repository});
 
   async function handle({method,path,ownerId,body={},idempotencyKey=""}={}){
+    if(path==="/api/billing/credits/topup-checkout"&&method==="POST"){
+      const provider=text(body.provider||"pesapal").toLowerCase();
+      const productCode=text(body.productCode).toLowerCase();
+      const email=text(body.email).toLowerCase();
+      const key=text(idempotencyKey);
+      if(!ownerId||provider!=="pesapal"||!productCode||!validEmail(email)||key.length<8||key.length>180||
+         !text(body.firstName)||!text(body.lastName)||!text(body.phone))
+        return jsonResponse(400,{error:{code:"CREDIT_PACK_CHECKOUT_INPUT_INVALID",message:"Provide an active credit-pack product, valid email, name, phone and idempotency key. Pesapal is the enabled checkout provider for this batch."}});
+      try{
+        const reserved=await reserveCreditPackCheckout({ownerId,productCode,email,idempotencyKey:key});
+        if(reserved.status==="successful"||reserved.idempotentReplay===true&&reserved.checkoutUrl)
+          return jsonResponse(200,{checkout:{...reserved,idempotentReplay:true}});
+        const paymentId=String(reserved.paymentId||"");
+        if(!paymentId||reserved.status!=="pending")throw Object.assign(new Error("Credit-pack reservation is not pending."),{code:"CREDIT_PACK_RESERVATION_NOT_PENDING",status:409});
+        const existing=await getPayment(paymentId,ownerId);
+        if(existing?.metadata?.provider_checkout_url){
+          return jsonResponse(200,{checkout:{
+            paymentId,provider:"pesapal",reference:reserved.txRef,
+            amountMinor:Number(reserved.amountMinor),currency:reserved.currency,
+            creditUnits:Number(reserved.creditUnits),status:"pending",
+            checkoutUrl:existing.metadata.provider_checkout_url,idempotentReplay:true
+          }});
+        }
+        const checkout=await providers.pesapal.createCheckout({
+          reference:String(reserved.txRef),description:"Executive Visuals prepaid credit pack "+productCode,
+          amount:Number(reserved.amountMinor),currency:String(reserved.currency||"UGX"),
+          email,firstName:text(body.firstName).slice(0,80),lastName:text(body.lastName).slice(0,80),
+          phone:text(body.phone),countryCode:"UG",callbackUrl:pesapalCallbackUrl,
+          notificationId:pesapalNotificationId
+        });
+        await attachCreditPackCheckout({ownerId,paymentId,providerCheckout:checkout});
+        return jsonResponse(202,{checkout:{
+          paymentId,provider:"pesapal",reference:reserved.txRef,
+          amountMinor:Number(reserved.amountMinor),currency:reserved.currency,
+          creditUnits:Number(reserved.creditUnits),status:"pending",
+          checkoutUrl:checkout.checkoutUrl,idempotentReplay:false
+        }});
+      }catch(error){
+        return jsonResponse(Number(error?.status)||502,{error:{code:error?.code||"CREDIT_PACK_CHECKOUT_FAILED",message:error?.message||"Credit-pack checkout could not be created."}});
+      }
+    }
     if(path==="/api/billing/subscription/provider-checkout"&&method==="POST"){
       const provider=text(body.provider).toLowerCase();
       const planCode=text(body.planCode).toLowerCase();
@@ -492,11 +533,28 @@ export function createProviderSubscriptionBilling({
 
   async function handlePesapalIpn(query={}){
     try{
+      const merchantReference=text(query.OrderMerchantReference);
+      const creditPayment=merchantReference?await findPendingCreditPackPayment({merchantReference}):null;
+      if(creditPayment){
+        if(creditPayment.status==="successful"&&creditPayment.metadata?.credit_pack_applied===true){
+          return jsonResponse(200,{orderNotificationType:text(query.OrderNotificationType),
+            orderTrackingId:text(query.OrderTrackingId),orderMerchantReference:merchantReference,
+            status:200,result:{paymentPurpose:"credit_pack_purchase",applied:false,idempotentReplay:true}});
+        }
+        if(creditPayment.status!=="pending")throw Object.assign(new Error("Credit-pack payment is not pending."),{code:"CREDIT_PACK_PAYMENT_NOT_PENDING",status:409});
+        const verified=await providers.pesapal.handleNotification(query,{
+          expectedAmount:Number(creditPayment.amount_minor),expectedCurrency:creditPayment.currency
+        });
+        const result=await finalizeCreditPackPayment({payment:creditPayment,verified});
+        return jsonResponse(200,{orderNotificationType:text(query.OrderNotificationType),
+          orderTrackingId:text(query.OrderTrackingId),orderMerchantReference:merchantReference,
+          status:200,result:{paymentPurpose:"credit_pack_purchase",...result}});
+      }
       const result=await service.handlePesapalNotification(query);
       return jsonResponse(200,{
         orderNotificationType:text(query.OrderNotificationType),
         orderTrackingId:text(query.OrderTrackingId),
-        orderMerchantReference:text(query.OrderMerchantReference),
+        orderMerchantReference:merchantReference,
         status:200,result
       });
     }catch(error){
