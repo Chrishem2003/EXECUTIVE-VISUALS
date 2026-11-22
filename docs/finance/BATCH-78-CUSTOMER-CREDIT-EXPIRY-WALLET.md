@@ -19,7 +19,8 @@ Batch 78 makes customer generation-credit balances period-aware without changing
 - Expiry is recorded as a negative, append-only `expiry` wallet-ledger entry with a unique source idempotency key.
 - Only the unconsumed remainder of an allowance expires; prior settled consumption remains attributed to its original source.
 - Duplicate expiry sweeps cannot debit a source twice.
-- Accounts with any open generation reservation defer expiry. This is intentionally conservative because the current reservation schema does not reserve credits by individual source lot.
+- Accounts with any open generation reservation defer expiry. Because the current reservation schema does not reserve credits by individual source lot, new reservations are blocked while a due allowance is awaiting expiry behind open work. This prevents stale credits from being spent.
+- Wallet summaries subtract pending-expiry credits from spendable balance and expose `pendingExpiryCredits` and `expiryDeferred` separately.
 - The generation reservation RPC performs a due-expiry sweep before checking spendable balance, preventing stale allowances from being spent after their period end.
 
 ### Customer wallet read model
