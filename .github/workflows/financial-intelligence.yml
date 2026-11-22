@@ -19,6 +19,7 @@ on:
       - feat/audited-subscription-publication-batch-60-2026-11-22
       - feat/provider-cost-to-customer-quote-batch-61-2026-11-22
       - feat/strict-provider-video-capabilities-batch-62-2026-11-22
+      - feat/customer-generation-quote-breakdown-batch-63-2026-11-22
       - feat/financial-governance-batch-48
   pull_request:
 
@@ -60,6 +61,6 @@ jobs:
           node --check server/flutterwave-auth.mjs
           node --check server/payment-intelligence.mjs
       - name: Run financial intelligence tests
-        run: node --test server/tests/subscription-allowance-approval.test.mjs server/tests/subscription-allowance-persistence-batch-59.test.mjs server/tests/subscription-allowance-profitability.test.mjs server/tests/subscription-credit-cost-evidence.test.mjs server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/workload-cost-variance.test.mjs server/tests/provider-rate-cards.test.mjs server/tests/provider-video-cost-estimator.test.mjs server/tests/provider-video-cost-estimator-api.test.mjs server/tests/provider-customer-credit-quote.test.mjs server/tests/ai-workload-telemetry.test.mjs server/tests/subscription-customer-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+        run: node --test server/tests/subscription-allowance-approval.test.mjs server/tests/subscription-allowance-persistence-batch-59.test.mjs server/tests/subscription-allowance-profitability.test.mjs server/tests/subscription-credit-cost-evidence.test.mjs server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/workload-cost-variance.test.mjs server/tests/provider-rate-cards.test.mjs server/tests/provider-video-cost-estimator.test.mjs server/tests/provider-video-cost-estimator-api.test.mjs server/tests/provider-customer-credit-quote.test.mjs server/tests/video-shot-preflight.test.mjs server/tests/ai-workload-telemetry.test.mjs server/tests/subscription-customer-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
       - name: Test Batch 48 financial governance rules and UI integration
         run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs
