@@ -894,6 +894,67 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("financial_revenue_retention_overview",{p_actor_id:ownerId});
         return response(200,{intelligence:result||{retention:[],acquisition:[],forecastAccuracy:[],limitations:[]}});
       }
+      if(path==="/api/admin/finance/ai-usage-reconciliation"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const limit=query.limit==null?50:Number(query.limit);
+        const offset=query.offset==null?0:Number(query.offset);
+        const periodMonth=query.periodMonth==null?"":String(query.periodMonth);
+        if(!Number.isSafeInteger(limit)||limit<1||limit>100||
+          !Number.isSafeInteger(offset)||offset<0||offset>100000||
+          (periodMonth&&(!/^\d{4}-\d{2}-01$/.test(periodMonth)||
+            !Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
+            new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)))
+          return error(400,"AI_USAGE_RECONCILIATION_FILTER_INVALID","Provide a valid month and pagination limit (1–100) and offset (0–100,000).");
+        let usageUrl="ai_usage_cost_events?select=id,occurred_at,period_month,owner_id,project_id,job_id,operation_id,provider,requested_model,response_model,operation,status,video_seconds,currency,cost_minor,cost_basis,invoice_line_reference&order=occurred_at.desc,id.desc&limit="+(limit+1)+"&offset="+offset;
+        if(periodMonth)usageUrl+="&period_month=eq."+encodeURIComponent(periodMonth);
+        const usageResult=await dbRequest(usageUrl);
+        const rawEvents=Array.isArray(usageResult.data)?usageResult.data:[];
+        const events=rawEvents.slice(0,limit);
+        const usageIds=events.map(row=>String(row.id||"")).filter(id=>UUID.test(id));
+        const jobIds=[...new Set(events.map(row=>String(row.job_id||"")).filter(id=>UUID.test(id)))];
+        const [attributionResult,reservationResult]=await Promise.all([
+          usageIds.length?dbRequest("financial_cost_attribution_links?select=usage_event_id,amount_minor,currency,invoice_import_id,invoice_line_id,created_at&usage_event_id=in.("+usageIds.join(",")+")"):Promise.resolve({data:[]}),
+          jobIds.length?dbRequest("billing_credit_reservations?select=job_id,reserved_credits,actual_credits,state&job_id=in.("+jobIds.join(",")+")"):Promise.resolve({data:[]})
+        ]);
+        const attributions=Array.isArray(attributionResult.data)?attributionResult.data:[];
+        const reservations=Array.isArray(reservationResult.data)?reservationResult.data:[];
+        let eventsOut;
+        try{eventsOut=events.map(row=>{
+          const links=attributions.filter(link=>String(link.usage_event_id)===String(row.id));
+          const invoiceConfirmed=links.length===1?links[0]:null;
+          const reservation=reservations.find(item=>row.job_id&&String(item.job_id)===String(row.job_id))||null;
+          const estimateMinor=row.cost_basis==="catalog_estimate"&&Number.isSafeInteger(Number(row.cost_minor))?Number(row.cost_minor):null;
+          const reportedMinor=row.cost_basis==="provider_reported"&&Number.isSafeInteger(Number(row.cost_minor))?Number(row.cost_minor):null;
+          const invoiceMinor=invoiceConfirmed&&Number.isSafeInteger(Number(invoiceConfirmed.amount_minor))?Number(invoiceConfirmed.amount_minor):null;
+          const sameCurrency=invoiceConfirmed&&row.currency&&String(invoiceConfirmed.currency)===String(row.currency);
+          return {
+            id:String(row.id),occurredAt:String(row.occurred_at||""),periodMonth:String(row.period_month||""),
+            ownerId:row.owner_id==null?null:String(row.owner_id),projectId:row.project_id==null?null:String(row.project_id),
+            jobId:row.job_id==null?null:String(row.job_id),operationId:String(row.operation_id||""),
+            provider:String(row.provider||""),requestedModel:String(row.requested_model||""),
+            responseModel:row.response_model==null?null:String(row.response_model),
+            operation:String(row.operation||""),status:String(row.status||""),
+            videoSeconds:Number(row.video_seconds||0),currency:row.currency==null?null:String(row.currency),
+            costBasis:String(row.cost_basis||"unpriced"),estimateMinor,providerReportedMinor:reportedMinor,
+            invoiceConfirmedMinor:invoiceMinor,invoiceCurrency:invoiceConfirmed?String(invoiceConfirmed.currency):null,
+            invoiceImportId:invoiceConfirmed?String(invoiceConfirmed.invoice_import_id):null,
+            invoiceLineId:invoiceConfirmed?String(invoiceConfirmed.invoice_line_id):null,
+            estimateVarianceMinor:estimateMinor!==null&&invoiceMinor!==null&&sameCurrency?invoiceMinor-estimateMinor:null,
+            invoiceAttributionCount:links.length,
+            invoiceEvidenceStatus:links.length===1?"invoice_confirmed":links.length>1?"ambiguous_invoice_attribution":"not_invoice_posted",
+            customerCreditsReserved:reservation?Number(reservation.reserved_credits||0):null,
+            customerCreditsSettled:reservation&&reservation.state==="settled"&&reservation.actual_credits!=null?Number(reservation.actual_credits):null,
+            customerCreditReservationState:reservation?String(reservation.state):"none"
+          };
+        });
+        return response(200,{events:eventsOut,hasMore:rawEvents.length>limit,limit,offset,periodMonth:periodMonth||null,
+          summary:{returned:eventsOut.length,invoiceConfirmed:eventsOut.filter(x=>x.invoiceEvidenceStatus==="invoice_confirmed").length,
+            estimatedOnly:eventsOut.filter(x=>x.costBasis==="catalog_estimate"&&x.invoiceEvidenceStatus==="not_invoice_posted").length,
+            providerReportedNotInvoicePosted:eventsOut.filter(x=>x.costBasis==="provider_reported"&&x.invoiceEvidenceStatus==="not_invoice_posted").length,
+            unpriced:eventsOut.filter(x=>x.costBasis==="unpriced").length,
+            ambiguousInvoiceAttribution:eventsOut.filter(x=>x.invoiceEvidenceStatus==="ambiguous_invoice_attribution").length}});
+        }catch(err){throw Object.assign(err instanceof Error?err:new Error("Reconciliation mapping failed."),{code:err?.code||"AI_USAGE_RECONCILIATION_TRANSFORM_FAILED"});}
+      }
       if(path==="/api/admin/finance/ai-cost-intelligence"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const month=String(body.periodMonth||"");

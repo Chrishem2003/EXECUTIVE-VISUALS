@@ -1842,3 +1842,68 @@ test("provider invoice history is admin-only, bounded and returns a safe import 
  assert.equal(invalid.status,400);
  assert.equal(invalid.body.error.code,"AI_INVOICE_LIST_LIMIT_INVALID");
 });
+
+
+test("admin AI usage reconciliation distinguishes catalog estimates from invoice-confirmed costs",async()=>{
+ const usageId="44444444-4444-4444-8444-444444444444";
+ const jobId="55555555-5555-4555-8555-555555555555";
+ const invoiceId="66666666-6666-4666-8666-666666666666";
+ const calls=[];
+ const service=api(async(url)=>{
+  const target=String(url);calls.push(target);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.includes("/ai_usage_cost_events?"))return json([{
+   id:usageId,occurred_at:"2026-11-22T08:00:00Z",period_month:"2026-11-01",
+   owner_id:owner,project_id:null,job_id:jobId,operation_id:"op-123",
+   provider:"runway",requested_model:"seedance2_5",response_model:"seedance2_5",
+   operation:"video",status:"succeeded",video_seconds:5,currency:"USD",
+   cost_minor:340,cost_basis:"catalog_estimate",invoice_line_reference:"line-1"
+  }]);
+  if(target.includes("/financial_cost_attribution_links?"))return json([{
+   usage_event_id:usageId,amount_minor:360,currency:"USD",invoice_import_id:invoiceId,
+   invoice_line_id:"77777777-7777-4777-8777-777777777777",created_at:"2026-11-22T09:00:00Z"
+  }]);
+  if(target.includes("/billing_credit_reservations?"))return json([{
+   job_id:jobId,reserved_credits:500,actual_credits:420,state:"settled"
+  }]);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/ai-usage-reconciliation",ownerId:owner,query:{limit:"20",periodMonth:"2026-11-01"}});
+ assert.equal(result.status,200,JSON.stringify({body:result.body,calls}));
+ assert.equal(result.body.events.length,1);
+ const event=result.body.events[0];
+ assert.equal(event.estimateMinor,340);
+ assert.equal(event.invoiceConfirmedMinor,360);
+ assert.equal(event.estimateVarianceMinor,20);
+ assert.equal(event.invoiceEvidenceStatus,"invoice_confirmed");
+ assert.equal(event.customerCreditsReserved,500);
+ assert.equal(event.customerCreditsSettled,420);
+ assert.equal(result.body.summary.invoiceConfirmed,1);
+ assert.ok(calls.some(url=>url.includes("period_month=eq.2026-11-01")));
+ assert.ok(calls.some(url=>url.includes("usage_event_id=in.("+usageId+")")));
+ assert.ok(calls.some(url=>url.includes("job_id=in.("+jobId+")")));
+});
+
+test("admin AI usage reconciliation rejects unauthorized callers before reading finance evidence",async()=>{
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Unauthorized caller must not read usage, invoice or credit records.");
+ });
+ const result=await denied.handle({method:"GET",path:"/api/admin/finance/ai-usage-reconciliation",ownerId:owner});
+ assert.equal(result.status,403);
+ assert.equal(result.body.error.code,"FINANCIAL_ADMIN_REQUIRED");
+});
+
+test("admin AI usage reconciliation validates month and pagination before reading usage",async()=>{
+ let usageRead=false;
+ const service=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  usageRead=true;throw new Error("Invalid filters must not read usage.");
+ });
+ for(const query of [{limit:"0"},{limit:"101"},{offset:"-1"},{periodMonth:"2026-13-01"},{periodMonth:"2026-11-22"}]){
+  const result=await service.handle({method:"GET",path:"/api/admin/finance/ai-usage-reconciliation",ownerId:owner,query});
+  assert.equal(result.status,400);
+  assert.equal(result.body.error.code,"AI_USAGE_RECONCILIATION_FILTER_INVALID");
+ }
+ assert.equal(usageRead,false);
+});
