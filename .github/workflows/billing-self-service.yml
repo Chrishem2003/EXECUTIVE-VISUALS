@@ -31,6 +31,7 @@ on:
       - feat/executive-financial-intelligence-batch-47
       - feat/financial-governance-batch-48
       - feat/revenue-movement-cohort-intelligence-batch-39
+      - feat/verified-job-cost-coverage-batch-70-2026-11-22
   pull_request:
 
 permissions:
@@ -120,6 +121,8 @@ jobs:
           echo "POSTGRES_SERVICE_CONTAINER_ID=$container_id" >> "$GITHUB_ENV"
       - name: Bootstrap disposable Supabase-compatible billing schema
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-bootstrap.sql
+      - name: Apply durable generation-credit reservation foundation
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109230000_cloud_customer_credit_reservations.sql
       - name: Apply financial intelligence foundation
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110120000_financial_intelligence_foundation.sql
       - name: Apply atomic payment refund migration
@@ -172,6 +175,10 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-integration.sql
       - name: Apply Paddle and Pesapal provider subscription migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261121120000_paddle_pesapal_provider_billing.sql
+      - name: Apply Batch 70 verified job cost coverage migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122170000_verified_job_cost_coverage_batch_70.sql
+      - name: Verify Batch 70 invoice-backed job costs, settled credits and revenue gate
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-job-cost-coverage-postgres-integration.sql
       - name: Verify Paddle and Pesapal reservation, activation, renewal and lifecycle settlement
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/paddle-pesapal-subscription-postgres-integration.sql
       - name: Verify resource economics and shadow model routing
@@ -242,6 +249,8 @@ jobs:
         run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs
       - name: Run financial API tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+      - name: Test Batch 70 job cost coverage API and Financial Command Centre
+        run: npm run verify:verified-job-cost-coverage
       - name: Test Batch 39 revenue movement and cohort API
         run: node --test server/tests/revenue-movement-cohorts.test.mjs
       - name: Test Batch 40 cashflow and liquidity API
