@@ -195,3 +195,58 @@ test("approved-shot cancellation reconciliation retains its separate bounded tas
  assert.match(shotFenceSql,/grant execute on function executive_visuals\.transition_video_generation_task_reconciliation_v1\([^;]+ to service_role/i);
  assert.match(shotWorkerRepositories,/markCancelledByReconciler/);
 });
+
+
+const projectPoolSql=await readFile(resolve(root,"supabase/migrations/20261122100000_project_shared_credit_pools.sql"),"utf8");
+const projectPoolIntegration=await readFile(resolve(root,"scripts/project-shared-credit-pool-postgres-integration.sql"),"utf8");
+const ciWorkflow=await readFile(resolve(root,".github/workflows/ci.yml"),"utf8");
+
+test("project shared credit pools are isolated, owner-controlled and append-only",()=>{
+ for(const table of ["project_credit_pools","project_credit_pool_ledger","project_credit_pool_reservations"]){
+  assert.match(projectPoolSql,new RegExp("alter table executive_visuals\\."+table+" enable row level security","i"));
+  assert.match(projectPoolSql,new RegExp("revoke all on executive_visuals\\."+table+" from public,anon,authenticated","i"));
+ }
+ assert.match(projectPoolSql,/create trigger ev_project_credit_pool_ledger_immutable/i);
+ assert.match(projectPoolSql,/PROJECT_CREDIT_POOL_OWNER_REQUIRED/);
+ assert.match(projectPoolSql,/PROJECT_CREDIT_POOL_OWNER_MISMATCH/);
+ assert.match(projectPoolSql,/configure_project_credit_pool/);
+});
+
+test("project pool top-ups transfer existing personal credits atomically and replay without double debit",()=>{
+ assert.match(projectPoolSql,/fund_project_credit_pool/);
+ assert.ok(projectPoolSql.includes("insert into billing_credit_ledger"));
+ assert.ok(projectPoolSql.includes("insert into project_credit_pool_ledger"));
+ assert.ok(projectPoolSql.indexOf("insert into billing_credit_ledger")<projectPoolSql.indexOf("insert into project_credit_pool_ledger"));
+ assert.match(projectPoolSql,/BILLING_INSUFFICIENT_CREDITS/);
+ assert.match(projectPoolSql,/PROJECT_CREDIT_POOL_IDEMPOTENCY_CONFLICT/);
+ assert.match(projectPoolIntegration,/project pool top-up replay changed either wallet balance/i);
+ assert.match(projectPoolIntegration,/personal_balance<>\(select balance-1000 from project_pool_personal_before\)/i);
+});
+
+test("the existing video-generation reservation RPC routes configured projects to the pool and preserves subscription entitlements",()=>{
+ assert.match(projectPoolSql,/perform assert_video_generation_entitlement\(p_owner_id\)/i);
+ assert.match(projectPoolSql,/reserve_generation_credits_without_entitlement\(p_owner_id,p_job_id,p_credits,p_idempotency_key\)/i);
+ assert.match(projectPoolSql,/BILLING_INSUFFICIENT_PROJECT_CREDITS/);
+ assert.match(projectPoolSql,/PROJECT_CREDIT_POOL_MONTHLY_LIMIT_REACHED/);
+ assert.match(projectPoolSql,/insert into billing_credit_reservations\(id,owner_id,job_id,idempotency_key,reserved_credits\)/i);
+ assert.match(projectPoolIntegration,/project pool unexpectedly fell back to personal credits/i);
+ assert.match(projectPoolIntegration,/project monthly spend cap unexpectedly allowed excess usage/i);
+});
+
+test("project pool provider settlement and cancellation release reconcile the same durable reservation",()=>{
+ assert.match(projectPoolSql,/settle_generation_credits_for_job[\s\S]*?settle_project_credit_pool_reservation/i);
+ assert.match(projectPoolSql,/release_generation_credit_reservation[\s\S]*?project_credit_pool_reservations[\s\S]*?generation_refund/i);
+ assert.match(projectPoolSql,/update billing_credit_reservations set actual_credits=p_actual_credits,state='settled'/i);
+ assert.match(projectPoolSql,/update billing_credit_reservations set state='released'/i);
+ assert.match(projectPoolIntegration,/provider settlement did not reconcile the shared project wallet/i);
+ assert.match(projectPoolIntegration,/released generation reservation did not return credits to the project pool/i);
+});
+
+test("shared project wallet PostgreSQL integration is wired into the cloud-video CI job after entitlement and cancellation prerequisites",()=>{
+ const migration=ciWorkflow.indexOf("20261122100000_project_shared_credit_pools.sql");
+ const integration=ciWorkflow.indexOf("scripts/project-shared-credit-pool-postgres-integration.sql");
+ const entitlement=ciWorkflow.indexOf("20261111230000_video_generation_entitlement_gate.sql");
+ const cancellation=ciWorkflow.indexOf("20261114130000_atomic_cloud_job_cancellation_settlement.sql");
+ assert.ok(entitlement>=0&&cancellation>=0&&migration>entitlement&&migration>cancellation&&integration>migration);
+ assert.doesNotMatch(projectPoolSql,/\b(drop\s+table|truncate\s+table|delete\s+from)\b/i);
+});
