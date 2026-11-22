@@ -8,6 +8,7 @@ import { normalizeGenAiUsage, parseProviderInvoiceCsv } from "./ai-cost-metering
 import { normalizeWorkloadTelemetry } from "./ai-workload-telemetry.mjs";
 import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRoutingRequest } from "./ai-resource-economics.mjs";
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
+import { estimateProviderVideoCost } from "./provider-video-cost-estimator.mjs";
 import { analyzeWorkloadCostVariance } from "./workload-cost-variance.mjs";
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
@@ -882,6 +883,25 @@ export function createFinancialIntelligenceApi({
           return error(400,"AI_COST_PERIOD_INVALID","Provide a valid reporting month.");
         const result=await rpc("ai_cost_intelligence_overview",{p_actor_id:ownerId,p_period_month:periodMonth});
         return response(200,{intelligence:result||{byProviderModel:[],byCustomer:[],unpricedEvents:0,limitations:[]}});
+      }
+      if(path==="/api/admin/finance/model-rate-card-estimates"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const provider=String(body.provider||"").trim().toLowerCase();
+        const model=String(body.model||"").trim();
+        const currency=String(body.currency||"").trim().toUpperCase();
+        const version=String(body.rateCardVersion||"").trim();
+        if(!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(provider)||!model||model.length>160||
+          !/^[A-Z]{3}$/.test(currency)||!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,79}$/.test(version))
+          return error(400,"PROVIDER_VIDEO_ESTIMATE_INVALID","Provide a valid provider, model, ISO currency and exact rate-card version.");
+        const rows=await dbRequest("ai_model_price_catalog?select=provider,model,currency,video_second_minor,effective_from,effective_to,rate_card_version,billing_unit,source_url,source_checked_at,source_fingerprint,verification_status,pricing_dimensions&provider=eq."+encodeURIComponent(provider)+"&model=eq."+encodeURIComponent(model)+"&currency=eq."+encodeURIComponent(currency)+"&rate_card_version=eq."+encodeURIComponent(version)+"&limit=2");
+        const row=Array.isArray(rows.data)&&rows.data.length===1?rows.data[0]:null;
+        if(!row)return error(404,"PROVIDER_VIDEO_RATE_CARD_NOT_FOUND","The exact governed provider rate-card version was not found.");
+        try{
+          const estimate=estimateProviderVideoCost({rateCard:row,request:body.request,now:new Date()});
+          return response(200,{estimate});
+        }catch(err){
+          return error(422,err.code||"PROVIDER_VIDEO_ESTIMATE_INVALID",err.message||"Provider video cost estimate could not be calculated.");
+        }
       }
       if(path==="/api/admin/finance/model-rate-cards"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
