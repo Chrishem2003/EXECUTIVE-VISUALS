@@ -102,7 +102,7 @@ begin
   raise exception using errcode='22023',message='subscription_allowance_proposal_hash_invalid';
  end if;
  select role into v_role from executive_visuals.platform_admins where user_id=p_actor_id;
- if v_role not in('owner','billing_admin','platform_admin') then
+ if v_role is null or v_role not in('owner','billing_admin','platform_admin') then
   raise exception using errcode='42501',message='subscription_allowance_proposal_admin_required';
  end if;
  if p_proposal->>'currency' is distinct from 'USD'
