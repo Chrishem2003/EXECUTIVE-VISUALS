@@ -637,12 +637,15 @@ export function createFinancialIntelligenceApi({
           const row=prior.data[0];
           if(row.metadata?.product_code!==productCode||row.metadata?.mobile_money_network!==network||String(row.customer_email||"").trim().toLowerCase()!==email)
             return error(409,"IDEMPOTENCY_KEY_REUSED","This idempotency key is already bound to a different checkout request.");
+          if(row.status==="pending"&&(!row.metadata?.credit_pack_snapshot||
+            row.metadata?.payment_purpose!=="credit_pack_purchase"))
+            return error(409,"CREDIT_PACK_CHECKOUT_RECONCILIATION_REQUIRED","This earlier pending checkout lacks a verified credit-pack snapshot. Contact support before retrying; do not create a second charge.");
           return response(200,{payment:{id:row.id,reference:row.tx_ref,status:row.status,providerChargeId:row.provider_transaction_id,nextAction:row.metadata?.next_action||null},idempotentReplay:true});
         }
-        const productResult=await dbRequest("billing_products?select=product_code,name,description,amount_minor,currency,credit_units&product_code=eq."+encodeURIComponent(productCode)+"&active=eq.true&limit=1");
+        const productResult=await dbRequest("billing_products?select=product_code,product_type,name,description,amount_minor,currency,credit_units&product_code=eq."+encodeURIComponent(productCode)+"&active=eq.true&limit=1");
         const product=Array.isArray(productResult.data)?productResult.data[0]:null;
         if(!product)return error(404,"BILLING_PRODUCT_UNAVAILABLE","This purchase option is not currently available.");
-        if(product.currency!=="UGX"||!Number.isSafeInteger(Number(product.amount_minor))||Number(product.amount_minor)<=0||
+        if(product.product_type!=="credit_pack"||product.currency!=="UGX"||!Number.isSafeInteger(Number(product.amount_minor))||Number(product.amount_minor)<=0||
           !Number.isSafeInteger(Number(product.credit_units))||Number(product.credit_units)<=0)
           return error(503,"BILLING_PRODUCT_INVALID","This purchase option is not configured safely.");
         const txRef="EV"+randomUUID().replaceAll("-","");
@@ -651,7 +654,18 @@ export function createFinancialIntelligenceApi({
             owner_id:ownerId,tx_ref:txRef,amount_minor:Number(product.amount_minor),currency:"UGX",
             status:"pending",payment_method:"mobile_money",customer_email:email,
             description:String(product.name).slice(0,250),
-            metadata:{product_code:product.product_code,credit_units:Number(product.credit_units),idempotency_key:key,mobile_money_network:network}
+            metadata:{
+              product_code:product.product_code,
+              credit_units:Number(product.credit_units),
+              payment_purpose:"credit_pack_purchase",
+              credit_pack_applied:false,
+              credit_pack_snapshot:{
+                productCode:product.product_code,productType:product.product_type,
+                amountMinor:Number(product.amount_minor),currency:product.currency,
+                creditUnits:Number(product.credit_units)
+              },
+              idempotency_key:key,mobile_money_network:network
+            }
           },prefer:"return=representation"
         });
         const payment=Array.isArray(createdRows.data)?createdRows.data[0]:null;
