@@ -177,7 +177,7 @@ begin
       'periodKey',grant_key,
       'verifiedAt',payment_row.verified_at
     );
-  elsif new.granted_by is not null then
+  elsif new.granted_by is not null and nullif(btrim(new.grant_reason),'') is not null then
     grant_evidence := jsonb_build_object(
       'evidenceType','admin_granted_subscription',
       'provider','platform_admin',
