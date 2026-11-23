@@ -87,8 +87,9 @@ The regression suite therefore checks:
 4. A mixed workload can fail a plan's credit allowance even where a per-model-only comparison looks affordable.
 5. Contribution margin and credit sufficiency remain separate assessments.
 6. Video-to-video scenarios include provider-billed reference-video input charges rather than treating edits as output-only.
-7. The current Runway Dev Gemini Omni Flash rate is dated separately from the older Google-direct price announcement.
-8. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
+7. Gemini Omni 1.1 and 1.2 use separate official model IDs, rates and input-video charges.
+8. WAN 3.0, WAN 3.0 Prime and MiniMax H3 Max use documented model IDs and resolution-specific rates.
+9. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
 
 ## Release and finance controls
 
