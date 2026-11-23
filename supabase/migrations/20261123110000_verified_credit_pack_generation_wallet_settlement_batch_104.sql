@@ -61,7 +61,8 @@ begin
    for update;
   if payment_row.id is null then raise exception 'CREDIT_PACK_PAYMENT_NOT_FOUND'; end if;
 
-  if payment_row.currency<>'UGX'
+  if payment_row.provider is distinct from 'flutterwave'
+     or payment_row.currency<>'UGX'
      or coalesce(p_provider_payload->>'id','')<>p_provider_transaction_id
      or upper(coalesce(p_provider_payload->>'currency',''))<>payment_row.currency
      or coalesce(p_provider_payload->>'reference','')<>payment_row.tx_ref
