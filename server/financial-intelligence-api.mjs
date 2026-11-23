@@ -14,6 +14,7 @@ import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.
 import { calculateSubscriptionPlanCreditEconomics } from "./subscription-plan-credit-economics.mjs";
 import { calculateMixedSubscriptionWorkloadEconomics } from "./mixed-subscription-workload-economics.mjs";
 import { calculateCreditPackOverageEconomics } from "./credit-pack-overage-economics.mjs";
+import { selectApprovedSettlementFxEvidence } from "./approved-fx-rate-conversion.mjs";
 import { deriveInvoiceBackedCreditCostEvidence } from "./subscription-credit-cost-evidence.mjs";
 import { deriveInvoiceBackedModelCostEvidence } from "./model-invoice-cost-evidence.mjs";
 import { analyzeWorkloadCostVariance } from "./workload-cost-variance.mjs";
@@ -998,15 +999,22 @@ export function createFinancialIntelligenceApi({
               "Evidence is historical and read-only; finance/product approval is still required before any allowance can be published."
             ]
           };
-          // Top-up margin is measured only when invoice-backed unit cost and
-          // catalogue product currency match. No FX or browser-supplied prices.
+          // Credit-pack products and approved FX evidence are server-owned.
+          // Only processor/bank settlement evidence may convert historical USD cost into UGX.
           const creditPackProducts=costEvidence.status==="verified_measured"
             ?await dbRequest("billing_products?select=product_code,name,product_type,amount_minor,currency,credit_units,active&product_type=eq.credit_pack&order=amount_minor.asc&limit=100")
             :{data:[]};
+          const catalogueProducts=Array.isArray(creditPackProducts.data)?creditPackProducts.data:[];
+          const needsFx=catalogueProducts.some(product=>product.currency!==costEvidence.currency);
+          const nextPeriodMonth=new Date(Date.UTC(Number(periodMonth.slice(0,4)),Number(periodMonth.slice(5,7)),1)).toISOString().slice(0,10);
+          const fxRows=needsFx&&costEvidence.status==="verified_measured"
+            ?await dbRequest("financial_fx_rate_evidence_current?select=evidence_id,source_currency,target_currency,rate_scaled,rate_scale,effective_date,source_type,purpose,source_reference,decision,decision_reason,decided_by,decision_created_at&source_currency=eq.USD&target_currency=eq.UGX&purpose=eq.settlement_cost&effective_date=gte."+encodeURIComponent(periodMonth)+"&effective_date=lt."+encodeURIComponent(nextPeriodMonth)+"&decision=eq.approved&order=effective_date.desc,decision_created_at.desc&limit=100")
+            :{data:[]};
+          const fxEvidence=selectApprovedSettlementFxEvidence(Array.isArray(fxRows.data)?fxRows.data:[],
+            {sourceCurrency:"USD",targetCurrency:"UGX",periodMonth});
           const creditPackEconomics=calculateCreditPackOverageEconomics({
-            products:Array.isArray(creditPackProducts.data)?creditPackProducts.data:[],
-            costEvidence:{...actualCostEvidence,evidence:costEvidence.evidence},
-            pricingPolicy:economics.pricingPolicy
+            products:catalogueProducts,costEvidence:{...actualCostEvidence,evidence:costEvidence.evidence},
+            pricingPolicy:economics.pricingPolicy,fxEvidence
           });
           return response(200,{
             economics,mixedEconomics,creditPackEconomics,
