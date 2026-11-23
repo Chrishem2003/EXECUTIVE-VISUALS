@@ -67,7 +67,7 @@ begin
     where r.status in('requested','processing','succeeded','failed')
       and (p_owner_id is null or r.owner_id=p_owner_id)
   ), confirmed_allocations as (
-    select r.refund_id,r.owner_id,r.payment_id,r.amount_minor,r.currency,
+    select r.refund_id,r.owner_id,r.payment_id,r.amount_minor,r.currency,r.payment_currency,
       u.job_id,u.credits_consumed,t.total_granted_credits,
       u.unresolved_allocations,t.unresolved_source_count,t.currency source_currency,
       t.currency_count,
