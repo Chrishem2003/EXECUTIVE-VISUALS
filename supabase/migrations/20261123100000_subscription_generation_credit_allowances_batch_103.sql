@@ -57,7 +57,7 @@ revoke all on function executive_visuals.sync_subscription_generation_credit_sna
   from public, anon, authenticated, service_role;
 drop trigger if exists ev_subscription_generation_credit_snapshot on executive_visuals.customer_subscriptions;
 create trigger ev_subscription_generation_credit_snapshot
-before insert or update of plan_id, plan_code, plan_version
+before insert or update of plan_id, plan_code, plan_version, included_generation_credits
 on executive_visuals.customer_subscriptions
 for each row execute function executive_visuals.sync_subscription_generation_credit_snapshot();
 
@@ -94,7 +94,7 @@ revoke all on function executive_visuals.sync_scheduled_subscription_generation_
   from public, anon, authenticated, service_role;
 drop trigger if exists ev_scheduled_subscription_generation_credit_snapshot on executive_visuals.customer_subscriptions;
 create trigger ev_scheduled_subscription_generation_credit_snapshot
-before update of scheduled_plan_id
+before update of scheduled_plan_id, scheduled_included_generation_credits
 on executive_visuals.customer_subscriptions
 for each row execute function executive_visuals.sync_scheduled_subscription_generation_credit_snapshot();
 
