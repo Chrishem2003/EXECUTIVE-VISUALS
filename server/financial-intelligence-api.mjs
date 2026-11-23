@@ -13,6 +13,7 @@ import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.m
 import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.mjs";
 import { calculateSubscriptionPlanCreditEconomics } from "./subscription-plan-credit-economics.mjs";
 import { calculateMixedSubscriptionWorkloadEconomics } from "./mixed-subscription-workload-economics.mjs";
+import { calculateCreditPackOverageEconomics } from "./credit-pack-overage-economics.mjs";
 import { deriveInvoiceBackedCreditCostEvidence } from "./subscription-credit-cost-evidence.mjs";
 import { deriveInvoiceBackedModelCostEvidence } from "./model-invoice-cost-evidence.mjs";
 import { analyzeWorkloadCostVariance } from "./workload-cost-variance.mjs";
@@ -997,6 +998,16 @@ export function createFinancialIntelligenceApi({
               "Evidence is historical and read-only; finance/product approval is still required before any allowance can be published."
             ]
           };
+          // Top-up margin is measured only when invoice-backed unit cost and
+          // catalogue product currency match. No FX or browser-supplied prices.
+          const creditPackProducts=costEvidence.status==="verified_measured"
+            ?await dbRequest("billing_products?select=product_code,name,product_type,amount_minor,currency,credit_units,active&product_type=eq.credit_pack&order=amount_minor.asc&limit=100")
+            :{data:[]};
+          const creditPackEconomics=calculateCreditPackOverageEconomics({
+            products:Array.isArray(creditPackProducts.data)?creditPackProducts.data:[],
+            costEvidence:{...actualCostEvidence,evidence:costEvidence.evidence},
+            pricingPolicy:economics.pricingPolicy
+          });
           return response(200,{
             economics,mixedEconomics,
             actualCostEvidence,modelActualCostEvidence:modelCostEvidence,
