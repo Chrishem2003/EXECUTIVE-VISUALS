@@ -58,11 +58,27 @@ begin
     if sqlerrm<>'VIDEO_WORKFLOW_REPLAY_CREDIT_LIFECYCLE_MISMATCH' then raise; end if;
   end;
 
-  -- A completed job requires settled credits and provider-matched usage proof.
-  update executive_visuals.jobs set status='succeeded' where id=v_job;
+  -- A completed job requires settled provider budget, a cost receipt, and
+  -- provider-matched customer-credit usage proof. Keep the budget ledger coherent.
+  update executive_visuals.video_generation_budget_reservations
+    set state='settled',actual_amount=0.05,updated_at=clock_timestamp()
+    where job_id=v_job and state='reserved';
+  update executive_visuals.video_generation_budget_policies p
+    set reserved_amount=reserved_amount-0.10,spent_amount=spent_amount+0.05,
+        updated_at=clock_timestamp()
+    where p.id=(select r.policy_id from executive_visuals.video_generation_budget_reservations r
+                where r.job_id=v_job);
   update executive_visuals.billing_credit_reservations
     set state='settled',actual_credits=3000,evidence=v_evidence
     where id=v_reservation;
+  update executive_visuals.jobs
+    set status='succeeded',
+        output=jsonb_build_object(
+          'provider','runway','model','gen4.5',
+          'providerTaskId','batch104-cost-ledger-task-001',
+          'costEvidenceReference','provider-receipt:batch104-cost-ledger-001'
+        )
+    where id=v_job;
   select * into v_result from executive_visuals.approve_and_enqueue_video_workflow(
     v_quote,'e23e4567-e89b-42d3-a456-426614174001',v_owner,v_project,
     repeat('f',64),'studio-video','pg-workflow-credit-separation-001',
