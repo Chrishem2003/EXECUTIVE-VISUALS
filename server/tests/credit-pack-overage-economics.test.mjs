@@ -66,7 +66,7 @@ test("does not create an implied price or charge when no credit-pack products ex
 });
 
 test("calculates UGX pack margins only with approved settlement FX evidence",()=>{
- const fxEvidence={evidence_id:"fx-001",source_currency:"USD",target_currency:"UGX",rate_scaled:421690000000,rate_scale:100000000,
+ const fxEvidence={evidence_id:"fx-001",source_currency:"USD",target_currency:"UGX",period_month:"2026-11-01",rate_scaled:421690000000,rate_scale:100000000,
   effective_date:"2026-11-23",source_type:"processor_settlement",purpose:"settlement_cost",source_reference:"settlement-2026-11-23",
   decision:"approved",decision_reason:"Matched to processor settlement statement",decision_created_at:"2026-11-23T12:00:00Z"};
  const result=calculateCreditPackOverageEconomics({products:[product({currency:"UGX",amount_minor:50000})],
