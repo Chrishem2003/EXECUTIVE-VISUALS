@@ -66,7 +66,8 @@ The regression suite therefore checks:
 4. A mixed workload can fail a plan's credit allowance even where a per-model-only comparison looks affordable.
 5. Contribution margin and credit sufficiency remain separate assessments.
 6. Video-to-video scenarios include provider-billed reference-video input charges rather than treating edits as output-only.
-7. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
+7. A lower-cost Gemini Omni 1.2 Flash model is included with separate output and source-video charges.
+8. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
 
 ## Release and finance controls
 
