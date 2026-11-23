@@ -103,7 +103,7 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
   const lines=[];
   const add=(driver,quantity,rate)=>{if(quantity<=0)return;positiveRate(rate,driver,{allowZero:true});lines.push({driver,quantity,rateMinor:rate,amountMinor:costFor(rate,quantity)});};
   add("output_video_seconds",outputSeconds,outputRate);
-  if(referenceVideoSeconds>0){
+  if(referenceVideoSeconds>0&&inputVideoMode!==2){
     const rate=dimensions["referenceVideoSecondMinor_"+resolution]??dimensions.referenceVideoSecondMinor;
     if(rate===undefined)fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price reference-video seconds.");
     add("reference_video_seconds",referenceVideoSeconds,rate);
