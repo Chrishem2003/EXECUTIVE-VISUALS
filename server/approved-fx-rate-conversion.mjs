@@ -15,7 +15,7 @@ export function convertProviderCostWithApprovedFx({amountMinor,sourceCurrency,ta
  const e=fxEvidence;
  if(e.decision!=='approved'||e.source_currency!==sourceCurrency||e.target_currency!==targetCurrency||
     e.purpose!=='settlement_cost'||!['processor_settlement','bank_statement'].includes(e.source_type)||
-    !isDate(e.effective_date)||e.effective_date<periodMonth||e.effective_date>=nextMonth(periodMonth)||
+    e.period_month!==periodMonth||!isDate(e.effective_date)||e.effective_date>new Date().toISOString().slice(0,10)||
     !Number.isSafeInteger(e.rate_scaled)||e.rate_scaled<=0||e.rate_scale!==100000000||
     !e.source_reference||String(e.source_reference).trim().length<3||!e.evidence_id)
   return Object.freeze({...blocked,reason:'FX evidence is unapproved, not settlement-grade, mismatched or outside the reporting month.'});
@@ -31,8 +31,8 @@ export function convertProviderCostWithApprovedFx({amountMinor,sourceCurrency,ta
 export function selectApprovedSettlementFxEvidence(rows=[],{sourceCurrency,targetCurrency,periodMonth}={}){
  if(!Array.isArray(rows)||rows.length>1000)fail('FX_EVIDENCE_INPUT_INVALID','FX evidence rows must be a bounded array.');
  const eligible=rows.filter(row=>row&&row.decision==='approved'&&row.source_currency===sourceCurrency&&row.target_currency===targetCurrency&&
-  row.purpose==='settlement_cost'&&['processor_settlement','bank_statement'].includes(row.source_type)&&row.effective_date>=periodMonth&&
-  row.effective_date<nextMonth(periodMonth));
+  row.purpose==='settlement_cost'&&['processor_settlement','bank_statement'].includes(row.source_type)&&row.period_month===periodMonth&&
+  isDate(row.effective_date)&&row.effective_date<=new Date().toISOString().slice(0,10));
  eligible.sort((a,b)=>String(b.effective_date).localeCompare(String(a.effective_date))||String(b.decision_created_at||'').localeCompare(String(a.decision_created_at||'')));
  return eligible[0]||null;
 }
