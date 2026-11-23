@@ -1,0 +1,26 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+
+const sql=readFileSync(new URL("../../supabase/migrations/20261123190000_verified_job_profitability_report_batch_105.sql",import.meta.url),"utf8");
+
+test("job profitability SQL is admin-only and read-only",()=>{
+ assert.match(sql,/platform_admins[\s\S]*role in\('owner','platform_admin','billing_admin'\)/);
+ assert.match(sql,/revoke all on function executive_visuals\.financial_job_profitability_report[\s\S]*grant execute[\s\S]*to service_role/i);
+ assert.doesNotMatch(sql,/\b(insert into|update executive_visuals\.|delete from executive_visuals\.)/i);
+});
+
+test("job profitability withholds contribution unless revenue credits and provider invoice coverage reconcile",()=>{
+ assert.match(sql,/credits_attributed<>actual_credits/);
+ assert.match(sql,/credits_attributed=actual_credits/);
+ assert.match(sql,/succeeded_usage_events<>invoice_line_count/);
+ assert.match(sql,/revenue_currencies->>0\)=cost_currency/);
+ assert.match(sql,/pending_subscription_split|unattributed/i);
+});
+
+test("job profitability keeps revenue and invoice costs currency-scoped",()=>{
+ assert.match(sql,/count\(distinct a\.currency\)/);
+ assert.match(sql,/count\(distinct c\.currency\)/);
+ assert.match(sql,/currency_mismatch/);
+ assert.match(sql,/grossMarginPct/);
+});
