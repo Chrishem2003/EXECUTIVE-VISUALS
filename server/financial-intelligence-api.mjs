@@ -1433,7 +1433,9 @@ export function createFinancialIntelligenceApi({
             refundStatus==="subtract_from_job_revenue"&&Number.isSafeInteger(adjustment?.confirmedRefundMinor)
               ?adjustment.confirmedRefundMinor:null;
           const revenueMinor=job?.revenue?.recognizedMinor;
-          const revenueCurrency=job?.revenue?.currency;
+          const revenueCurrencies=Array.isArray(job?.revenue?.currencies)?job.revenue.currencies:
+            (typeof job?.revenue?.currency==="string"?[job.revenue.currency]:[]);
+          const revenueCurrency=revenueCurrencies.length===1?revenueCurrencies[0]:null;
           const gross=job?.profitability;
           let net={status:"withheld_incomplete_evidence",currency:revenueCurrency||null,
             recognizedRevenueMinorAfterRefund:null,confirmedRefundMinor,
