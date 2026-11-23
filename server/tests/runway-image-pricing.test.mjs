@@ -71,7 +71,7 @@ test("rejects unsupported model, output count, reference count and missing evide
   assert.throws(() => estimateRunwayImageCredits({ ...base, model: "unknown-image-model" }), { code: "RUNWAY_IMAGE_PRICE_UNSUPPORTED_MODEL" });
   assert.throws(() => estimateRunwayImageCredits({ ...base, outputCount: 11 }), { code: "RUNWAY_IMAGE_PRICE_INVALID_INPUT" });
   assert.throws(() => estimateRunwayImageCredits({ ...base, referenceImageCount: 17 }), { code: "RUNWAY_IMAGE_PRICE_INVALID_INPUT" });
-  assert.throws(() => estimateRunwayImageCredits(({ model, ratio, quality }) => ({ model, ratio, quality }))(), { code: "RUNWAY_IMAGE_PRICE_INVALID_INPUT" });
+  assert.throws(() => estimateRunwayImageCredits({ model: base.model, ratio: base.ratio, quality: base.quality }), { code: "RUNWAY_IMAGE_PRICE_INPUT_REQUIRED" });
 });
 
 test("model catalogue accurately advertises supported output counts and reference limits", () => {
