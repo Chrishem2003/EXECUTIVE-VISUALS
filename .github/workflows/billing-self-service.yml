@@ -33,6 +33,7 @@ on:
       - feat/revenue-movement-cohort-intelligence-batch-39
       - feat/verified-job-cost-coverage-batch-70-2026-11-22
       - feat/verified-credit-revenue-allocation-batch-71-2026-11-22
+      - feat/customer-credit-wallet-statement-batch-101-2026-11-23
   pull_request:
 
 permissions:
