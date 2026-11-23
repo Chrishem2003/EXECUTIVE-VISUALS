@@ -11,7 +11,7 @@ Batch 95 correctly blocked UGX credit-pack contribution when provider invoice co
 
 - The Uganda Revenue Authority exchange-rate report publishes an Income Tax USD/UGX rate of 4,216.9 for 23 November 2026. This is a tax/reporting reference and is **not** treated as a processor or bank settlement rate.
 - Bank of Uganda publishes opening reference rates; these are also reference rates, not proof of the exchange actually applied to a specific settlement.
-- Flutterwave's public Uganda pricing page currently lists 3% for local wallets/mobile money and 4.8% for local cards; it says fees exclude VAT and other applicable taxes. These published rates are planning assumptions only. Actual transaction fees and VAT must be reconciled against processor statements.
+- Flutterwave's public Uganda pricing page currently lists 3% for local wallets/mobile money and 4.8% for local cards; it says fees exclude VAT and other applicable taxes. Its VAT guidance lists Uganda at 15% on transaction fees. These published rates are planning assumptions only; actual transaction fees and VAT must be reconciled against processor statements and the merchant tax invoice.
 - Pesapal's Uganda FAQ says transaction fees are available on its pricing page and the merchant dashboard, so the actual signed merchant schedule and statements remain the source of truth.
 
 Sources checked 23 November 2026:
