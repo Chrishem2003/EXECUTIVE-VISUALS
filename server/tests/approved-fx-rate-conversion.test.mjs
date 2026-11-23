@@ -32,7 +32,7 @@ test("blocks FX evidence assigned to a different invoice reporting period",()=>{
 test("selects the latest approved settlement evidence for the exact pair and period",()=>{
  const older={...approved,evidence_id:"fx-old",effective_date:"2026-11-20"};
  const reference={...approved,evidence_id:"fx-reference",source_type:"official_reference",effective_date:"2026-11-24"};
- const newer={...approved,evidence_id:"fx-new",effective_date:"2026-11-24"};
+ const newer={...approved,evidence_id:"fx-new",effective_date:"2026-11-23"};
  const result=selectApprovedSettlementFxEvidence([older,reference,newer],{sourceCurrency:"USD",targetCurrency:"UGX",periodMonth:"2026-11-01"});
  assert.equal(result.evidence_id,"fx-new");
 });
