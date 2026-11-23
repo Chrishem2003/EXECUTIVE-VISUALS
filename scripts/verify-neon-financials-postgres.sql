@@ -1,5 +1,5 @@
 -- Disposable PostgreSQL integration test for Neon-native financial migrations.
--- Run only against a throwaway CI database after migrations 0001-0005.
+-- Run only against a throwaway CI database after migrations 0001-0010.
 \set ON_ERROR_STOP on
 
 insert into executive_visuals.jobs(id,owner_id,job_type,status,input,idempotency_key)
@@ -129,6 +129,28 @@ select * from executive_visuals.reserve_video_generation_financials_v1(
 );
 select lease_token as failure_lease from executive_visuals.claim_next_job_v2('ci-worker',90,array['video.generate'])
 where id='22222222-2222-4222-8222-222222222222' \gset
+
+-- A prepared submission proves that the worker has not crossed the provider-call boundary.
+insert into executive_visuals.video_generation_submissions(job_id,owner_id,provider,model,request_hash,state)
+values(
+ '22222222-2222-4222-8222-222222222222','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'runway','gen4.5','bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','prepared'
+);
+
+-- A forged post-submission cancellation receipt must not release a prepared job.
+do $$
+begin
+ begin
+  perform executive_visuals.finalize_video_generation_financials_v1(
+   '22222222-2222-4222-8222-222222222222','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+   'failed',null,null,
+   '{"provider":"runway","evidenceType":"verified_no_charge_cancellation","evidenceId":"fake-cancel","evidenceReference":"fake-receipt","providerTaskId":"fake-task"}'::jsonb
+  );
+  raise exception 'unverified provider cancellation release unexpectedly succeeded';
+ exception when others then
+  if sqlerrm<>'VIDEO_CREDIT_RELEASE_PROVIDER_NO_CHARGE_NOT_PROVEN' then raise; end if;
+ end;
+end $$;
 
 -- A failure without proof that the provider did not charge must not release credits.
 do $$
