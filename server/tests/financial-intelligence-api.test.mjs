@@ -322,6 +322,8 @@ test("Uganda mobile-money checkout uses server-priced active catalogue and idemp
       return json([{product_code:"creator_credits",name:"Creator credits",description:"Test pack",product_type:"credit_pack",version:2,amount_minor:5000,currency:"UGX",credit_units:100}]);
     if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
       return json([]);
+    if(target.includes("payment_transactions?select=id,tx_ref,status,metadata")&&target.includes("status=eq.pending"))
+      return json([]);
     if(target.endsWith("/payment_transactions")&&options.method==="POST"){
       const payment=JSON.parse(options.body);
       assert.equal(payment.metadata.product_type,"credit_pack");
@@ -360,6 +362,8 @@ test("Uganda mobile-money checkout uses server-priced active catalogue and idemp
 test("credit checkout rejects non-credit-pack products before creating a payment",async()=>{
   const service=api(async(url,options={})=>{
     const target=String(url);
+    if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))return json([]);
+    if(target.includes("payment_transactions?select=id,tx_ref,status,metadata")&&target.includes("status=eq.pending"))return json([]);
     if(target.includes("billing_products?select=product_code,name,description,product_type,version,amount_minor,currency,credit_units"))
       return json([{product_code:"studio_service",name:"Studio service",description:"Not a credit pack",product_type:"service",version:1,amount_minor:5000,currency:"UGX",credit_units:100}]);
     throw new Error("Non-credit-pack products must not create payments or call Flutterwave: "+target);
