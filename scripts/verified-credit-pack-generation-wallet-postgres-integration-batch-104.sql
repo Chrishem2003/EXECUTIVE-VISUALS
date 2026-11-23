@@ -46,6 +46,8 @@ declare
   rejected boolean:=false;
   grant_count integer;
   balance bigint;
+  invoice_count integer;
+  outbox_count integer;
 begin
   settled:=executive_visuals.finalize_credit_pack_purchase(
     '88888888-8888-4888-8888-888888888888','chg-batch104-verified',
@@ -66,6 +68,14 @@ begin
      and evidence->>'evidenceType'='verified_credit_pack_payment'
      and evidence->>'paymentId'='88888888-8888-4888-8888-888888888888';
   if grant_count<>1 then raise exception 'Verified credit-pack evidence was not recorded exactly once'; end if;
+  select count(*) into invoice_count from executive_visuals.billing_invoices
+   where payment_transaction_id='88888888-8888-4888-8888-888888888888'
+     and snapshot->>'kind'='credit_pack_purchase'
+     and snapshot->>'creditUnits'='1250';
+  if invoice_count<>1 then raise exception 'Verified credit-pack purchase invoice was not created'; end if;
+  select count(*) into outbox_count from executive_visuals.billing_notification_outbox
+   where dedupe_key='credit-pack-purchase:88888888-8888-4888-8888-888888888888';
+  if outbox_count<>1 then raise exception 'Credit-pack purchase notification was not queued'; end if;
 
   replay:=executive_visuals.finalize_credit_pack_purchase(
     '88888888-8888-4888-8888-888888888888','chg-batch104-verified',
@@ -76,6 +86,12 @@ begin
   select count(*) into grant_count from executive_visuals.billing_credit_ledger
    where owner_id='87777777-7777-4777-8777-777777777777' and event_type='grant';
   if grant_count<>1 then raise exception 'Credit-pack replay duplicated wallet credits'; end if;
+  select count(*) into invoice_count from executive_visuals.billing_invoices
+   where payment_transaction_id='88888888-8888-4888-8888-888888888888';
+  if invoice_count<>1 then raise exception 'Credit-pack replay duplicated invoice'; end if;
+  select count(*) into outbox_count from executive_visuals.billing_notification_outbox
+   where dedupe_key='credit-pack-purchase:88888888-8888-4888-8888-888888888888';
+  if outbox_count<>1 then raise exception 'Credit-pack replay duplicated notification'; end if;
 
   begin
     perform executive_visuals.finalize_credit_pack_purchase(
