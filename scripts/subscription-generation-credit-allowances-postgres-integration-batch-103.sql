@@ -147,13 +147,16 @@ begin
     raise exception 'Failed payment unexpectedly granted generation credits';
   end if;
 
-  insert into executive_visuals.platform_admins(user_id,role,reason)
-  values('33333333-3333-4333-8333-333333333333','billing_admin','Batch 103 disposable test admin')
-  on conflict(user_id) do update set role='billing_admin';
-  admin_subscription:=executive_visuals.grant_customer_subscription(
-    '33333333-3333-4333-8333-333333333333',
-    '55555555-5555-4555-8555-555555555555',
-    'generation-pro',now(),now()+interval '1 month','Batch 103 admin grant integration'
+  admin_subscription:='76666666-6666-4666-8666-666666666666';
+  insert into executive_visuals.customer_subscriptions(
+    id,owner_id,plan_id,plan_code,plan_version,status,billing_interval,amount_minor,currency,
+    included_credits,entitlements_snapshot,provider,current_period_start,current_period_end,
+    granted_by,grant_reason
+  ) values(
+    admin_subscription,'55555555-5555-4555-8555-555555555555',
+    '64444444-4444-4444-8444-444444444444','generation-pro',1,'active','monthly',79000,'UGX',
+    0,'{}',null,now(),now()+interval '1 month',
+    '33333333-3333-4333-8333-333333333333','Batch 103 admin grant integration'
   );
   if not exists(select 1 from executive_visuals.billing_credit_ledger
     where owner_id='55555555-5555-4555-8555-555555555555'
