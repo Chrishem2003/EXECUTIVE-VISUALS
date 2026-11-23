@@ -388,6 +388,20 @@ test("credit checkout idempotency key cannot replay for a different customer ema
  assert.equal(providerCalled,false);
 });
 
+test("legacy credit checkout replay is blocked until its generation-credit settlement is reconciled",async()=>{
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
+   return json([{id:paymentId,customer_email:"buyer@example.com",tx_ref:"EVSlegacy",status:"pending",
+    metadata:{product_code:"creator_credits",mobile_money_network:"MTN",credit_units:100,idempotency_key:"legacy-key-001"}}]);
+  throw new Error("Legacy replay must not start another provider charge: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/billing/checkout",ownerId:owner,idempotencyKey:"legacy-key-001",
+  body:{productCode:"creator_credits",network:"MTN",email:"buyer@example.com",firstName:"Test",lastName:"Buyer",phoneNumber:"0771234567"}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"LEGACY_CREDIT_CHECKOUT_REQUIRES_RECONCILIATION");
+});
+
 test("payment webhook verifies Flutterwave charge and atomically fulfils once",async()=>{
   const rawBody=Buffer.from(JSON.stringify({type:"charge.completed",data:{id:"chg_paid",status:"succeeded"}}));
   const signature=createHmac("sha256",secret).update(rawBody).digest("base64");
