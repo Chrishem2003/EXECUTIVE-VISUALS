@@ -301,6 +301,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122100000_project_shared_credit_pools.sql
       - name: Verify project wallet funding, limits, idempotency and provider settlement
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/project-shared-credit-pool-postgres-integration.sql
+      - name: Apply Supabase customer-credit reservation replay lifecycle guard
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261124110000_supabase_credit_reservation_replay_guard_batch_104.sql
+      - name: Verify Supabase customer-credit replay lifecycle and evidence
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/supabase-credit-reservation-replay-guard-postgres-integration-batch-104.sql
       - name: Apply project member spend attribution and hard limits
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122110000_project_member_spend_controls.sql
       - name: Verify member attribution, monthly limits, pause and role enforcement
