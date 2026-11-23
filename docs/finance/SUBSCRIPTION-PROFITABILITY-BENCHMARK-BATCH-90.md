@@ -53,6 +53,12 @@ The Seedance input-video rate is $0.34 per second at 1080p. Kling's 1080p input-
 
 Sources: [Seedance 2.5 API pricing](https://dev.runwayml.com/learn/seedance-2-5-api) and [Kling 4.0 API pricing](https://dev.runwayml.com/learn/kling-4-0-api).
 
+### Lower-cost generation option
+
+The same dated Runway Dev catalogue lists Gemini Omni 1.2 Flash at $0.07 per second at 720p, with input video billed at $0.01 per second. A 10-second output therefore costs $0.70, or $0.80 with a 10-second source video. Native audio is included at the same rate. The model supports up to 15-second clips; these benchmark examples deliberately hold duration to 10 seconds for like-for-like comparison.
+
+Source: [Gemini Omni 1.2 Flash API pricing](https://dev.runwayml.com/learn/gemini-omni-flash-1-2-api). Google also announced general availability and the $0.07/second 720p price on 5 November 2026: [Google announcement](https://blog.google/innovation-and-ai/technology/developers-tools/introducing-gemini-omni-1-2-flash/).
+
 The regression suite therefore checks:
 1. Dated output-only and source-video provider costs remain explicitly marked forecast-only and non-billable.
 2. The five proposed tiers remain private draft hypotheses with no persisted credits.
