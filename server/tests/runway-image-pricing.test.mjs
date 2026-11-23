@@ -15,8 +15,8 @@ test("prices a documented 2K medium landscape image and per-output references", 
     ...base, ratio: "2560:1440", quality: "medium",
     outputCount: 3, referenceImageCount: 2
   });
-  assert.equal(result.estimatedCredits, 12);
-  assert.equal(result.estimatedUsd, 0.12);
+  assert.equal(result.estimatedCredits, 21);
+  assert.equal(result.estimatedUsd, 0.21);
   assert.equal(result.resolution, "2K");
   assert.equal(result.outputCount, 3);
   assert.equal(result.referenceImageCount, 2);
@@ -29,7 +29,7 @@ test("applies the two-credit minimum to a low-cost ultra-wide generation", () =>
     ...base, ratio: "2048:880", quality: "low", outputCount: 1
   });
   assert.equal(result.estimatedCredits, 2);
-  assert.match(result.formula, /2-credit request minimum/);
+  assert.match(result.formula, /2-credit minimum per image/);
 });
 
 test("charges each reference image for each returned image", () => {
