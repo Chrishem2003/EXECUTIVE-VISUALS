@@ -1006,9 +1006,8 @@ export function createFinancialIntelligenceApi({
             :{data:[]};
           const catalogueProducts=Array.isArray(creditPackProducts.data)?creditPackProducts.data:[];
           const needsFx=catalogueProducts.some(product=>product.currency!==costEvidence.currency);
-          const nextPeriodMonth=new Date(Date.UTC(Number(periodMonth.slice(0,4)),Number(periodMonth.slice(5,7)),1)).toISOString().slice(0,10);
           const fxRows=needsFx&&costEvidence.status==="verified_measured"
-            ?await dbRequest("financial_fx_rate_evidence_current?select=evidence_id,source_currency,target_currency,rate_scaled,rate_scale,effective_date,source_type,purpose,source_reference,decision,decision_reason,decided_by,decision_created_at&source_currency=eq.USD&target_currency=eq.UGX&purpose=eq.settlement_cost&effective_date=gte."+encodeURIComponent(periodMonth)+"&effective_date=lt."+encodeURIComponent(nextPeriodMonth)+"&decision=eq.approved&order=effective_date.desc,decision_created_at.desc&limit=100")
+            ?await dbRequest("financial_fx_rate_evidence_current?select=evidence_id,source_currency,target_currency,period_month,rate_scaled,rate_scale,effective_date,source_type,purpose,source_reference,decision,decision_reason,decided_by,decision_created_at&source_currency=eq.USD&target_currency=eq.UGX&purpose=eq.settlement_cost&period_month=eq."+encodeURIComponent(periodMonth)+"&decision=eq.approved&order=effective_date.desc,decision_created_at.desc&limit=100")
             :{data:[]};
           const fxEvidence=selectApprovedSettlementFxEvidence(Array.isArray(fxRows.data)?fxRows.data:[],
             {sourceCurrency:"USD",targetCurrency:"UGX",periodMonth});
@@ -1681,8 +1680,7 @@ export function createFinancialIntelligenceApi({
           !/^\d{4}-\d{2}-01$/.test(month)||!Number.isFinite(Date.parse(month+"T00:00:00Z"))||
           new Date(month+"T00:00:00Z").toISOString().slice(0,10)!==month)
           return error(400,"FINANCIAL_FX_FILTER_INVALID","Provide distinct ISO currencies and a valid reporting month.");
-        const nextMonth=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),1)).toISOString().slice(0,10);
-        const rows=await dbRequest("financial_fx_rate_evidence_current?select=evidence_id,source_currency,target_currency,rate_scaled,rate_scale,effective_date,source_type,purpose,source_reference,evidence_sha256,evidence_note,recorded_by,evidence_created_at,decision,decision_reason,decided_by,decision_created_at&source_currency=eq."+sourceCurrency+"&target_currency=eq."+targetCurrency+"&effective_date=gte."+month+"&effective_date=lt."+nextMonth+"&order=effective_date.desc,decision_created_at.desc&limit=100");
+        const rows=await dbRequest("financial_fx_rate_evidence_current?select=evidence_id,source_currency,target_currency,rate_scaled,rate_scale,effective_date,source_type,purpose,source_reference,evidence_sha256,evidence_note,recorded_by,evidence_created_at,decision,decision_reason,decided_by,decision_created_at&source_currency=eq."+sourceCurrency+"&target_currency=eq."+targetCurrency+"&period_month=eq."+month+"&order=effective_date.desc,decision_created_at.desc&limit=100");
         return response(200,{evidence:Array.isArray(rows.data)?rows.data:[],source:"append-only evidence and maker-checker decision records"});
       }
       if(path==="/api/admin/finance/fx-rate-evidence"&&method==="POST"){
@@ -1690,6 +1688,7 @@ export function createFinancialIntelligenceApi({
         const sourceCurrency=String(body.sourceCurrency||"").trim().toUpperCase();
         const targetCurrency=String(body.targetCurrency||"").trim().toUpperCase();
         const rateScaled=Number(body.rateScaled);
+        const periodMonth=String(body.periodMonth||"");
         const effectiveDate=String(body.effectiveDate||"");
         const sourceType=String(body.sourceType||"");
         const purpose=String(body.purpose||"");
@@ -1700,6 +1699,7 @@ export function createFinancialIntelligenceApi({
         const sourceTypes=["processor_settlement","bank_statement","official_reference","tax_reference","other"];
         const purposes=["settlement_cost","financial_reporting","tax_reporting","reference_only"];
         if(!/^[A-Z]{3}$/.test(sourceCurrency)||!/^[A-Z]{3}$/.test(targetCurrency)||sourceCurrency===targetCurrency||
+          !/^\d{4}-\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth||periodMonth>new Date().toISOString().slice(0,7)+"-01"||
           !Number.isSafeInteger(rateScaled)||rateScaled<1||rateScaled>100000000000000||
           !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)||!Number.isFinite(Date.parse(effectiveDate+"T00:00:00Z"))||
           new Date(effectiveDate+"T00:00:00Z").toISOString().slice(0,10)!==effectiveDate||effectiveDate>new Date().toISOString().slice(0,10)||
@@ -1710,7 +1710,7 @@ export function createFinancialIntelligenceApi({
         if(purpose==="settlement_cost"&&!["processor_settlement","bank_statement"].includes(sourceType))
           return error(400,"FINANCIAL_FX_SETTLEMENT_SOURCE_REQUIRED","Settlement-cost FX must come from a processor settlement or bank statement, not an official or tax reference rate.");
         const result=await rpc("record_financial_fx_rate_evidence",{
-          p_actor_id:ownerId,p_source_currency:sourceCurrency,p_target_currency:targetCurrency,
+          p_actor_id:ownerId,p_source_currency:sourceCurrency,p_target_currency:targetCurrency,p_period_month:periodMonth,
           p_rate_scaled:rateScaled,p_effective_date:effectiveDate,p_source_type:sourceType,p_purpose:purpose,
           p_source_reference:sourceReference,p_evidence_sha256:evidenceSha256,p_evidence_note:evidenceNote,
           p_idempotency_key:idempotencyKey
