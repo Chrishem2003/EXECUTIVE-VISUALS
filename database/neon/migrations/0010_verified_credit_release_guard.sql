@@ -33,6 +33,7 @@ begin
   for key share;
 
   if job_row.id is null
+     or job_row.owner_id<>new.owner_id
      or coalesce(new.evidence->>'provider','')<>coalesce(job_row.input->>'provider','')
      or coalesce(new.evidence->>'evidenceId','')=''
      or coalesce(new.evidence->>'evidenceReference','')='' then
