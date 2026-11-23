@@ -1,7 +1,7 @@
 const RESOLUTIONS = new Set(["360p","480p","540p","720p","1080p","1440p","4k"]);
 const DIMENSION_KEYS = new Set([
   "minimumGenerationMinor","referenceVideoSecondMinor","audioSurchargeSecondMinor",
-  "audioIncluded","inputVideoSecondMinor","inputVideoBillingMode","inputImageMinor",
+  "audioIncluded","inputVideoSecondMinor","inputVideoBillingMode","combinedVideoInputMaxSeconds","referenceVideoPaddingThresholdSeconds","referenceVideoPaddedSeconds","inputImageMinor",
   ...[...RESOLUTIONS].flatMap(value=>[
     "videoSecondMinor_"+value,
     "referenceVideoSecondMinor_"+value,
@@ -47,7 +47,7 @@ function positiveRate(value,label,{allowZero=false}={}){
  * - minimumGenerationMinor
  * - referenceVideoSecondMinor (+ optional resolution-specific override)
  * - audioSurchargeSecondMinor OR audioIncluded=1 when audio is requested
- * - inputVideoSecondMinor (+ inputVideoBillingMode=1 to bill max(input, output))
+ * - inputVideoSecondMinor (+ inputVideoBillingMode=1 for max(input, output), or 2 for combined/capped input and reference video)
  * - inputImageMinor
  * - videoSecondMinor_<resolution> for resolution-specific output rates
  */
@@ -77,7 +77,7 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
     fail("PROVIDER_VIDEO_RATE_CARD_UNVERIFIED","A currently effective, governed rate card with matching evidence is required.");
   const dimensions=rateCard.pricingDimensions??rateCard.pricing_dimensions??{};
   if(!dimensions||typeof dimensions!=="object"||Array.isArray(dimensions)||
-    Object.entries(dimensions).some(([key,value])=>!DIMENSION_KEYS.has(key)||typeof value!=="number"||!Number.isSafeInteger(value)||value<0))
+    Object.entries(dimensions).some(([key,value])=>!DIMENSION_KEYS.has(key)||typeof value!=="number"||!Number.isFinite(value)||value<0||(!["referenceVideoPaddingThresholdSeconds","referenceVideoPaddedSeconds"].includes(key)&&!Number.isSafeInteger(value))))
     fail("PROVIDER_VIDEO_RATE_CARD_INVALID","Rate-card pricing dimensions contain unsupported or invalid fields.");
   const resolution=String(request.resolution||"").trim().toLowerCase();
   if(!RESOLUTIONS.has(resolution))fail("PROVIDER_VIDEO_RESOLUTION_INVALID","Choose a supported output resolution.");
@@ -93,7 +93,9 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
     fail("PROVIDER_VIDEO_AUDIO_PRICING_UNRESOLVED","Audio was requested but the rate card does not state whether audio is included or separately priced.");
   if(inputImageCount>0&&!Object.hasOwn(dimensions,"inputImageMinor"))
     fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price input images.");
-  if(referenceVideoSeconds>0&&!Object.hasOwn(dimensions,"referenceVideoSecondMinor")&&!Object.hasOwn(dimensions,"referenceVideoSecondMinor_"+resolution))
+  const inputVideoMode=dimensions.inputVideoBillingMode??0;
+  if(inputVideoMode!==0&&inputVideoMode!==1&&inputVideoMode!==2)fail("PROVIDER_VIDEO_RATE_CARD_INVALID","inputVideoBillingMode must be 0, 1 or 2.");
+  if(referenceVideoSeconds>0&&inputVideoMode!==2&&!Object.hasOwn(dimensions,"referenceVideoSecondMinor")&&!Object.hasOwn(dimensions,"referenceVideoSecondMinor_"+resolution))
     fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price reference-video seconds.");
   const baseRate=rateCard.videoSecondMinor??rateCard.video_second_minor;
   const outputRate=dimensions["videoSecondMinor_"+resolution]??baseRate;
@@ -101,19 +103,33 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
   const lines=[];
   const add=(driver,quantity,rate)=>{if(quantity<=0)return;positiveRate(rate,driver,{allowZero:true});lines.push({driver,quantity,rateMinor:rate,amountMinor:costFor(rate,quantity)});};
   add("output_video_seconds",outputSeconds,outputRate);
-  if(referenceVideoSeconds>0){
+  if(referenceVideoSeconds>0&&inputVideoMode!==2){
     const rate=dimensions["referenceVideoSecondMinor_"+resolution]??dimensions.referenceVideoSecondMinor;
     if(rate===undefined)fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price reference-video seconds.");
     add("reference_video_seconds",referenceVideoSeconds,rate);
   }
-  if(inputVideoSeconds>0){
-    if(!Object.hasOwn(dimensions,"inputVideoSecondMinor")&&!Object.hasOwn(dimensions,"inputVideoSecondMinor_"+resolution))
-      fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price input-video seconds.");
-    const rate=dimensions["inputVideoSecondMinor_"+resolution]??dimensions.inputVideoSecondMinor;
-    if(rate===undefined)fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price input-video seconds.");
-    const mode=dimensions.inputVideoBillingMode??0;
-    if(mode!==0&&mode!==1)fail("PROVIDER_VIDEO_RATE_CARD_INVALID","inputVideoBillingMode must be 0 (input duration) or 1 (maximum input/output duration).");
-    add("input_video_seconds",mode===1?Math.max(inputVideoSeconds,outputSeconds):inputVideoSeconds,rate);
+  if(inputVideoMode===2){
+    if(inputVideoSeconds>0||referenceVideoSeconds>0){
+      if(!Object.hasOwn(dimensions,"inputVideoSecondMinor")&&!Object.hasOwn(dimensions,"inputVideoSecondMinor_"+resolution))
+        fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price combined input/reference-video seconds.");
+      const rate=dimensions["inputVideoSecondMinor_"+resolution]??dimensions.inputVideoSecondMinor;
+      if(rate===undefined)fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price combined input/reference-video seconds.");
+      const threshold=dimensions.referenceVideoPaddingThresholdSeconds??2;
+      const padded=dimensions.referenceVideoPaddedSeconds??4.25;
+      const billedReference=referenceVideoSeconds>=threshold&&referenceVideoSeconds<4?padded:referenceVideoSeconds;
+      const combined=inputVideoSeconds+billedReference;
+      const cap=dimensions.combinedVideoInputMaxSeconds??30;
+      if(combined>cap+1e-9)fail("PROVIDER_VIDEO_QUANTITY_INVALID","Combined input and reference video exceeds this rate card billing cap.");
+      add("combined_input_reference_video_seconds",combined,rate);
+    }
+  }else{
+    if(inputVideoSeconds>0){
+      if(!Object.hasOwn(dimensions,"inputVideoSecondMinor")&&!Object.hasOwn(dimensions,"inputVideoSecondMinor_"+resolution))
+        fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price input-video seconds.");
+      const rate=dimensions["inputVideoSecondMinor_"+resolution]??dimensions.inputVideoSecondMinor;
+      if(rate===undefined)fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price input-video seconds.");
+      add("input_video_seconds",inputVideoMode===1?Math.max(inputVideoSeconds,outputSeconds):inputVideoSeconds,rate);
+    }
   }
   if(inputImageCount>0){
     if(dimensions.inputImageMinor===undefined)fail("PROVIDER_VIDEO_RATE_MISSING","This rate card does not price input images.");

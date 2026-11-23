@@ -145,3 +145,68 @@ test("applies the published Seedance 2.5 minimum charge to short generations",()
  assert.equal(result.estimatedProviderCostMinor,80);
  assert.equal(result.costLines.find(x=>x.driver==="minimum_generation_adjustment").amountMinor,60);
 });
+
+
+test("models Seedance 2.5 4K output and combined input/reference video billing",()=>{
+ const rateCard=card({
+  model:"seedance2_5",rateCardVersion:"runway-seedance2_5-2026-11-23",
+  sourceUrl:"https://dev.runway.com/learn/seedance-2-5-api",
+  sourceCheckedAt:"2026-11-23T00:00:00Z",
+  videoSecondMinor:110,
+  pricingDimensions:{
+   videoSecondMinor_480p:20,videoSecondMinor_720p:30,
+   videoSecondMinor_1080p:68,videoSecondMinor_4k:110,
+   inputVideoSecondMinor_480p:10,inputVideoSecondMinor_720p:15,
+   inputVideoSecondMinor_1080p:34,inputVideoSecondMinor_4k:57,
+   inputVideoBillingMode:2,combinedVideoInputMaxSeconds:30,
+   referenceVideoPaddingThresholdSeconds:2,referenceVideoPaddedSeconds:4.25,
+   minimumGenerationMinor:80
+  }
+ });
+ const fourK=estimateProviderVideoCost({rateCard,request:request({resolution:"4k",outputSeconds:5})});
+ assert.equal(fourK.estimatedProviderCostMinor,550);
+ const padded=estimateProviderVideoCost({rateCard,request:request({
+  resolution:"1080p",outputSeconds:5,inputVideoSeconds:3,referenceVideoSeconds:2.5
+ })});
+ const line=padded.costLines.find(x=>x.driver==="combined_input_reference_video_seconds");
+ assert.equal(line.quantity,7.25);
+ assert.equal(line.rateMinor,34);
+ assert.equal(line.amountMinor,247);
+ assert.equal(padded.estimatedProviderCostMinor,587);
+});
+
+test("caps combined Seedance input and reference video billing at thirty seconds",()=>{
+ const rateCard=card({
+  model:"seedance2_5",rateCardVersion:"runway-seedance2_5-2026-11-23",
+  sourceUrl:"https://dev.runway.com/learn/seedance-2-5-api",
+  sourceCheckedAt:"2026-11-23T00:00:00Z",
+  pricingDimensions:{
+   inputVideoSecondMinor_720p:15,inputVideoBillingMode:2,
+   combinedVideoInputMaxSeconds:30,minimumGenerationMinor:80
+  }
+ });
+ assert.throws(()=>estimateProviderVideoCost({
+  rateCard,request:request({resolution:"720p",inputVideoSeconds:20,referenceVideoSeconds:11})
+ }),{code:"PROVIDER_VIDEO_QUANTITY_INVALID"});
+});
+
+test("uses the published padded reference duration at the two-to-under-four-second boundary",()=>{
+ const rateCard=card({
+  model:"seedance2_5",rateCardVersion:"runway-seedance2_5-2026-11-23",
+  sourceUrl:"https://dev.runway.com/learn/seedance-2-5-api",
+  sourceCheckedAt:"2026-11-23T00:00:00Z",
+  pricingDimensions:{
+   inputVideoSecondMinor_480p:10,inputVideoBillingMode:2,
+   combinedVideoInputMaxSeconds:30,referenceVideoPaddingThresholdSeconds:2,
+   referenceVideoPaddedSeconds:4.25,minimumGenerationMinor:0
+  }
+ });
+ const below=estimateProviderVideoCost({rateCard,request:request({resolution:"480p",outputSeconds:5,referenceVideoSeconds:1.99})});
+ const boundary=estimateProviderVideoCost({rateCard,request:request({resolution:"480p",outputSeconds:5,referenceVideoSeconds:2})});
+ const upper=estimateProviderVideoCost({rateCard,request:request({resolution:"480p",outputSeconds:5,referenceVideoSeconds:3.99})});
+ const atFour=estimateProviderVideoCost({rateCard,request:request({resolution:"480p",outputSeconds:5,referenceVideoSeconds:4})});
+ assert.equal(below.costLines.find(x=>x.driver==="combined_input_reference_video_seconds").quantity,1.99);
+ assert.equal(boundary.costLines.find(x=>x.driver==="combined_input_reference_video_seconds").quantity,4.25);
+ assert.equal(upper.costLines.find(x=>x.driver==="combined_input_reference_video_seconds").quantity,4.25);
+ assert.equal(atFour.costLines.find(x=>x.driver==="combined_input_reference_video_seconds").quantity,4);
+});
