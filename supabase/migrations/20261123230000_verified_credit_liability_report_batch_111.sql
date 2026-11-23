@@ -46,10 +46,10 @@ begin
         else null end deferred_revenue_minor,
       coalesce(a.pending_split_credits,0)::bigint pending_split_credits,
       coalesce(a.unattributed_credits,0)::bigint unattributed_credits,
-      case when s.revenue_status='verified' and (
-        coalesce(a.currency_mismatch_rows,0)>0 or coalesce(a.recognized_revenue_minor,0)>s.allocatable_revenue_minor
-        or coalesce(a.consumed_credits,0)>s.credits_granted
-      ) then true else false end integrity_exception
+      case when coalesce(a.consumed_credits,0)>s.credits_granted
+        or (s.revenue_status='verified' and (
+          coalesce(a.currency_mismatch_rows,0)>0 or coalesce(a.recognized_revenue_minor,0)>s.allocatable_revenue_minor
+        )) then true else false end integrity_exception
     from executive_visuals.billing_credit_revenue_sources s
     left join allocation_totals a on a.source_id=s.id
     where p_owner_id is null or s.owner_id=p_owner_id
