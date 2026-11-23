@@ -1378,6 +1378,32 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("list_financial_margin_alerts",{p_actor_id:ownerId,p_limit:limit});
         return response(200,{marginAlerts:result||{alerts:[],count:0}});
       }
+      if(path==="/api/admin/finance/payment-processor-fees"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const paymentId=String(body.paymentId||"").trim();
+        const feeMinor=Number(body.feeMinor);
+        const currency=String(body.currency||"").trim().toUpperCase();
+        const providerTransactionId=String(body.providerTransactionId||"").trim();
+        const idempotencyKey=String(body.idempotencyKey||"").trim();
+        const evidence=body.evidence;
+        if(!UUID.test(paymentId)||!Number.isSafeInteger(feeMinor)||feeMinor<0||
+           !/^[A-Z]{3}$/.test(currency)||!providerTransactionId||providerTransactionId.length>180||
+           idempotencyKey.length<8||idempotencyKey.length>180||
+           !evidence||typeof evidence!=="object"||Array.isArray(evidence)||
+           !["provider_payment_receipt","provider_settlement_statement","provider_invoice"].includes(String(evidence.evidenceType||""))||
+           !String(evidence.evidenceId||"").trim()||String(evidence.evidenceId).length>180||
+           !String(evidence.evidenceReference||"").trim()||String(evidence.evidenceReference).length>500||
+           !/^[a-f0-9]{64}$/i.test(String(evidence.evidenceSha256||"")))
+          return error(400,"PAYMENT_PROCESSOR_FEE_EVIDENCE_INVALID","Provide a verified payment, non-negative fee, matching currency and transaction ID, evidence reference, SHA-256 digest and idempotency key.");
+        const result=await rpc("record_payment_processor_fee_evidence",{
+          p_actor_id:ownerId,p_payment_id:paymentId,p_fee_minor:feeMinor,p_currency:currency,
+          p_provider_transaction_id:providerTransactionId,p_evidence:{
+            evidenceType:String(evidence.evidenceType),evidenceId:String(evidence.evidenceId).trim(),
+            evidenceReference:String(evidence.evidenceReference).trim(),evidenceSha256:String(evidence.evidenceSha256).toLowerCase()
+          },p_idempotency_key:idempotencyKey
+        });
+        return response(200,{paymentFeeEvidence:result});
+      }
       if(path==="/api/admin/finance/job-profitability"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const limit=query.limit==null?50:Number(query.limit);
