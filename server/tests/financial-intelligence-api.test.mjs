@@ -1815,7 +1815,7 @@ test("FX evidence API enforces settlement-grade sources and uses audited admin R
   throw new Error("Unexpected request: "+target);
  });
  const invalid=await service.handle({method:"POST",path:"/api/admin/finance/fx-rate-evidence",ownerId:owner,
-  body:{sourceCurrency:"USD",targetCurrency:"UGX",rateScaled:421690000000,effectiveDate:"2026-11-23",
+  body:{sourceCurrency:"USD",targetCurrency:"UGX",periodMonth:"2026-11-01",rateScaled:421690000000,effectiveDate:"2026-11-23",
    sourceType:"official_reference",purpose:"settlement_cost",sourceReference:"URA daily reference",evidenceNote:"Published rate",
    idempotencyKey:"fx-evidence-key-001"}});
  assert.equal(invalid.status,400);
