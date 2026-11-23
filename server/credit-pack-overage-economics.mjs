@@ -71,6 +71,7 @@ export function calculateCreditPackOverageEconomics({products=[],costEvidence,pr
    providerCostPerCustomerCreditMinor:evidenceReady?costEvidence.providerCostPerCustomerCreditMinor:null,
    rateCardVersion:costEvidence?.evidence?.rateCardVersion||null}),
   pricingAssumptions:Object.freeze({paymentFeeBps,supportReserveBps,targetMarginBps,fixedPaymentFeeMicros}),
+  fxEvidence:fxEvidence?Object.freeze({evidenceId:fxEvidence.evidence_id||null,sourceCurrency:fxEvidence.source_currency||null,targetCurrency:fxEvidence.target_currency||null,effectiveDate:fxEvidence.effective_date||null,sourceType:fxEvidence.source_type||null,purpose:fxEvidence.purpose||null,sourceReference:fxEvidence.source_reference||null,decision:fxEvidence.decision||null,decisionReason:fxEvidence.decision_reason||null}):null,
   products:Object.freeze(rows),
   limitations:Object.freeze([
    "Provider cost per platform credit is derived only from complete, posted USD invoice attribution and settled generation-credit reservations with at least five verified jobs.",
