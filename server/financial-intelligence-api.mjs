@@ -1417,6 +1417,19 @@ export function createFinancialIntelligenceApi({
         });
         return response(200,{jobProfitability:result||{jobs:[],count:0,limitations:[]}});
       }
+      if(path==="/api/admin/finance/job-refund-attribution"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const limit=query.limit==null?50:Number(query.limit);
+        const subjectOwnerId=query.ownerId==null||query.ownerId===""?null:String(query.ownerId);
+        if(!Number.isSafeInteger(limit)||limit<1||limit>100)
+          return error(400,"FINANCIAL_REFUND_ATTRIBUTION_LIMIT_INVALID","Refund attribution limit must be an integer between 1 and 100.");
+        if(subjectOwnerId!==null&&!UUID.test(subjectOwnerId))
+          return error(400,"FINANCIAL_REFUND_ATTRIBUTION_OWNER_INVALID","ownerId must be a verified account UUID.");
+        const result=await rpc("financial_job_refund_attribution_report",{
+          p_actor_id:ownerId,p_owner_id:subjectOwnerId,p_limit:limit
+        });
+        return response(200,{jobRefundAttribution:result||{jobs:[],count:0,limitations:[]}});
+      }
       if(path==="/api/admin/finance/profitability"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const result=await rpc("financial_profitability_overview",{p_actor_id:ownerId});
