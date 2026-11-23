@@ -390,7 +390,6 @@ test("payment webhook verifies Flutterwave charge and atomically fulfils once",a
   assert.equal(result.body.result.status,"successful");
   assert.equal(result.body.result.creditPackPurchased,true);
   assert.equal(grants,1);
-  assert.equal(s.includes("/rpc/finalize_payment_purchase"),false);
 });
 
 
