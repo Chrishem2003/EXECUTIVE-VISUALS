@@ -624,6 +624,9 @@ export function createFinancialIntelligenceApi({
           const row=prior.data[0];
           if(row.metadata?.product_code!==productCode||row.metadata?.mobile_money_network!==network||String(row.customer_email||"").trim().toLowerCase()!==email)
             return error(409,"IDEMPOTENCY_KEY_REUSED","This idempotency key is already bound to a different checkout request.");
+          if(row.metadata?.product_type!=="credit_pack"||!Number.isSafeInteger(Number(row.metadata?.product_version))||
+             !Number.isSafeInteger(Number(row.metadata?.credit_units)))
+            return error(409,"LEGACY_CREDIT_CHECKOUT_REQUIRES_RECONCILIATION","This older checkout cannot be safely replayed as a generation-credit purchase. Contact billing support before retrying.");
           return response(200,{payment:{id:row.id,reference:row.tx_ref,status:row.status,providerChargeId:row.provider_transaction_id,nextAction:row.metadata?.next_action||null},idempotentReplay:true});
         }
         const productResult=await dbRequest("billing_products?select=product_code,name,description,product_type,version,amount_minor,currency,credit_units&product_code=eq."+encodeURIComponent(productCode)+"&active=eq.true&limit=1");
@@ -636,7 +639,7 @@ export function createFinancialIntelligenceApi({
         const txRef="EV"+randomUUID().replaceAll("-","");
         const createdRows=await dbRequest("payment_transactions",{
           method:"POST",body:{
-            owner_id:ownerId,tx_ref:txRef,amount_minor:Number(product.amount_minor),currency:"UGX",
+            owner_id:ownerId,provider:"flutterwave",tx_ref:txRef,amount_minor:Number(product.amount_minor),currency:"UGX",
             status:"pending",payment_method:"mobile_money",customer_email:email,
             description:String(product.name).slice(0,250),
             metadata:{
