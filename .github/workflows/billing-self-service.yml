@@ -199,6 +199,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/ai-resource-economics-postgres-integration.sql
       - name: Verify Batch 25 invoice-to-ledger reconciliation and profitability trends
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-cost-reconciliation-postgres-integration.sql
+      - name: Verify Batch 105 realized per-job contribution and negative margins
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-job-profitability-realized-margin-postgres-integration-batch-105.sql
       - name: Verify Batch 26 measured shared-cost allocation and fully loaded profitability
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/measured-shared-cost-allocation-postgres-integration.sql
       - name: Apply Batch 30 persistent financial audit ledger migration
