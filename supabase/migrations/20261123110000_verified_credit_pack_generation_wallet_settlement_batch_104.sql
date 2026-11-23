@@ -25,6 +25,7 @@ create unique index if not exists billing_products_product_code_uidx
 alter table executive_visuals.billing_products enable row level security;
 revoke all on executive_visuals.billing_products from public,anon,authenticated;
 grant select on executive_visuals.billing_products to service_role;
+grant usage on schema executive_visuals to service_role;
 
 create or replace function executive_visuals.finalize_credit_pack_purchase(
   p_payment_id uuid,
