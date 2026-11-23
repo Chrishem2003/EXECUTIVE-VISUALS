@@ -46,7 +46,7 @@ test("fails closed when invoice attribution reaches the bounded query limit",asy
  }});
  assert.equal(calls,2);
  assert.equal(report.status,"sample_incomplete");
- assert.equal(report.models[0].totalProviderCostMinor,null);
+ assert.equal(report.models.length,0);
 });
 
 test("rejects invalid periods before database access",async()=>{
