@@ -4,8 +4,6 @@ import { createHmac } from "node:crypto";
 import { createFinancialIntelligenceApi } from "../financial-intelligence-api.mjs";
 
 const secret = "webhook-review-test-secret";
-const owner = "11111111-1111-4111-8111-111111111111";
-
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
