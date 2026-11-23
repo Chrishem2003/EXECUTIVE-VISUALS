@@ -16,10 +16,12 @@ test("video finalization rejects missing lease and invalid terminal states befor
 
 test("Batch 104 migration binds credit releases to persisted provider-submission evidence",async()=>{
  const {readFile}=await import("node:fs/promises");
- const sql=await readFile(new URL("../../database/neon/migrations/0006_verified_credit_release_guard.sql",import.meta.url),"utf8");
+ const sql=await readFile(new URL("../../database/neon/migrations/0010_verified_credit_release_guard.sql",import.meta.url),"utf8");
  assert.match(sql,/before insert on executive_visuals\.billing_credit_ledger/);
  assert.match(sql,/new\.idempotency_key not like 'credit-release:%'/);
  assert.match(sql,/VIDEO_CREDIT_RELEASE_NO_SUBMISSION_NOT_PROVEN/);
+ assert.match(sql,/atomic-queued-job-cancellation/);
+ assert.match(sql,/job_row.status===/);
  assert.match(sql,/VIDEO_CREDIT_RELEASE_PROVIDER_NO_CHARGE_NOT_PROVEN/);
  assert.match(sql,/submission\.state not in \('prepared','failed','cancelled'\)/);
  assert.match(sql,/submission\.metadata->>'noChargeConfirmed'/);
