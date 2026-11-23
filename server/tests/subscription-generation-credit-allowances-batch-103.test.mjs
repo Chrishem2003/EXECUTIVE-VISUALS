@@ -22,6 +22,8 @@ test("purchase and renewal snapshot only published allowances and grant through 
  assert.match(migration,/verified_subscription_payment/);
  assert.match(migration,/admin_granted_subscription/);
  assert.match(migration,/subscription-generation:/);
+ assert.match(migration,/existing_grant\.evidence->>'periodKey'/);
+ assert.match(migration,/SUBSCRIPTION_GENERATION_CREDIT_PERIOD_CONFLICT/);
  assert.match(migration,/SUBSCRIPTION_GENERATION_CREDIT_PAYMENT_EVIDENCE_MISSING/);
  assert.match(migration,/AFTER INSERT OR UPDATE OF status, current_period_start, current_period_end/i);
 });
