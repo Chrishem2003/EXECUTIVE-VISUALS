@@ -22,8 +22,8 @@ const source="https://dev.runway.com/learn/ai-video-api-pricing";
 const scenarios=[
   {provider:"runway",model:"gen4.5",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:1.20,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
   {provider:"runway",model:"kling_4",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:2.35,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
-  {provider:"runway",model:"seedance-2.5",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:6.80,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
-  {provider:"runway",model:"seedance-2.5",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:10.20,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
+  {provider:"runway",model:"seedance2_5",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:6.80,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
+  {provider:"runway",model:"seedance2_5",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:10.20,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
   {provider:"runway",model:"kling_4",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:3.76,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false}
 ];
 const economics=()=>calculateSubscriptionPlanCreditEconomics({
@@ -81,8 +81,8 @@ test("a balanced one-of-each monthly workload exposes plan shortfall and contrib
 
 test("video-reference inputs are priced separately from text-to-video output-only estimates",()=>{
   const result=economics();
-  const seedanceText=result.scenarios.find(row=>row.model==="seedance-2.5"&&row.operation==="text-to-video");
-  const seedanceEdit=result.scenarios.find(row=>row.model==="seedance-2.5"&&row.operation==="video-to-video");
+  const seedanceText=result.scenarios.find(row=>row.model==="seedance2_5"&&row.operation==="text-to-video");
+  const seedanceEdit=result.scenarios.find(row=>row.model==="seedance2_5"&&row.operation==="video-to-video");
   const klingText=result.scenarios.find(row=>row.model==="kling_4"&&row.operation==="text-to-video");
   const klingEdit=result.scenarios.find(row=>row.model==="kling_4"&&row.operation==="video-to-video");
   // 10s Seedance 1080p output ($0.68/s) + 10s video reference ($0.34/s).
