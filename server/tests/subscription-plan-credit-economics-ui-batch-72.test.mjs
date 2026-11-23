@@ -60,6 +60,6 @@ test("Financial Command Centre renders prepaid credit-pack profitability and cur
  assert.match(app,/Prepaid credit-pack overage profitability/);
  assert.match(app,/creditPackEconomics/);
  assert.match(app,/String\(item.status\|\|item.marginAssessment/);
- assert.match(app,/no foreign exchange is inferred/);
- assert.match(app,/Inactive products remain draft-only/);
+ assert.match(app,/approved, same-month processor-settlement or bank-statement evidence/);
+ assert.match(app,/official tax\/reference rates are not accepted for settlement costing/);\n assert.match(app,/Inactive products remain draft-only/);
 });
