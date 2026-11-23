@@ -51,12 +51,13 @@ test("billing workspace shows available, reserved and total customer credits", (
   assert.match(app, /separate from provider billing credits/);
 });
 
-test("storyboard preflight exposes estimates but blocks approval until atomic customer-credit settlement exists", () => {
-  assert.match(index, /result\.status="customer_credit_settlement_pending"/);
-  assert.match(index, /result\.readyForApproval=false/);
-  assert.match(index, /Provider cost and customer credit estimates are available, but the direct storyboard shot queue is held/);
-  assert.match(index, /Per-shot customer credit quote is outside safe bounds/);
+test("storyboard preflight requires a complete customer-credit quote and verified staging dispatch", () => {
+  assert.match(index, /applyCustomerCreditDispatchGate\(result/);
+  assert.match(index, /stagingDispatchReady:neonStagingApprovalRuntime\.enabled===true/);
+  assert.match(index, /customer_credit_settlement_pending/);
+  assert.match(index, /Production cloud dispatch remains closed/);
   assert.match(app, /Estimated customer credits:/);
+  assert.match(app, /budget approval is disabled/);
 });
 
 test("legacy cloud shot queue is held until atomic customer-credit settlement exists", () => {
