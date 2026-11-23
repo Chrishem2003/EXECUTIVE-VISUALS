@@ -4,6 +4,7 @@ import {applyCustomerCreditDispatchGate} from "../customer-credit-dispatch-gate.
 
 const ready={
  status:"ready_for_approval",readyForApproval:true,requestsSubmitted:false,
+ shots:[{id:"shot-1"},{id:"shot-2"}],
  pricing:{status:"verified_estimate",quote:{available:true,estimated:true,currency:"USD",amount:1.25,
   customerCreditQuote:{unit:"customer_credits",totalCredits:150,perShot:[{shotId:"shot-1",credits:100},{shotId:"shot-2",credits:50}]}}}
 };
