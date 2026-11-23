@@ -30,11 +30,11 @@ test("refund-to-job attribution is finance-admin-only, bounded and owner-scoped"
     }
     throw new Error("Unexpected request: "+target);
   });
-  const result=await allowed.handle({method:"GET",path:"/api/admin/finance/job-refund-attribution?limit=25&ownerId="+owner,ownerId:owner});
+  const result=await allowed.handle({method:"GET",path:"/api/admin/finance/job-refund-attribution",query:{limit:"25",ownerId:owner},ownerId:owner});
   assert.equal(result.status,200);
   assert.deepEqual(rpcBody,{p_actor_id:owner,p_owner_id:owner,p_limit:25});
 
-  const invalid=await allowed.handle({method:"GET",path:"/api/admin/finance/job-refund-attribution?limit=101",ownerId:owner});
+  const invalid=await allowed.handle({method:"GET",path:"/api/admin/finance/job-refund-attribution",query:{limit:"101"},ownerId:owner});
   assert.equal(invalid.status,400);
   assert.equal(invalid.body.error.code,"FINANCIAL_REFUND_ATTRIBUTION_LIMIT_INVALID");
 });
