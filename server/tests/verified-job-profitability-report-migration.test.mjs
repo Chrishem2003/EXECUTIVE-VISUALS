@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 
 const sql=readFileSync(new URL("../../supabase/migrations/20261123190000_verified_job_profitability_report_batch_105.sql",import.meta.url),"utf8");
+const netSql=readFileSync(new URL("../../supabase/migrations/20261123210000_net_job_contribution_payment_fees_batch_107.sql",import.meta.url),"utf8");
 
 test("job profitability SQL is admin-only and read-only",()=>{
  assert.match(sql,/platform_admins[\s\S]*role in\('owner','platform_admin','billing_admin'\)/);
@@ -23,4 +24,15 @@ test("job profitability keeps revenue and invoice costs currency-scoped",()=>{
  assert.match(sql,/count\(distinct c\.currency\)/);
  assert.match(sql,/currency_mismatch/);
  assert.match(sql,/grossMarginPct/);
+});
+
+test("net job contribution allocates only verified payment fees to consumed credit sources",()=>{
+ assert.match(netSql,/provider_fee_minor/);
+ assert.match(netSql,/cumulative_credits/);
+ assert.match(netSql,/allocated_fee_minor/);
+ assert.match(netSql,/missing_fee_count>0/);
+ assert.match(netSql,/netContributionMinor/);
+ assert.match(netSql,/netMarginPct/);
+ assert.match(netSql,/processor_fee_incomplete/);
+ assert.match(netSql,/rows between unbounded preceding and current row/i);
 });
