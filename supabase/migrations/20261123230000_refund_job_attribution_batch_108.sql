@@ -60,8 +60,10 @@ begin
     group by s.source_reference_id,s.owner_id,a.job_id
   ), refund_rows as (
     select r.id refund_id,r.owner_id,r.payment_transaction_id payment_id,
-      r.amount_minor,r.currency,r.status,r.completed_at
+      r.amount_minor,r.currency,r.status,r.completed_at,p.currency payment_currency
     from executive_visuals.payment_refunds r
+    join executive_visuals.payment_transactions p
+      on p.id=r.payment_transaction_id and p.owner_id=r.owner_id
     where r.status in('requested','processing','succeeded','failed')
       and (p_owner_id is null or r.owner_id=p_owner_id)
   ), confirmed_allocations as (
@@ -86,7 +88,8 @@ begin
         else null end allocated_refund_minor,
       (c.total_consumed<=c.total_granted_credits
         and c.unresolved_allocations=0 and c.unresolved_source_count=0
-        and c.currency_count=1 and c.source_currency=c.currency) evidence_complete
+        and c.currency_count=1 and c.source_currency=c.currency
+        and c.payment_currency=c.currency) evidence_complete
     from confirmed_allocations c
   ), refund_by_job as (
     select a.job_id,a.owner_id,
@@ -117,6 +120,33 @@ begin
   )
   select jsonb_build_object(
     'generatedAt',clock_timestamp(),
+    'unmatchedConfirmedRefunds',(
+      select jsonb_build_object(
+        'count',count(*)::integer,
+        'amountByCurrency',coalesce(jsonb_agg(jsonb_build_object(
+          'currency',x.currency,'amountMinor',x.amount_minor
+        ) order by x.currency),'[]'::jsonb)
+      )
+      from (
+        select r.currency,sum(r.amount_minor)::bigint amount_minor
+        from refund_rows r
+        where r.status='succeeded'
+          and not exists(
+            select 1 from job_payment_usage u
+            where u.payment_id=r.payment_id and u.owner_id=r.owner_id
+          )
+        group by r.currency
+      ) x
+    ),
+    'unmatchedPendingRefunds',(
+      select jsonb_build_object('count',count(*)::integer)
+      from refund_rows r
+      where r.status in('requested','processing')
+        and not exists(
+          select 1 from job_payment_usage u
+          where u.payment_id=r.payment_id and u.owner_id=r.owner_id
+        )
+    ),
     'source','provider-confirmed payment_refunds + paid-credit source grants + settled job credit consumption',
     'count',count(*),
     'jobs',coalesce(jsonb_agg(jsonb_build_object(
