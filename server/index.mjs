@@ -43,6 +43,7 @@ import { createCloudVideoGenerationDispatch } from "./cloud-video-generation-dis
 import { createSubscriptionEntitlementReader } from "./subscription-entitlements.mjs";
 import { createNeonStagingApprovalDispatch } from "./neon-staging-application-runtime.mjs";
 import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.mjs";
+import { buildCustomerGenerationCreditQuote } from "./customer-generation-credit-quote.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
@@ -1252,7 +1253,8 @@ export function createAppServer() {
         const body=await readJson(req,16*1024);
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const quote=estimateVideoGenerationCost(body,pricing);
-        send(res,200,quote,cors);return;
+        const customerCreditQuote=buildCustomerGenerationCreditQuote({providerEstimate:quote,quoteCustomerCredits});
+        send(res,200,{...quote,customerCreditQuote},cors);return;
       }
       if(path==="/api/video-production-quote"&&req.method==="POST"){
         if(!rateAllowed("video-production-quote:"+user.id,20,60000)){fail(res,429,"RATE_LIMITED","Too many production quote requests. Try again shortly.");return;}
