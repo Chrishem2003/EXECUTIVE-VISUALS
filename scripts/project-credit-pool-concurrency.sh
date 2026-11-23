@@ -66,4 +66,26 @@ end
 \$credit_concurrency_assertion\$;
 SQL
 
-echo "Concurrent project-wallet reservation race passed: one 500-credit reservation accepted, one rejected, 420 credits remain."
+
+-- Release the winning fixture reservation after the race assertion so this test
+-- leaves the shared disposable database exactly as it found the monthly spend
+-- budget for the following member-policy integration.
+select * from executive_visuals.release_generation_credit_reservation(
+ (select reservation_id from executive_visuals.project_credit_pool_reservations
+  where job_id in ('$job_a','$job_b') and state='reserved'),
+ 'Concurrency acceptance fixture cleanup'
+);
+do \$credit_concurrency_cleanup\$
+declare pool_balance bigint; active_count integer;
+begin
+ select coalesce(sum(amount),0) into pool_balance
+  from executive_visuals.project_credit_pool_ledger where project_id='$project';
+ select count(*) into active_count from executive_visuals.project_credit_pool_reservations
+  where job_id in ('$job_a','$job_b') and state='reserved';
+ if pool_balance<>920 or active_count<>0 then
+  raise exception 'Concurrency fixture cleanup did not restore the project wallet: balance %, active reservations %',pool_balance,active_count;
+ end if;
+end
+\$credit_concurrency_cleanup\$;
+
+echo "Concurrent project-wallet reservation race passed: one 500-credit reservation accepted, one rejected; fixture reservation released and 920 credits restored."
