@@ -32,7 +32,7 @@ test("blocks UGX credit packs against USD actual-cost evidence without inventing
  assert.equal(result.products[0].costCurrency,"USD");
  assert.equal(result.products[0].providerCostMinor,null);
  assert.equal(result.products[0].contributionMinor,null);
- assert.match(result.limitations.join(" "),/No foreign-exchange conversion/);
+ assert.match(result.limitations.join(" "),/approved same-month processor-settlement or bank-statement evidence/);
 });
 
 test("blocks cost calculations until invoice evidence is complete and verified",()=>{
