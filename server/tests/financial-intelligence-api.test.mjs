@@ -1183,6 +1183,13 @@ test("per-job profitability report is admin-only, bounded and delegates to verif
    assert.equal(body.p_limit,25);
    return json({count:1,jobs:[{jobId:"job-verified",profitability:{status:"profitable",currency:"USD",contributionMinor:600,grossMarginPct:60}}],limitations:[]});
   }
+  if(target.endsWith("/rpc/financial_job_refund_attribution_report")){
+   const body=JSON.parse(options.body);
+   assert.equal(body.p_actor_id,owner);
+   assert.equal(body.p_owner_id,owner);
+   assert.equal(body.p_limit,25);
+   return json({count:0,jobs:[],unmatchedConfirmedRefunds:{count:0,amountByCurrency:[]},unmatchedPendingRefunds:{count:0},limitations:[]});
+  }
   throw new Error("Unexpected request: "+target);
  });
  const result=await allowed.handle({method:"GET",path:"/api/admin/finance/job-profitability",ownerId:owner,query:{ownerId:owner,limit:"25"}});

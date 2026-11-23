@@ -63,3 +63,70 @@ test("pending refund exposure never divides by zero or reports incomplete eviden
   assert.match(migration,/incomplete_pending_allocations/);
   assert.match(migration,/when coalesce\(p\.incomplete_pending_allocations,0\)>0 then 'incomplete_exposure'/);
 });
+
+
+test("job profitability subtracts only confirmed, complete, same-currency refunds from net contribution",async()=>{
+  const owner="11111111-1111-4111-8111-111111111111";
+  const jobId="22222222-2222-4222-8222-222222222222";
+  const calls=[];
+  const service=api(async(url,options={})=>{
+    const target=String(url);
+    if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+    if(target.endsWith("/rpc/financial_job_profitability_report")){
+      calls.push("profitability");
+      return json({count:2,jobs:[
+        {jobId,ownerId:owner,revenue:{status:"verified",currencies:["USD"],recognizedMinor:1000},
+          actualCost:{status:"verified",amountMinor:400,currency:"USD"},
+          profitability:{status:"profitable",currency:"USD",contributionMinor:550,grossMarginPct:55}},
+        {jobId:"33333333-3333-4333-8333-333333333333",ownerId:owner,
+          revenue:{status:"verified",currencies:["USD"],recognizedMinor:800},
+          profitability:{status:"profitable",currency:"USD",contributionMinor:500,grossMarginPct:62.5}}
+      ],limitations:[]});
+    }
+    if(target.endsWith("/rpc/financial_job_refund_attribution_report")){
+      calls.push("refunds");
+      return json({count:2,jobs:[
+        {jobId,confirmedRefund:{status:"verified",amountMinor:200,currency:"USD"},
+          profitabilityAdjustment:{status:"subtract_from_job_revenue",confirmedRefundMinor:200}},
+        {jobId:"33333333-3333-4333-8333-333333333333",
+          confirmedRefund:{status:"incomplete",amountMinor:null,currency:"USD"},
+          profitabilityAdjustment:{status:"withheld_incomplete_refund_attribution",confirmedRefundMinor:null}}
+      ],unmatchedConfirmedRefunds:{count:0,amountByCurrency:[]},unmatchedPendingRefunds:{count:1},limitations:["Incomplete evidence fixture"]});
+    }
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handle({method:"GET",path:"/api/admin/finance/job-profitability",ownerId:owner});
+  assert.equal(result.status,200);
+  assert.deepEqual(calls,["profitability","refunds"]);
+  const adjusted=result.body.jobProfitability.jobs[0];
+  assert.equal(adjusted.netProfitability.status,"verified");
+  assert.equal(adjusted.netProfitability.confirmedRefundMinor,200);
+  assert.equal(adjusted.netProfitability.recognizedRevenueMinorAfterRefund,800);
+  assert.equal(adjusted.netProfitability.contributionMinorAfterRefund,350);
+  assert.equal(adjusted.netProfitability.grossMarginPct,43.75);
+  const withheld=result.body.jobProfitability.jobs[1];
+  assert.equal(withheld.netProfitability.status,"withheld_incomplete_refund_attribution");
+  assert.equal(withheld.netProfitability.contributionMinorAfterRefund,null);
+  assert.equal(result.body.jobProfitability.refundAttribution.unmatchedPendingRefunds.count,1);
+});
+
+test("job profitability withholds net margin when refund currency differs from revenue currency",async()=>{
+  const owner="11111111-1111-4111-8111-111111111111";
+  const service=api(async(url)=>{
+    const target=String(url);
+    if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+    if(target.endsWith("/rpc/financial_job_profitability_report"))return json({count:1,jobs:[
+      {jobId:"44444444-4444-4444-8444-444444444444",revenue:{status:"verified",currencies:["USD"],recognizedMinor:1000},
+        profitability:{status:"profitable",currency:"USD",contributionMinor:500,grossMarginPct:50}}
+    ],limitations:[]});
+    if(target.endsWith("/rpc/financial_job_refund_attribution_report"))return json({count:1,jobs:[
+      {jobId:"44444444-4444-4444-8444-444444444444",confirmedRefund:{status:"verified",amountMinor:100,currency:"UGX"},
+        profitabilityAdjustment:{status:"subtract_from_job_revenue",confirmedRefundMinor:100}}
+    ],limitations:[]});
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handle({method:"GET",path:"/api/admin/finance/job-profitability",ownerId:owner});
+  assert.equal(result.status,200);
+  assert.equal(result.body.jobProfitability.jobs[0].netProfitability.status,"currency_mismatch");
+  assert.equal(result.body.jobProfitability.jobs[0].netProfitability.contributionMinorAfterRefund,null);
+});

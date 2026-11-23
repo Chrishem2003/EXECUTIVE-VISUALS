@@ -1412,10 +1412,68 @@ export function createFinancialIntelligenceApi({
           return error(400,"FINANCIAL_JOB_PROFITABILITY_LIMIT_INVALID","Job profitability limit must be an integer between 1 and 100.");
         if(subjectOwnerId!==null&&!UUID.test(subjectOwnerId))
           return error(400,"FINANCIAL_JOB_PROFITABILITY_OWNER_INVALID","ownerId must be a verified account UUID.");
-        const result=await rpc("financial_job_profitability_report",{
-          p_actor_id:ownerId,p_owner_id:subjectOwnerId,p_limit:limit
+        const [result,refundResult]=await Promise.all([
+          rpc("financial_job_profitability_report",{
+            p_actor_id:ownerId,p_owner_id:subjectOwnerId,p_limit:limit
+          }),
+          rpc("financial_job_refund_attribution_report",{
+            p_actor_id:ownerId,p_owner_id:subjectOwnerId,p_limit:limit
+          })
+        ]);
+        const report=result||{jobs:[],count:0,limitations:[]};
+        const refunds=refundResult||{jobs:[],count:0,limitations:[]};
+        const refundByJob=new Map((Array.isArray(refunds.jobs)?refunds.jobs:[])
+          .filter((row)=>row&&typeof row.jobId==="string")
+          .map((row)=>[row.jobId,row]));
+        const jobs=(Array.isArray(report.jobs)?report.jobs:[]).map((job)=>{
+          const refund=refundByJob.get(job.jobId)||null;
+          const adjustment=refund?.profitabilityAdjustment||null;
+          const refundStatus=adjustment?.status||"unavailable";
+          const confirmedRefundMinor=refundStatus==="no_confirmed_refund"?0:
+            refundStatus==="subtract_from_job_revenue"&&Number.isSafeInteger(adjustment?.confirmedRefundMinor)
+              ?adjustment.confirmedRefundMinor:null;
+          const revenueMinor=job?.revenue?.recognizedMinor;
+          const revenueCurrencies=Array.isArray(job?.revenue?.currencies)?job.revenue.currencies:
+            (typeof job?.revenue?.currency==="string"?[job.revenue.currency]:[]);
+          const revenueCurrency=revenueCurrencies.length===1?revenueCurrencies[0]:null;
+          const gross=job?.profitability;
+          let net={status:"withheld_incomplete_evidence",currency:revenueCurrency||null,
+            recognizedRevenueMinorAfterRefund:null,confirmedRefundMinor,
+            contributionMinorAfterRefund:null,grossMarginPct:null};
+          if(refundStatus==="withheld_incomplete_refund_attribution"){
+            net={...net,status:"withheld_incomplete_refund_attribution"};
+          }else if(refundStatus==="unavailable"){
+            net={...net,status:"refund_evidence_unavailable"};
+          }else if(confirmedRefundMinor!==null&&Number.isSafeInteger(revenueMinor)&&
+              typeof revenueCurrency==="string"&&gross&&
+              (gross.status==="profitable"||gross.status==="loss_making")&&
+              Number.isSafeInteger(gross.contributionMinor)&&
+              (refundStatus==="no_confirmed_refund"||
+                (refund?.confirmedRefund?.currency===revenueCurrency))){
+            const netRevenue=revenueMinor-confirmedRefundMinor;
+            if(netRevenue<0){
+              net={...net,status:"refund_exceeds_recognized_revenue"};
+            }else{
+              const contribution=gross.contributionMinor-confirmedRefundMinor;
+              net={status:"verified",currency:revenueCurrency,
+                recognizedRevenueMinorAfterRefund:netRevenue,confirmedRefundMinor,
+                contributionMinorAfterRefund:contribution,
+                grossMarginPct:netRevenue>0?Math.round((contribution/netRevenue)*10000)/100:null};
+            }
+          }else if(refundStatus==="subtract_from_job_revenue"&&
+              refund?.confirmedRefund?.currency!==revenueCurrency){
+            net={...net,status:"currency_mismatch"};
+          }
+          return {...job,refundAttribution:refund,netProfitability:net};
         });
-        return response(200,{jobProfitability:result||{jobs:[],count:0,limitations:[]}});
+        return response(200,{jobProfitability:{...report,jobs,
+          refundAttribution:{count:refunds.count??0,unmatchedConfirmedRefunds:refunds.unmatchedConfirmedRefunds||{count:0,amountByCurrency:[]},
+            unmatchedPendingRefunds:refunds.unmatchedPendingRefunds||{count:0},
+            limitations:refunds.limitations||[]},
+          limitations:[...(Array.isArray(report.limitations)?report.limitations:[]),
+            "Net contribution subtracts only provider-confirmed refunds with complete paid-credit allocation and matching currency evidence.",
+            "Net contribution is withheld when refund attribution is incomplete, unavailable, currency-mismatched, or exceeds recognized revenue."]
+        }});
       }
       if(path==="/api/admin/finance/job-refund-attribution"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
