@@ -28,7 +28,7 @@ test("calculates top-up contribution only from verified same-currency invoice co
 test("blocks UGX credit packs against USD actual-cost evidence without inventing FX",()=>{
  const result=calculateCreditPackOverageEconomics({products:[product({currency:"UGX",amount_minor:50000})],costEvidence:evidence,pricingPolicy:policy});
  assert.equal(result.status,"partially_blocked");
- assert.equal(result.products[0].status,"blocked_currency_mismatch");
+ assert.equal(result.products[0].status,"blocked_fx_evidence");
  assert.equal(result.products[0].costCurrency,"USD");
  assert.equal(result.products[0].providerCostMinor,null);
  assert.equal(result.products[0].contributionMinor,null);
@@ -63,4 +63,20 @@ test("does not create an implied price or charge when no credit-pack products ex
  const result=calculateCreditPackOverageEconomics({products:[],costEvidence:evidence,pricingPolicy:policy});
  assert.equal(result.status,"no_credit_pack_products");
  assert.deepEqual(result.products,[]);
+});
+
+test("calculates UGX pack margins only with approved settlement FX evidence",()=>{
+ const fxEvidence={evidence_id:"fx-001",source_currency:"USD",target_currency:"UGX",rate_scaled:421690000000,rate_scale:100000000,
+  effective_date:"2026-11-23",source_type:"processor_settlement",purpose:"settlement_cost",source_reference:"settlement-2026-11-23",
+  decision:"approved",decision_reason:"Matched to processor settlement statement",decision_created_at:"2026-11-23T12:00:00Z"};
+ const result=calculateCreditPackOverageEconomics({products:[product({currency:"UGX",amount_minor:50000})],
+  costEvidence:evidence,pricingPolicy:policy,fxEvidence});
+ const row=result.products[0];
+ assert.equal(row.status,"measured_scenario_only");
+ assert.equal(row.providerCostMinor,84338);
+ assert.equal(row.fxConversion.fxEvidenceId,"fx-001");
+ assert.equal(row.paymentFeeMinor,1500);
+ assert.equal(row.supportReserveMinor,2500);
+ assert.equal(row.contributionMinor,-38338);
+ assert.equal(row.checkoutEligible,false);
 });
