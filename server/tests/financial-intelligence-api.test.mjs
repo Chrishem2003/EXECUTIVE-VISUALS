@@ -1802,3 +1802,46 @@ test("provider invoice history is admin-only, bounded and returns a safe import 
  assert.equal(invalid.status,400);
  assert.equal(invalid.body.error.code,"AI_INVOICE_LIST_LIMIT_INVALID");
 });
+
+test("FX evidence API enforces settlement-grade sources and uses audited admin RPCs",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url),body=options.body?JSON.parse(options.body):null;
+  calls.push({target,method:options.method||"GET",body});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/record_financial_fx_rate_evidence"))return json({id:"fx-evidence-1",status:"pending_review"});
+  if(target.endsWith("/rpc/decide_financial_fx_rate_evidence"))return json({id:"fx-decision-1",evidenceId:"fx-evidence-1",decision:"approved"});
+  if(target.includes("/financial_fx_rate_evidence_current?"))return json([{evidence_id:"fx-evidence-1",decision:"approved"}]);
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"POST",path:"/api/admin/finance/fx-rate-evidence",ownerId:owner,
+  body:{sourceCurrency:"USD",targetCurrency:"UGX",rateScaled:421690000000,effectiveDate:"2026-11-23",
+   sourceType:"official_reference",purpose:"settlement_cost",sourceReference:"URA daily reference",evidenceNote:"Published rate",
+   idempotencyKey:"fx-evidence-key-001"}});
+ assert.equal(invalid.status,400);
+ assert.equal(invalid.body.error.code,"FINANCIAL_FX_SETTLEMENT_SOURCE_REQUIRED");
+ assert.equal(calls.filter(call=>call.target.endsWith("/rpc/record_financial_fx_rate_evidence")).length,0);
+ const recorded=await service.handle({method:"POST",path:"/api/admin/finance/fx-rate-evidence",ownerId:owner,
+  body:{sourceCurrency:"USD",targetCurrency:"UGX",rateScaled:421690000000,effectiveDate:"2026-11-23",
+   sourceType:"processor_settlement",purpose:"settlement_cost",sourceReference:"settlement-2026-11-23",
+   evidenceNote:"Matched settlement statement",idempotencyKey:"fx-evidence-key-001"}});
+ assert.equal(recorded.status,201);
+ assert.equal(calls.at(-1).body.p_actor_id,owner);
+ assert.equal(calls.at(-1).body.p_source_type,"processor_settlement");
+ const decision=await service.handle({method:"POST",path:"/api/admin/finance/fx-rate-evidence/decision",ownerId:owner,
+  body:{evidenceId:"22222222-2222-4222-8222-222222222222",decision:"approved",decisionReason:"Matched statement"}});
+ assert.equal(decision.status,200);
+ assert.equal(calls.at(-1).body.p_actor_id,owner);
+ assert.equal(calls.at(-1).body.p_decision,"approved");
+ const listed=await service.handle({method:"GET",path:"/api/admin/finance/fx-rate-evidence",ownerId:owner,
+  query:{sourceCurrency:"USD",targetCurrency:"UGX",periodMonth:"2026-11-01"}});
+ assert.equal(listed.status,200);
+ assert.equal(listed.body.evidence[0].decision,"approved");
+ assert.ok(calls.some(call=>call.target.includes("financial_fx_rate_evidence_current?")&&call.target.includes("effective_date=gte.2026-11-01")));
+});
+
+test("FX evidence and approval endpoints require finance administrator authorization",async()=>{
+ const service=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);throw new Error("Unauthorized caller reached finance data");});
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/fx-rate-evidence",ownerId:owner,body:{}});
+ assert.equal(result.status,403);
+});
