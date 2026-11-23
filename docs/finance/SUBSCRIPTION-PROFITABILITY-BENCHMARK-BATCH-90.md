@@ -53,6 +53,14 @@ The Seedance input-video rate is $0.34 per second at 1080p. Kling's 1080p input-
 
 Sources: [Seedance 2.5 API pricing](https://dev.runwayml.com/learn/seedance-2-5-api) and [Kling 4.0 API pricing](https://dev.runwayml.com/learn/kling-4-0-api).
 
+### Gemini Omni rate-card correction (checked 23 November 2026)
+
+The current Runway Dev pricing page lists **Gemini Omni Flash (Google)** at $0.10 per second for 720p output, with input video billed at an additional $0.01 per second. A 10-second output therefore costs $1.00, or $1.10 with a 10-second source video. The rate card also lists 360p, 1080p and 4K tiers; this benchmark uses 720p to keep the comparison bounded.
+
+A separate Google announcement quoted $0.07 per second for Gemini Omni 1.2 Flash. That is a distinct vendor/API price and must not be silently substituted for the Runway Dev adapter's current rate. Model version, provider route and price source must match the actual production adapter before a scenario is used for billing.
+
+Source: [Runway Dev official API pricing](https://dev.runwayml.com/pricing).
+
 The regression suite therefore checks:
 1. Dated output-only and source-video provider costs remain explicitly marked forecast-only and non-billable.
 2. The five proposed tiers remain private draft hypotheses with no persisted credits.
@@ -60,7 +68,8 @@ The regression suite therefore checks:
 4. A mixed workload can fail a plan's credit allowance even where a per-model-only comparison looks affordable.
 5. Contribution margin and credit sufficiency remain separate assessments.
 6. Video-to-video scenarios include provider-billed reference-video input charges rather than treating edits as output-only.
-7. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
+7. The current Runway Dev Gemini Omni Flash rate is dated separately from the older Google-direct price announcement.
+8. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
 
 ## Release and finance controls
 
