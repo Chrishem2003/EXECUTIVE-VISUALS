@@ -36,7 +36,7 @@ export function calculateCreditPackOverageEconomics({products=[],costEvidence,pr
      !Number.isSafeInteger(creditUnits)||creditUnits<=0||product.product_type!=="credit_pack"||
      typeof product.active!=="boolean")
    fail("CREDIT_PACK_ECONOMICS_PRODUCT_INVALID","Product code, type, amount, currency, credit units and active state must be explicit.");
-  const base={productCode,name,currency,amountMinor,creditUnits,active:product.active,checkoutEligible:product.active};
+  const base={productCode,name,currency,amountMinor,creditUnits,active:product.active,checkoutEligible:false};
   if(!evidenceReady)return Object.freeze({...base,status:"blocked_invoice_evidence",providerCostMinor:null,paymentFeeMinor:null,supportReserveMinor:null,contributionMinor:null,contributionMarginBps:null,marginAssessment:"not_measurable"});
   if(currency!==costEvidence.currency)return Object.freeze({...base,status:"blocked_currency_mismatch",costCurrency:costEvidence.currency,
    providerCostMinor:null,paymentFeeMinor:null,supportReserveMinor:null,contributionMinor:null,contributionMarginBps:null,
@@ -52,7 +52,7 @@ export function calculateCreditPackOverageEconomics({products=[],costEvidence,pr
   return Object.freeze({...base,status:"measured_scenario_only",costCurrency:currency,
    providerCostPerCreditMinor:costEvidence.providerCostPerCustomerCreditMinor,providerCostMinor,
    paymentFeeMinor,supportReserveMinor,contributionMinor,contributionMarginBps,
-   targetMarginBps,marginAssessment,customerChargeCreated:false});
+   targetMarginBps,marginAssessment,customerChargeCreated:false,checkoutEnabled:false});
  });
  const blocked=rows.filter(row=>row.status!=="measured_scenario_only").length;
  return Object.freeze({
