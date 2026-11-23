@@ -53,13 +53,32 @@ The Seedance input-video rate is $0.34 per second at 1080p. Kling's 1080p input-
 
 Sources: [Seedance 2.5 API pricing](https://dev.runwayml.com/learn/seedance-2-5-api) and [Kling 4.0 API pricing](https://dev.runwayml.com/learn/kling-4-0-api).
 
-### Gemini Omni rate-card correction (checked 23 November 2026)
+### Versioned Gemini Omni rates (checked 23 November 2026)
 
-The current Runway Dev pricing page lists **Gemini Omni Flash (Google)** at $0.10 per second for 720p output, with input video billed at an additional $0.01 per second. A 10-second output therefore costs $1.00, or $1.10 with a 10-second source video. The rate card also lists 360p, 1080p and 4K tiers; this benchmark uses 720p to keep the comparison bounded.
+The earlier unversioned `gemini_omni_flash` scenario was ambiguous. The benchmark now uses the exact Runway Dev model IDs and their model-specific documentation:
 
-A separate Google announcement quoted $0.07 per second for Gemini Omni 1.2 Flash. That is a distinct vendor/API price and must not be silently substituted for the Runway Dev adapter's current rate. Model version, provider route and price source must match the actual production adapter before a scenario is used for billing.
+| Runway Dev model ID | Resolution | 10s output | 10s source-video input | 10s edit/reference example |
+|---|---:|---:|---:|---:|
+| `gemini_omni_flash_1.1` | 720p | $1.00 | $0.10 | $1.10 |
+| `gemini_omni_flash_1.2` | 720p | $0.70 | $0.10 | $0.80 |
 
-Source: [Runway Dev official API pricing](https://dev.runwayml.com/pricing).
+Gemini Omni 1.2 Flash is the lower-cost 720p candidate; it supports 3–15 second outputs, while 1.1 supports 3–10 seconds. Input-video billing is additional to output billing. Image references are separately charged per image and are not included in these examples.
+
+Sources: [Gemini Omni 1.1 Flash API pricing](https://dev.runwayml.com/learn/gemini-omni-flash-1-1-api) and [Gemini Omni 1.2 Flash API pricing](https://dev.runwayml.com/learn/gemini-omni-flash-1-2-api).
+
+### WAN 3.0 and MiniMax H3 Max comparison (checked 23 November 2026)
+
+The benchmark adds three more official Runway Dev routes, using exact model IDs:
+
+| Model ID | Resolution | Rate per second | 10s output |
+|---|---:|---:|---:|
+| `wan3` | 720p | $0.10 | $1.00 |
+| `wan3_prime` | 720p | $0.14 | $1.40 |
+| `h3_max` | 768p | $0.08 | $0.80 |
+
+WAN 3.0 and WAN 3.0 Prime accept video references without an additional reference-media charge on this route. MiniMax H3 Max supports 5–15 second text/image-to-video generation; the benchmark uses its 768p output rate. These are not resolution-identical comparisons, and H3 Max does not imply video-to-video support.
+
+Sources: [WAN 3.0 API pricing and model IDs](https://dev.runwayml.com/learn/wan-3-0-api) and [MiniMax H3 Max API pricing and model ID](https://dev.runwayml.com/learn/minimax-h3-max-api).
 
 The regression suite therefore checks:
 1. Dated output-only and source-video provider costs remain explicitly marked forecast-only and non-billable.
@@ -68,8 +87,9 @@ The regression suite therefore checks:
 4. A mixed workload can fail a plan's credit allowance even where a per-model-only comparison looks affordable.
 5. Contribution margin and credit sufficiency remain separate assessments.
 6. Video-to-video scenarios include provider-billed reference-video input charges rather than treating edits as output-only.
-7. The current Runway Dev Gemini Omni Flash rate is dated separately from the older Google-direct price announcement.
-8. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
+7. Gemini Omni 1.1 and 1.2 use separate official model IDs, rates and input-video charges.
+8. WAN 3.0, WAN 3.0 Prime and MiniMax H3 Max use documented model IDs and resolution-specific rates.
+9. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
 
 ## Release and finance controls
 

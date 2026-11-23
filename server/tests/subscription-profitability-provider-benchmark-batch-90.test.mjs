@@ -19,14 +19,20 @@ const plans=[
   {plan_code:"enterprise",name:"Enterprise",amount_minor:0,currency:"USD",billing_interval:"monthly",status:"draft",is_public:false,included_credits:0}
 ];
 const source="https://dev.runway.com/learn/ai-video-api-pricing";
+// All entries are date-stamped provider forecasts; none can settle customer billing.
 const scenarios=[
   {provider:"runway",model:"gen4.5",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:1.20,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
   {provider:"runway",model:"kling_4",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:2.35,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
   {provider:"runway",model:"seedance2_5",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:6.80,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
   {provider:"runway",model:"seedance2_5",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:10.20,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
   {provider:"runway",model:"kling_4",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:3.76,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
-  {provider:"runway",model:"gemini_omni_flash",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:1.00,pricingSource:"https://dev.runwayml.com/pricing",pricingDate:"2026-11-23",billable:false,settlementEligible:false},
-  {provider:"runway",model:"gemini_omni_flash",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:1.10,pricingSource:"https://dev.runwayml.com/pricing",pricingDate:"2026-11-23",billable:false,settlementEligible:false}
+  {provider:"runway",model:"gemini_omni_flash_1.1",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:1.00,pricingSource:"https://dev.runwayml.com/learn/gemini-omni-flash-1-1-api",pricingDate:"2026-11-23",billable:false,settlementEligible:false},
+  {provider:"runway",model:"gemini_omni_flash_1.1",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:1.10,pricingSource:"https://dev.runwayml.com/learn/gemini-omni-flash-1-1-api",pricingDate:"2026-11-23",billable:false,settlementEligible:false},
+  {provider:"runway",model:"gemini_omni_flash_1.2",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:0.70,pricingSource:"https://dev.runwayml.com/learn/gemini-omni-flash-1-2-api",pricingDate:"2026-11-23",billable:false,settlementEligible:false},
+  {provider:"runway",model:"gemini_omni_flash_1.2",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:0.80,pricingSource:"https://dev.runwayml.com/learn/gemini-omni-flash-1-2-api",pricingDate:"2026-11-23",billable:false,settlementEligible:false},
+  {provider:"runway",model:"wan3",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:1.00,pricingSource:"https://dev.runwayml.com/learn/wan-3-0-api",pricingDate:"2026-11-23",billable:false,settlementEligible:false},
+  {provider:"runway",model:"wan3_prime",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:1.40,pricingSource:"https://dev.runwayml.com/learn/wan-3-0-api",pricingDate:"2026-11-23",billable:false,settlementEligible:false},
+  {provider:"runway",model:"h3_max",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"768p",amount:0.80,pricingSource:"https://dev.runwayml.com/learn/minimax-h3-max-api",pricingDate:"2026-11-23",billable:false,settlementEligible:false}
 ];
 const economics=()=>calculateSubscriptionPlanCreditEconomics({
   plans,scenarios,quoteCustomerCredits:quote,creditsPerUsd:100,creditBudgetShareBps:7000
@@ -34,10 +40,10 @@ const economics=()=>calculateSubscriptionPlanCreditEconomics({
 
 test("November 2026 official provider-price benchmark remains forecast-only and non-billable",()=>{
   const result=economics();
-  assert.deepEqual(result.scenarios.map(item=>item.providerCostUsd),[1.2,2.35,6.8,10.2,3.76,1,1.1]);
+  assert.deepEqual(result.scenarios.map(item=>item.providerCostUsd),[1.2,2.35,6.8,10.2,3.76,1,1.1,0.7,0.8,1,1.4,0.8]);
   assert.ok(result.scenarios.every(item=>item.estimateType==="forecast_not_actual"&&item.billable===false&&item.settlementEligible===false));
   assert.ok(result.scenarios.slice(0,5).every(item=>item.pricingSource===source&&item.pricingDate==="2026-11-22"));
-  assert.ok(result.scenarios.slice(5).every(item=>item.pricingSource==="https://dev.runwayml.com/pricing"&&item.pricingDate==="2026-11-23"));
+  assert.ok(result.scenarios.slice(5).every(item=>item.pricingDate==="2026-11-23"));
   assert.equal(result.calculationType,"subscription_plan_credit_scenario_not_activation");
 });
 
@@ -99,17 +105,48 @@ test("video-reference inputs are priced separately from text-to-video output-onl
   assert.ok([seedanceEdit,klingEdit].every(row=>row.billable===false&&row.settlementEligible===false));
 });
 
-test("Runway Dev Gemini Omni Flash uses its current rate-card output and input charges",()=>{
+test("Gemini Omni 1.1 and 1.2 use distinct official model IDs and rates",()=>{
   const result=economics();
-  const output=result.scenarios.find(row=>row.model==="gemini_omni_flash"&&row.operation==="text-to-video");
-  const edit=result.scenarios.find(row=>row.model==="gemini_omni_flash"&&row.operation==="video-to-video");
-  // Runway Dev current rate card: $0.10/s at 720p plus $0.01/s for input video.
-  assert.equal(output.providerCostUsd,1.00);
-  assert.equal(edit.providerCostUsd,1.10);
-  assert.ok(edit.customerCreditsPerGeneration>output.customerCreditsPerGeneration);
-  assert.equal(output.pricingSource,"https://dev.runwayml.com/pricing");
-  assert.equal(output.pricingDate,"2026-11-23");
-  assert.ok([output,edit].every(row=>row.billable===false&&row.settlementEligible===false));
+  const v11=result.scenarios.filter(row=>row.model==="gemini_omni_flash_1.1");
+  const v12=result.scenarios.filter(row=>row.model==="gemini_omni_flash_1.2");
+  assert.deepEqual(v11.map(row=>row.providerCostUsd),[1.00,1.10]);
+  assert.deepEqual(v12.map(row=>row.providerCostUsd),[0.70,0.80]);
+  assert.ok(v11.every(row=>row.pricingSource==="https://dev.runwayml.com/learn/gemini-omni-flash-1-1-api"));
+  assert.ok(v12.every(row=>row.pricingSource==="https://dev.runwayml.com/learn/gemini-omni-flash-1-2-api"));
+  assert.ok(v11.concat(v12).every(row=>row.pricingDate==="2026-11-23"&&row.billable===false&&row.settlementEligible===false));
+});
+
+test("WAN 3.0 tiers and MiniMax H3 Max use documented Runway Dev IDs and resolutions",()=>{
+  const result=economics();
+  const wan=result.scenarios.find(row=>row.model==="wan3");
+  const prime=result.scenarios.find(row=>row.model==="wan3_prime");
+  const h3=result.scenarios.find(row=>row.model==="h3_max");
+  assert.equal(wan.providerCostUsd,1.00);
+  assert.equal(prime.providerCostUsd,1.40);
+  assert.equal(h3.providerCostUsd,0.80);
+  assert.equal(wan.resolution,"720p");
+  assert.equal(prime.resolution,"720p");
+  assert.equal(h3.resolution,"768p");
+  assert.equal(wan.pricingSource,"https://dev.runwayml.com/learn/wan-3-0-api");
+  assert.equal(h3.pricingSource,"https://dev.runwayml.com/learn/minimax-h3-max-api");
+  assert.ok([wan,prime,h3].every(row=>row.billable===false&&row.settlementEligible===false));
+});
+
+test("lower-cost models improve the hypothetical Starter allowance without changing routing",()=>{
+  const result=economics();
+  const starter=result.plans.find(plan=>plan.planCode==="starter_creator");
+  const row=model=>starter.modelCoverage.find(item=>item.model===model);
+  const omni11=row("gemini_omni_flash_1.1");
+  const omni12=row("gemini_omni_flash_1.2");
+  const h3=row("h3_max");
+  const wan=row("wan3");
+  const seedance=row("seedance2_5");
+  assert.ok(omni12.customerCreditsPerGeneration<omni11.customerCreditsPerGeneration);
+  assert.ok(omni12.maximumWholeGenerations>seedance.maximumWholeGenerations);
+  assert.ok(h3.maximumWholeGenerations>seedance.maximumWholeGenerations);
+  assert.ok(wan.maximumWholeGenerations>seedance.maximumWholeGenerations);
+  assert.equal(starter.proposedMonthlyCreditAllowance,630);
+  assert.equal(result.calculationType,"subscription_plan_credit_scenario_not_activation");
 });
 
 test("the benchmark never converts scenario output into a published price, allowance or actual invoice cost",()=>{
