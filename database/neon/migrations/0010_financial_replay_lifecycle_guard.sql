@@ -43,10 +43,10 @@ begin
   select * into job_row from executive_visuals.jobs
    where id=result_row.job_id and owner_id=p_owner_id and job_type='video.generate'
    for update;
-  select * into budget_row from executive_visuals.video_generation_budget_reservations
-   where job_id=result_row.job_id for update;
-  select * into credit_row from executive_visuals.billing_credit_reservations
-   where job_id=result_row.job_id for update;
+  select * into budget_row from executive_visuals.video_generation_budget_reservations as reservation
+   where reservation.job_id=result_row.job_id for update;
+  select * into credit_row from executive_visuals.billing_credit_reservations as reservation
+   where reservation.job_id=result_row.job_id for update;
 
   if job_row.id is null or budget_row.id is null or credit_row.id is null
    or budget_row.owner_id is distinct from p_owner_id
