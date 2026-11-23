@@ -19,7 +19,7 @@ export function applyCustomerCreditDispatchGate(preflight,{stagingDispatchReady=
   Number.isSafeInteger(total)&&total>0&&total<=100_000_000&&
   Array.isArray(shots)&&shots.length>0&&
   Array.isArray(perShot)&&perShot.length===shots.length&&
-  perShot.every((item,index)=>item&&typeof item.shotId==="string"&&item.shotId===String(shots[index]?.id||"")&&
+  perShot.every((item,index)=>item&&typeof item.shotId==="string"&&item.shotId===String(shots[index]?.shotId||"")&&
    Number.isSafeInteger(item.credits)&&item.credits>0&&item.credits<=100_000_000)&&
   perShot.reduce((sum,item)=>sum+item.credits,0)===total;
  if(preflight.status!=="ready_for_approval"||preflight.readyForApproval!==true||
