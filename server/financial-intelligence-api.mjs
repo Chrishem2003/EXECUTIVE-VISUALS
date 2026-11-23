@@ -629,6 +629,17 @@ export function createFinancialIntelligenceApi({
             return error(409,"LEGACY_CREDIT_CHECKOUT_REQUIRES_RECONCILIATION","This older checkout cannot be safely replayed as a generation-credit purchase. Contact billing support before retrying.");
           return response(200,{payment:{id:row.id,reference:row.tx_ref,status:row.status,providerChargeId:row.provider_transaction_id,nextAction:row.metadata?.next_action||null},idempotentReplay:true});
         }
+        const pendingResult=await dbRequest(
+          "payment_transactions?select=id,tx_ref,status,metadata&owner_id=eq."+encodeURIComponent(ownerId)+
+          "&status=eq.pending&metadata->>product_code=eq."+encodeURIComponent(productCode)+
+          "&order=created_at.desc&limit=1"
+        );
+        const pending=Array.isArray(pendingResult.data)?pendingResult.data[0]:null;
+        if(pending){
+          if(pending.metadata?.product_type!=="credit_pack")
+            return error(409,"LEGACY_CREDIT_CHECKOUT_REQUIRES_RECONCILIATION","An older pending checkout for this product needs billing reconciliation before another payment can be started.");
+          return response(409,{error:{code:"CREDIT_PACK_PAYMENT_PENDING",message:"A payment for this credit pack is already awaiting confirmation. Check your transaction history before starting another charge."},payment:{reference:pending.tx_ref,status:pending.status}});
+        }
         const productResult=await dbRequest("billing_products?select=product_code,name,description,product_type,version,amount_minor,currency,credit_units&product_code=eq."+encodeURIComponent(productCode)+"&active=eq.true&limit=1");
         const product=Array.isArray(productResult.data)?productResult.data[0]:null;
         if(!product)return error(404,"BILLING_PRODUCT_UNAVAILABLE","This purchase option is not currently available.");
