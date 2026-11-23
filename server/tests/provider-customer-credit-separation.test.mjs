@@ -3,14 +3,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const root = new URL("../../", import.meta.url);
-const [migration, api, index, app, policy, billingApi, shotDispatch] = await Promise.all([
+const [migration, api, index, app, policy, billingApi, shotDispatch, dispatchGate] = await Promise.all([
   readFile(new URL("supabase/migrations/20261122120000_provider_customer_credit_separation.sql", root), "utf8"),
   readFile(new URL("server/cloud-timeline-api.mjs", root), "utf8"),
   readFile(new URL("server/index.mjs", root), "utf8"),
   readFile(new URL("src/platform/app.ts", root), "utf8"),
   readFile(new URL("server/neon-customer-credit-policy.mjs", root), "utf8"),
   readFile(new URL("server/financial-intelligence-api.mjs", root), "utf8"),
-  readFile(new URL("server/cloud-video-generation-dispatch.mjs", root), "utf8")
+  readFile(new URL("server/cloud-video-generation-dispatch.mjs", root), "utf8"),
+  readFile(new URL("server/customer-credit-dispatch-gate.mjs", root), "utf8")
 ]);
 
 test("cloud workflow quote schema stores provider credits and customer credits separately", () => {
@@ -51,12 +52,16 @@ test("billing workspace shows available, reserved and total customer credits", (
   assert.match(app, /separate from provider billing credits/);
 });
 
-test("storyboard preflight exposes estimates but blocks approval until atomic customer-credit settlement exists", () => {
-  assert.match(index, /result\.status="customer_credit_settlement_pending"/);
-  assert.match(index, /result\.readyForApproval=false/);
-  assert.match(index, /Provider cost and customer credit estimates are available, but the direct storyboard shot queue is held/);
-  assert.match(index, /Per-shot customer credit quote is outside safe bounds/);
+test("storyboard preflight requires a complete customer-credit quote and verified staging dispatch", () => {
+  assert.match(index, /applyCustomerCreditDispatchGate\(result/);
+  assert.match(index, /stagingDispatchReady:neonStagingApprovalRuntime\.enabled===true/);
+  assert.match(index, /customer-credit-dispatch-gate\.mjs/);
+  assert.match(dispatchGate, /customer_credit_settlement_pending/);
+  assert.match(dispatchGate, /Production cloud dispatch remains closed/);
+  assert.match(dispatchGate, /reservation:"atomic_at_submission"/);
+  assert.match(dispatchGate, /settlement:"authoritative_provider_usage"/);
   assert.match(app, /Estimated customer credits:/);
+  assert.match(app, /budget approval is disabled/);
 });
 
 test("legacy cloud shot queue is held until atomic customer-credit settlement exists", () => {

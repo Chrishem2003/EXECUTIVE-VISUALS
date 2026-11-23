@@ -44,6 +44,7 @@ import { createSubscriptionEntitlementReader } from "./subscription-entitlements
 import { createNeonStagingApprovalDispatch } from "./neon-staging-application-runtime.mjs";
 import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.mjs";
 import { buildCustomerGenerationCreditQuote } from "./customer-generation-credit-quote.mjs";
+import { applyCustomerCreditDispatchGate } from "./customer-credit-dispatch-gate.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
@@ -1377,8 +1378,10 @@ export function createAppServer() {
               result.pricing={...result.pricing,quote:{...result.pricing.quote,customerCreditQuote:{
                 unit:"customer_credits",totalCredits,perShot:perShotCredits,pricingBasis:"server-side cost, margin and fee policy"
               }}};
-              result.status="customer_credit_settlement_pending";result.readyForApproval=false;
-              result.reason="Provider cost and customer credit estimates are available, but the direct storyboard shot queue is held until atomic customer-credit reservation and authoritative provider-usage settlement are implemented. Use the customer-credit-gated workflow route for paid cloud generation.";
+              Object.assign(result,applyCustomerCreditDispatchGate(result,{
+                stagingDispatchReady:neonStagingApprovalRuntime.enabled===true&&
+                  neonStagingApprovalRuntime.readiness?.applicationDispatchReady===true
+              }));
             }catch{
               result.status="pricing_unverified";result.readyForApproval=false;
               result.pricing={...result.pricing,customerCreditQuote:{status:"unavailable"}};
