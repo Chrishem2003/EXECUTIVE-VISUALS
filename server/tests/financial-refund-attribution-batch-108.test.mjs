@@ -59,7 +59,7 @@ test("refund attribution SQL uses confirmed refunds only and fails closed on inc
 });
 
 test("pending refund exposure never divides by zero or reports incomplete evidence as a verified amount",()=>{
-  assert.match(migration,/case when t\.total_granted_credits>0[\\s\\S]*then round\(r\.amount_minor::numeric\*u\.credits_consumed\/t\.total_granted_credits\)/);
+  assert.match(migration,/case when t\.total_granted_credits>0[\s\S]*?then round\(r\.amount_minor::numeric\*u\.credits_consumed\/t\.total_granted_credits\)/);
   assert.match(migration,/incomplete_pending_allocations/);
   assert.match(migration,/when coalesce\(p\.incomplete_pending_allocations,0\)>0 then 'incomplete_exposure'/);
 });
