@@ -83,3 +83,16 @@ test("rejects malformed clock, missing references and unbounded catalogues",()=>
  assert.throws(()=>build([plan()],[{...prices[0],plan_id:""}]),{code:"SUBSCRIPTION_CATALOGUE_INVALID"});
  assert.throws(()=>build(new Array(1001).fill(plan()),[]),{code:"SUBSCRIPTION_CATALOGUE_INVALID"});
 });
+
+test("publishes generation credits only after a separate explicit allowance approval",()=>{
+ const [published]=build([plan({included_generation_credits:4321,generation_credit_allowance_published:true})]);
+ assert.equal(published.includedGenerationCredits,4321);
+ assert.equal(published.included_generation_credits,4321);
+ assert.equal(published.generationCreditAllowancePublished,true);
+ assert.equal(published.generation_credit_allowance_published,true);
+ const [unpublished]=build([plan({included_generation_credits:9999,generation_credit_allowance_published:false})]);
+ assert.equal(unpublished.includedGenerationCredits,null);
+ assert.equal(unpublished.included_generation_credits,null);
+ assert.equal(unpublished.generationCreditAllowancePublished,false);
+ assert.throws(()=>build([plan({included_generation_credits:0,generation_credit_allowance_published:true})]),{code:"SUBSCRIPTION_CATALOGUE_INVALID"});
+});
