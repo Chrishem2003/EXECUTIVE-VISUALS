@@ -45,6 +45,7 @@ declare
   snapshot_currency text;
   grant_key text;
   grant_evidence jsonb;
+  invoice_number text;
 begin
   if p_payment_id is null
      or nullif(btrim(p_provider_transaction_id),'') is null
@@ -151,10 +152,47 @@ begin
     raise exception 'CREDIT_PACK_GRANT_FAILED';
   end if;
 
+  invoice_number:='EVS-'||to_char(p_verified_at at time zone 'UTC','YYYYMMDD')||'-'||
+    upper(substr(replace(payment_row.id::text,'-',''),1,8));
+  insert into executive_visuals.billing_invoices(
+    owner_id,payment_transaction_id,invoice_number,currency,total_minor,issued_at,snapshot
+  ) values(
+    payment_row.owner_id,payment_row.id,invoice_number,payment_row.currency,payment_row.amount_minor,
+    p_verified_at,jsonb_build_object(
+      'kind','credit_pack_purchase',
+      'productCode',payment_row.metadata->>'product_code',
+      'productName',product_row.name,
+      'productVersion',product_version,
+      'creditUnits',credit_units,
+      'amountMinor',payment_row.amount_minor,
+      'currency',payment_row.currency,
+      'paymentReference',payment_row.tx_ref,
+      'provider','flutterwave',
+      'providerTransactionId',p_provider_transaction_id
+    )
+  ) on conflict(payment_transaction_id) do nothing;
+  select i.invoice_number into invoice_number
+    from executive_visuals.billing_invoices i
+   where i.payment_transaction_id=payment_row.id;
+
+  insert into executive_visuals.billing_notification_outbox(
+    owner_id,notification_type,dedupe_key,payload
+  ) values(
+    payment_row.owner_id,'credit_pack_purchase',
+    'credit-pack-purchase:'||payment_row.id::text,
+    jsonb_build_object(
+      'title','Generation credits added',
+      'message',credit_units::text||' AI-generation credits have been added to your wallet.',
+      'paymentId',payment_row.id,
+      'invoiceNumber',invoice_number
+    )
+  ) on conflict(dedupe_key) do nothing;
+
   update executive_visuals.payment_transactions
      set metadata=metadata||jsonb_build_object(
        'credit_pack_grant_ledger_id',grant_result.ledger_id,
-       'credit_pack_balance_after',grant_result.balance
+       'credit_pack_balance_after',grant_result.balance,
+       'credit_pack_invoice_number',invoice_number
      )
    where id=payment_row.id;
 
@@ -164,6 +202,7 @@ begin
     'creditUnits',credit_units,
     'ledgerId',grant_result.ledger_id,
     'balance',grant_result.balance,
+    'invoiceNumber',invoice_number,
     'idempotentReplay',false
   );
 end;
