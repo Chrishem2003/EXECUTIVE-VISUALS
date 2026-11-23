@@ -25,8 +25,8 @@ test("blocks pending, rejected, revoked, wrong-currency and wrong-purpose eviden
   assert.equal(result.status,"blocked_fx_evidence");
  }
 });
-test("blocks FX records outside the reporting month",()=>{
- const result=convertProviderCostWithApprovedFx({amountMinor:100,sourceCurrency:"USD",targetCurrency:"UGX",periodMonth:"2026-11-01",fxEvidence:{...approved,effective_date:"2026-12-01"}});
+test("blocks FX evidence assigned to a different invoice reporting period",()=>{
+ const result=convertProviderCostWithApprovedFx({amountMinor:100,sourceCurrency:"USD",targetCurrency:"UGX",periodMonth:"2026-11-01",fxEvidence:{...approved,period_month:"2026-12-01"}});
  assert.equal(result.status,"blocked_fx_evidence");
 });
 test("selects the latest approved settlement evidence for the exact pair and period",()=>{
