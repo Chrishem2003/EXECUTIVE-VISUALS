@@ -47,6 +47,10 @@ test("refund attribution SQL uses confirmed refunds only and fails closed on inc
   assert.match(migration,/unresolved_allocations=0/);
   assert.match(migration,/unresolved_source_count=0/);
   assert.match(migration,/currency_count=1/);
+  assert.match(migration,/p\.currency payment_currency/);
+  assert.match(migration,/c\.payment_currency=c\.currency/);
+  assert.match(migration,/unmatchedConfirmedRefunds/);
+  assert.match(migration,/unmatchedPendingRefunds/);
   assert.match(migration,/rows between unbounded preceding and current row/i);
   assert.match(migration,/revoke all on function executive_visuals\.financial_job_refund_attribution_report/);
   assert.match(migration,/grant execute on function executive_visuals\.financial_job_refund_attribution_report[\s\S]*to service_role/);
