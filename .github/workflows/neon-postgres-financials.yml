@@ -169,6 +169,7 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0007_video_approval_bridge.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0008_retryable_submission_recovery.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0009_safe_queued_video_cancellation.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0010_verified_credit_release_guard.sql
       - name: Verify PostgreSQL reservation, settlement, verified release and lease-fenced safe retry
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-financials-postgres.sql
       - name: Verify queued video cancellation and atomic verified-no-submission credit release
