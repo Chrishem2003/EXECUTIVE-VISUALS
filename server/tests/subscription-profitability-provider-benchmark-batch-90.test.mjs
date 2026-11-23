@@ -22,7 +22,9 @@ const source="https://dev.runway.com/learn/ai-video-api-pricing";
 const scenarios=[
   {provider:"runway",model:"gen4.5",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:1.20,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
   {provider:"runway",model:"kling_4",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:2.35,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
-  {provider:"runway",model:"seedance-2.5",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:6.80,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false}
+  {provider:"runway",model:"seedance-2.5",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:6.80,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
+  {provider:"runway",model:"seedance-2.5",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:10.20,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
+  {provider:"runway",model:"kling_4",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:3.76,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false}
 ];
 const economics=()=>calculateSubscriptionPlanCreditEconomics({
   plans,scenarios,quoteCustomerCredits:quote,creditsPerUsd:100,creditBudgetShareBps:7000
@@ -30,7 +32,7 @@ const economics=()=>calculateSubscriptionPlanCreditEconomics({
 
 test("November 2026 official provider-price benchmark remains forecast-only and non-billable",()=>{
   const result=economics();
-  assert.deepEqual(result.scenarios.map(item=>item.providerCostUsd),[1.2,2.35,6.8]);
+  assert.deepEqual(result.scenarios.map(item=>item.providerCostUsd),[1.2,2.35,6.8,10.2,3.76]);
   assert.ok(result.scenarios.every(item=>item.estimateType==="forecast_not_actual"&&item.billable===false&&item.settlementEligible===false));
   assert.ok(result.scenarios.every(item=>item.pricingSource===source&&item.pricingDate==="2026-11-22"));
   assert.equal(result.calculationType,"subscription_plan_credit_scenario_not_activation");
@@ -75,6 +77,23 @@ test("a balanced one-of-each monthly workload exposes plan shortfall and contrib
   assert.equal(studio.marginAssessment,"meets_target_before_other_costs");
   assert.equal(agency.marginAssessment,"meets_target_before_other_costs");
   assert.equal(mixed.calculationType,"mixed_monthly_workload_scenario_not_forecast_or_activation");
+});
+
+test("video-reference inputs are priced separately from text-to-video output-only estimates",()=>{
+  const result=economics();
+  const seedanceText=result.scenarios.find(row=>row.model==="seedance-2.5"&&row.operation==="text-to-video");
+  const seedanceEdit=result.scenarios.find(row=>row.model==="seedance-2.5"&&row.operation==="video-to-video");
+  const klingText=result.scenarios.find(row=>row.model==="kling_4"&&row.operation==="text-to-video");
+  const klingEdit=result.scenarios.find(row=>row.model==="kling_4"&&row.operation==="video-to-video");
+  // 10s Seedance 1080p output ($0.68/s) + 10s video reference ($0.34/s).
+  assert.equal(seedanceText.providerCostUsd,6.8);
+  assert.equal(seedanceEdit.providerCostUsd,10.2);
+  // Kling 4.0 1080p output ($0.235/s) + 10s input video ($0.141/s).
+  assert.equal(klingText.providerCostUsd,2.35);
+  assert.equal(klingEdit.providerCostUsd,3.76);
+  assert.ok(seedanceEdit.customerCreditsPerGeneration>seedanceText.customerCreditsPerGeneration);
+  assert.ok(klingEdit.customerCreditsPerGeneration>klingText.customerCreditsPerGeneration);
+  assert.ok([seedanceEdit,klingEdit].every(row=>row.billable===false&&row.settlementEligible===false));
 });
 
 test("the benchmark never converts scenario output into a published price, allowance or actual invoice cost",()=>{
