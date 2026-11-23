@@ -208,7 +208,6 @@ export function createProviderSubscriptionBilling({
         adjustmentTaxRates:event.adjustmentTaxRates===null||event.adjustmentTaxRates===undefined?null:Array.isArray(event.adjustmentTaxRates)?event.adjustmentTaxRates:[],
         adjustmentItems:Array.isArray(event.adjustmentItems)?event.adjustmentItems:[]};
       const payloadHash=hash(JSON.stringify(payload));
-      payload.payloadHash=payloadHash;
       const inserted=await dbRequest("payment_webhook_events",{
         method:"POST",body:{provider,event_key:eventKey,event_type:String(event.eventType||"unknown"),
           payload_hash:payloadHash,signature_verified:true,processing_status:"received",payload},
@@ -340,7 +339,7 @@ export function createProviderSubscriptionBilling({
           });
         }
         if(provider==="paddle"&&event.providerSubscriptionId){
-          const deferred=await dbRequest("payment_webhook_events?select=event_key,event_type,payload&provider=eq.paddle&processing_status=eq.needs_review&limit=100");
+          const deferred=await dbRequest("payment_webhook_events?select=event_key,event_type,payload,payload_hash&provider=eq.paddle&processing_status=eq.needs_review&limit=100");
           const deferredEvents=(Array.isArray(deferred.data)?deferred.data:[])
             .filter(row=>row.payload?.providerSubscriptionId===event.providerSubscriptionId&&String(row.event_type||"").startsWith("subscription."))
             .sort((a,b)=>String(a.payload?.occurredAt||"").localeCompare(String(b.payload?.occurredAt||"")));
@@ -350,7 +349,7 @@ export function createProviderSubscriptionBilling({
               p_provider_subscription_id:event.providerSubscriptionId,p_event_type:row.event_type,
               p_period_start:prior.periodStart||null,p_period_end:prior.periodEnd||null,
               p_cancel_at_period_end:prior.cancelAtPeriodEnd===true,
-              p_event_data:{event_id:prior.eventId,event_type:row.event_type,status:prior.status,occurred_at:prior.occurredAt||null,payload_sha256:prior.payloadHash||null}
+              p_event_data:{event_id:prior.eventId,event_type:row.event_type,status:prior.status,occurred_at:prior.occurredAt||null,payload_sha256:row.payload_hash||null}
             });
             if(lifecycle?.applied)await dbRequest("payment_webhook_events?provider=eq.paddle&event_key=eq."+row.event_key,{
               method:"PATCH",body:{processing_status:"processed",processed_at:new Date(now()).toISOString(),error_message:null},prefer:"return=minimal"
