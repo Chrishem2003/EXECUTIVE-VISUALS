@@ -1680,7 +1680,7 @@ export function createFinancialIntelligenceApi({
           !/^\d{4}-\d{2}-01$/.test(month)||!Number.isFinite(Date.parse(month+"T00:00:00Z"))||
           new Date(month+"T00:00:00Z").toISOString().slice(0,10)!==month)
           return error(400,"FINANCIAL_FX_FILTER_INVALID","Provide distinct ISO currencies and a valid reporting month.");
-        const rows=await dbRequest("financial_fx_rate_evidence_current?select=evidence_id,source_currency,target_currency,rate_scaled,rate_scale,effective_date,source_type,purpose,source_reference,evidence_sha256,evidence_note,recorded_by,evidence_created_at,decision,decision_reason,decided_by,decision_created_at&source_currency=eq."+sourceCurrency+"&target_currency=eq."+targetCurrency+"&period_month=eq."+month+"&order=effective_date.desc,decision_created_at.desc&limit=100");
+        const rows=await dbRequest("financial_fx_rate_evidence_current?select=evidence_id,source_currency,target_currency,period_month,rate_scaled,rate_scale,effective_date,source_type,purpose,source_reference,evidence_sha256,evidence_note,recorded_by,evidence_created_at,decision,decision_reason,decided_by,decision_created_at&source_currency=eq."+sourceCurrency+"&target_currency=eq."+targetCurrency+"&period_month=eq."+month+"&order=effective_date.desc,decision_created_at.desc&limit=100");
         return response(200,{evidence:Array.isArray(rows.data)?rows.data:[],source:"append-only evidence and maker-checker decision records"});
       }
       if(path==="/api/admin/finance/fx-rate-evidence"&&method==="POST"){
