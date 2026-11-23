@@ -318,12 +318,21 @@ test("Uganda mobile-money checkout uses server-priced active catalogue and idemp
   const calls=[];
   const service=api(async(url,options={})=>{
     const target=String(url);calls.push({target,options});
-    if(target==="https://project.supabase.co/rest/v1/billing_products?select=product_code,name,description,amount_minor,currency,credit_units&product_code=eq.creator_credits&active=eq.true&limit=1")
-      return json([{product_code:"creator_credits",name:"Creator credits",description:"Test pack",amount_minor:5000,currency:"UGX",credit_units:100}]);
+    if(target==="https://project.supabase.co/rest/v1/billing_products?select=product_code,name,description,product_type,version,amount_minor,currency,credit_units&product_code=eq.creator_credits&active=eq.true&limit=1")
+      return json([{product_code:"creator_credits",name:"Creator credits",description:"Test pack",product_type:"credit_pack",version:2,amount_minor:5000,currency:"UGX",credit_units:100}]);
     if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
       return json([]);
-    if(target.endsWith("/payment_transactions")&&options.method==="POST")
-      return json([{id:paymentId,metadata:{product_code:"creator_credits",credit_units:100,idempotency_key:"checkout-key-0001",mobile_money_network:"MTN"}}],201);
+    if(target.includes("payment_transactions?select=id,tx_ref,status,metadata")&&target.includes("status=eq.pending"))
+      return json([]);
+    if(target.endsWith("/payment_transactions")&&options.method==="POST"){
+      const payment=JSON.parse(options.body);
+      assert.equal(payment.metadata.product_type,"credit_pack");
+      assert.equal(payment.metadata.product_version,2);
+      assert.equal(payment.metadata.product_amount_minor,5000);
+      assert.equal(payment.metadata.product_currency,"UGX");
+      assert.equal(payment.metadata.credit_units,100);
+      return json([{id:paymentId,metadata:payment.metadata}],201);
+    }
     if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")
       return json({access_token:"provider-test-token",expires_in:600});
     if(target==="https://developersandbox-api.flutterwave.com/orchestration/direct-charges"&&options.method==="POST")
@@ -350,6 +359,21 @@ test("Uganda mobile-money checkout uses server-priced active catalogue and idemp
 });
 
 
+test("credit checkout rejects non-credit-pack products before creating a payment",async()=>{
+  const service=api(async(url,options={})=>{
+    const target=String(url);
+    if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))return json([]);
+    if(target.includes("payment_transactions?select=id,tx_ref,status,metadata")&&target.includes("status=eq.pending"))return json([]);
+    if(target.includes("billing_products?select=product_code,name,description,product_type,version,amount_minor,currency,credit_units"))
+      return json([{product_code:"studio_service",name:"Studio service",description:"Not a credit pack",product_type:"service",version:1,amount_minor:5000,currency:"UGX",credit_units:100}]);
+    throw new Error("Non-credit-pack products must not create payments or call Flutterwave: "+target);
+  });
+  const result=await service.handle({method:"POST",path:"/api/billing/checkout",ownerId:owner,idempotencyKey:"checkout-non-credit-01",
+    body:{productCode:"studio_service",network:"MTN",email:"buyer@example.com",firstName:"Test",lastName:"Buyer",phoneNumber:"0771234567"}});
+  assert.equal(result.status,503);
+  assert.equal(result.body.error.code,"BILLING_PRODUCT_INVALID");
+});
+
 test("credit checkout idempotency key cannot replay for a different customer email",async()=>{
  let providerCalled=false;
  const service=api(async url=>{
@@ -368,6 +392,39 @@ test("credit checkout idempotency key cannot replay for a different customer ema
  assert.equal(providerCalled,false);
 });
 
+test("pending credit pack payment blocks a second charge for the same product",async()=>{
+ let providerCalled=false;
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
+   return json([]);
+  if(target.includes("payment_transactions?select=id,tx_ref,status,metadata")&&target.includes("status=eq.pending"))
+   return json([{id:paymentId,tx_ref:"EVS-pending-credit-pack",status:"pending",metadata:{product_type:"credit_pack",product_code:"creator_credits"}}]);
+  if(target.includes("flutterwave"))providerCalled=true;
+  throw new Error("A pending payment must block new product lookup/charge: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/billing/checkout",ownerId:owner,idempotencyKey:"credit-pack-second-key",
+  body:{productCode:"creator_credits",network:"MTN",email:"buyer@example.com",firstName:"Test",lastName:"Buyer",phoneNumber:"0771234567"}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"CREDIT_PACK_PAYMENT_PENDING");
+ assert.equal(result.body.payment.reference,"EVS-pending-credit-pack");
+ assert.equal(providerCalled,false);
+});
+
+test("legacy credit checkout replay is blocked until its generation-credit settlement is reconciled",async()=>{
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
+   return json([{id:paymentId,customer_email:"buyer@example.com",tx_ref:"EVSlegacy",status:"pending",
+    metadata:{product_code:"creator_credits",mobile_money_network:"MTN",credit_units:100,idempotency_key:"legacy-key-001"}}]);
+  throw new Error("Legacy replay must not start another provider charge: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/billing/checkout",ownerId:owner,idempotencyKey:"legacy-key-001",
+  body:{productCode:"creator_credits",network:"MTN",email:"buyer@example.com",firstName:"Test",lastName:"Buyer",phoneNumber:"0771234567"}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"LEGACY_CREDIT_CHECKOUT_REQUIRES_RECONCILIATION");
+});
+
 test("payment webhook verifies Flutterwave charge and atomically fulfils once",async()=>{
   const rawBody=Buffer.from(JSON.stringify({type:"charge.completed",data:{id:"chg_paid",status:"succeeded"}}));
   const signature=createHmac("sha256",secret).update(rawBody).digest("base64");
@@ -380,14 +437,15 @@ test("payment webhook verifies Flutterwave charge and atomically fulfils once",a
     if(target==="https://developersandbox-api.flutterwave.com/charges/chg_paid")
       return json({data:{id:"chg_paid",reference:"EV-TEST-REFERENCE",amount:5000,currency:"UGX",status:"succeeded",payment_method_details:{type:"mobile_money"}}});
     if(target.includes("payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref"))
-      return json([{id:paymentId,owner_id:owner,provider_transaction_id:"chg_paid",tx_ref:"EV-TEST-REFERENCE",amount_minor:5000,currency:"UGX",status:"pending",metadata:{product_code:"creator_credits",credit_units:100},description:"Creator credits"}]);
-    if(target.includes("/rpc/finalize_payment_purchase")){grants++;return json({status:"successful",credit_units:100,invoice_number:"EV-20261110-TEST"});}
+      return json([{id:paymentId,owner_id:owner,provider_transaction_id:"chg_paid",tx_ref:"EV-TEST-REFERENCE",amount_minor:5000,currency:"UGX",status:"pending",metadata:{product_type:"credit_pack",product_code:"creator_credits",product_version:2,product_amount_minor:5000,product_currency:"UGX",credit_units:100,idempotency_key:"checkout-key-0001"},description:"Creator credits"}]);
+    if(target.includes("/rpc/finalize_credit_pack_purchase")){grants++;return json({status:"successful",creditUnits:100,ledgerId:"44444444-4444-4444-8444-444444444444",idempotentReplay:false});}
     if(target.includes("/payment_webhook_events?provider=eq.flutterwave"))return new Response(null,{status:204});
     throw new Error("Unexpected request: "+target);
   });
   const result=await service.handleWebhook({rawBody,signatureV4:signature});
   assert.equal(result.status,200);
   assert.equal(result.body.result.status,"successful");
+  assert.equal(result.body.result.creditPackPurchased,true);
   assert.equal(grants,1);
 });
 
