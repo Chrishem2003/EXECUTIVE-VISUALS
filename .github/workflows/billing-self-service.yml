@@ -179,6 +179,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-integration.sql
       - name: Apply Paddle and Pesapal provider subscription migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261121120000_paddle_pesapal_provider_billing.sql
+      - name: Apply Batch 106 Paddle lifecycle event idempotency
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261123200000_paddle_lifecycle_event_idempotency_batch_106.sql
       - name: Apply Batch 70 verified job cost coverage migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122170000_verified_job_cost_coverage_batch_70.sql
       - name: Verify Batch 70 invoice-backed job costs, settled credits and revenue gate
@@ -195,6 +197,8 @@ jobs:
         run: npm run verify:verified-credit-revenue-allocation
       - name: Verify Paddle and Pesapal reservation, activation, renewal and lifecycle settlement
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/paddle-pesapal-subscription-postgres-integration.sql
+      - name: Test Batch 106 verified Paddle lifecycle event identity propagation
+        run: node --test server/tests/provider-subscription-billing.test.mjs server/tests/unified-subscription-billing.test.mjs
       - name: Verify resource economics and shadow model routing
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/ai-resource-economics-postgres-integration.sql
       - name: Verify Batch 25 invoice-to-ledger reconciliation and profitability trends

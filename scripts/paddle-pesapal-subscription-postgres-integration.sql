@@ -163,13 +163,39 @@ begin
 
   result:=executive_visuals.apply_paddle_subscription_lifecycle(
     paddle_subscription_key,'subscription.canceled',null,null,false,
-    jsonb_build_object('source','postgres-integration','occurred_at',now()::text)
+    jsonb_build_object('source','postgres-integration','event_id','evt-paddle-cancel-0001','payload_sha256',repeat('a',64),'occurred_at',now()::text)
   );
   if result->>'status'<>'cancelled' then raise exception 'Paddle cancellation lifecycle event was not applied'; end if;
 
+  replay:=executive_visuals.apply_paddle_subscription_lifecycle(
+    paddle_subscription_key,'subscription.canceled',null,null,false,
+    jsonb_build_object('source','postgres-integration','event_id','evt-paddle-cancel-0001',
+      'payload_sha256',repeat('a',64),'occurred_at',now()::text)
+  );
+  if replay->>'duplicate'<>'true' or replay->>'idempotentReplay'<>'true' then
+    raise exception 'Duplicate Paddle cancellation event was not idempotent: %',replay;
+  end if;
+  select count(*) into grant_count from executive_visuals.subscription_events
+   where subscription_id=paddle_subscription_id and event_data->>'event_id'='evt-paddle-cancel-0001';
+  if grant_count<>1 then raise exception 'Duplicate Paddle cancellation appended more than one subscription event'; end if;
+  select count(*) into grant_count from executive_visuals.provider_subscription_lifecycle_events
+   where provider='paddle' and event_id='evt-paddle-cancel-0001';
+  if grant_count<>1 then raise exception 'Paddle lifecycle event identity ledger is not unique'; end if;
+
+  begin
+    perform executive_visuals.apply_paddle_subscription_lifecycle(
+      paddle_subscription_key,'subscription.canceled',null,null,false,
+      jsonb_build_object('source','postgres-integration','event_id','evt-paddle-cancel-0001',
+        'payload_sha256',repeat('d',64),'occurred_at',now()::text)
+    );
+    raise exception 'Paddle event ID replay with different payload unexpectedly succeeded';
+  exception when sqlstate '23505' then
+    null;
+  end;
+
   result:=executive_visuals.apply_paddle_subscription_lifecycle(
     paddle_subscription_key,'subscription.resumed',null,null,false,
-    jsonb_build_object('source','postgres-integration','occurred_at',(now()-interval '1 day')::text)
+    jsonb_build_object('source','postgres-integration','event_id','evt-paddle-stale-0001','payload_sha256',repeat('b',64),'occurred_at',(now()-interval '1 day')::text)
   );
   if result->>'stale'<>'true' or result->>'status'<>'cancelled' then
     raise exception 'Out-of-order Paddle resume event incorrectly reverted a newer cancellation';
@@ -182,7 +208,7 @@ begin
 
   result:=executive_visuals.apply_paddle_subscription_lifecycle(
     paddle_subscription_key,'subscription.resumed',null,null,false,
-    '{"source":"postgres-integration"}'::jsonb
+    '{"source":"postgres-integration","event_id":"evt-paddle-no-time-0001","payload_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}'::jsonb
   );
   if result->>'needsReview'<>'true' or result->>'reason'<>'event_timestamp_missing' then
     raise exception 'Paddle lifecycle event without occurred_at was not quarantined for review';

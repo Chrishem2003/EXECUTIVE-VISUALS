@@ -199,6 +199,41 @@ test("verified Paddle transaction webhook settles only the matching reserved led
   assert.ok(calls.some(x=>typeof x[1]==="string"&&x[1].endsWith("/rpc/finalize_subscription_purchase_for_provider")));
 });
 
+test("Paddle lifecycle finalizer receives stable event ID and the stored webhook payload digest",async()=>{
+  const calls=[];
+  let lifecycleBody=null;
+  const providers={
+    paddle:{createCheckout:async()=>({}),verifyWebhook:()=>({
+      provider:"paddle",eventId:"evt-lifecycle-106",eventType:"subscription.canceled",
+      providerSubscriptionId:"sub_01abcdefghijklmnopqrstuvwxyz",providerCustomerId:"ctm_01abcdefghijklmnopqrstuvwx",
+      status:"canceled",occurredAt:"2026-11-23T09:00:00.000Z"
+    })},
+    pesapal:{createCheckout:async()=>({}),handleNotification:async()=>({})}
+  };
+  const fetchImpl=async(url,options)=>{
+    const target=new URL(url);
+    const body=options.body?JSON.parse(options.body):null;
+    calls.push({method:options.method,path:target.pathname,body});
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
+    if(target.pathname.endsWith("/rpc/apply_paddle_subscription_lifecycle")){
+      lifecycleBody=body;
+      return json({applied:true,status:"cancelled",eventId:"evt-lifecycle-106"});
+    }
+    throw new Error("unexpected database request "+target.pathname);
+  };
+  const billing=createProviderSubscriptionBilling({supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+    paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,
+    pesapalNotificationId:env.PESAPAL_IPN_ID,providers,fetchImpl});
+  const result=await billing.handlePaddleWebhook({rawBody:Buffer.from("{}"),signature:"signed"});
+  assert.equal(result.status,200);
+  assert.equal(result.body.applied,true);
+  assert.equal(lifecycleBody.p_event_data.event_id,"evt-lifecycle-106");
+  assert.match(lifecycleBody.p_event_data.payload_sha256,/^[a-f0-9]{64}$/);
+  const stored=calls.find(call=>call.method==="POST").body;
+  assert.equal(stored.payload_hash,lifecycleBody.p_event_data.payload_sha256);
+});
+
 test("verified Pesapal renewal IPN extends the existing subscription through the renewal finalizer",async()=>{
   const calls=[];
   const renewalPayment={...payment,provider:"pesapal",provider_transaction_id:"track-renewal",
