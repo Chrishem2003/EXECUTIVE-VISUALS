@@ -61,18 +61,6 @@ begin
    for update;
   if payment_row.id is null then raise exception 'CREDIT_PACK_PAYMENT_NOT_FOUND'; end if;
 
-  if payment_row.status='successful'
-     and coalesce((payment_row.metadata->>'credit_pack_applied')::boolean,false) then
-    return jsonb_build_object(
-      'paymentId',payment_row.id,'status','successful',
-      'creditUnits',coalesce((payment_row.metadata->>'credit_units')::bigint,0),
-      'idempotentReplay',true
-    );
-  end if;
-  if payment_row.status<>'pending' then
-    raise exception 'CREDIT_PACK_PAYMENT_NOT_PENDING';
-  end if;
-
   if payment_row.currency<>'UGX'
      or upper(coalesce(p_provider_payload->>'currency',''))<>payment_row.currency
      or coalesce(p_provider_payload->>'reference','')<>payment_row.tx_ref
@@ -101,6 +89,18 @@ begin
      or snapshot_amount<>payment_row.amount_minor
      or snapshot_currency<>payment_row.currency then
     raise exception 'CREDIT_PACK_PRODUCT_SNAPSHOT_INVALID';
+  end if;
+
+  if payment_row.status='successful'
+     and coalesce((payment_row.metadata->>'credit_pack_applied')::boolean,false) then
+    return jsonb_build_object(
+      'paymentId',payment_row.id,'status','successful',
+      'creditUnits',credit_units,
+      'idempotentReplay',true
+    );
+  end if;
+  if payment_row.status<>'pending' then
+    raise exception 'CREDIT_PACK_PAYMENT_NOT_PENDING';
   end if;
 
   select * into product_row
