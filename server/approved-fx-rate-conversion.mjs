@@ -2,14 +2,14 @@ const DECIMALS={UGX:0,USD:2,EUR:2,GBP:2,KES:2,TZS:2,RWF:0,JPY:0};
 const SCALE=100000000n;
 const nextMonth=month=>{const [year,mon]=String(month).split('-').map(Number);return new Date(Date.UTC(year,mon,1)).toISOString().slice(0,10);};
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
-const isDate=value=>/^\\d{4}-\\d{2}-\\d{2}$/.test(String(value||''))&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
+const isDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(String(value||''))&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
 
 /** Convert a minor-unit amount only with an approved, same-period settlement FX record. */
 export function convertProviderCostWithApprovedFx({amountMinor,sourceCurrency,targetCurrency,periodMonth,fxEvidence}={}){
  if(!Number.isSafeInteger(amountMinor)||amountMinor<0||amountMinor>9000000000000)fail('FX_CONVERSION_AMOUNT_INVALID','Provider cost must be a bounded non-negative minor-unit integer.');
  if(!Object.hasOwn(DECIMALS,sourceCurrency)||!Object.hasOwn(DECIMALS,targetCurrency)||sourceCurrency===targetCurrency)
   fail('FX_CONVERSION_CURRENCY_UNSUPPORTED','Currency pair is unsupported or identical.');
- if(!/^\\d{4}-\\d{2}-01$/.test(String(periodMonth||''))||!isDate(periodMonth))fail('FX_CONVERSION_PERIOD_INVALID','A valid reporting month is required.');
+ if(!/^\d{4}-\d{2}-01$/.test(String(periodMonth||''))||!isDate(periodMonth))fail('FX_CONVERSION_PERIOD_INVALID','A valid reporting month is required.');
  const blocked={status:'blocked_fx_evidence',amountMinor:null,sourceCurrency,targetCurrency,periodMonth,fxEvidenceId:null,rateScaled:null,reason:'No approved settlement FX evidence is available for this currency pair and reporting month.'};
  if(!fxEvidence||typeof fxEvidence!=='object'||Array.isArray(fxEvidence))return Object.freeze(blocked);
  const e=fxEvidence;
