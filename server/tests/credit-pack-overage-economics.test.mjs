@@ -20,7 +20,9 @@ test("calculates top-up contribution only from verified same-currency invoice co
  assert.equal(row.contributionMarginBps,5200);
  assert.equal(row.marginAssessment,"below_target_before_other_costs");
  assert.equal(row.checkoutEligible,false);
- assert.equal(row.customerChargeCreated,false);\n assert.equal(row.checkoutEligible,false);\n assert.equal(row.checkoutEnabled,false);
+ assert.equal(row.customerChargeCreated,false);
+ assert.equal(row.checkoutEligible,false);
+ assert.equal(row.checkoutEnabled,false);
 });
 
 test("blocks UGX credit packs against USD actual-cost evidence without inventing FX",()=>{
@@ -43,7 +45,8 @@ test("blocks cost calculations until invoice evidence is complete and verified",
 test("keeps inactive draft products scenario-only and does not enable checkout",()=>{
  const result=calculateCreditPackOverageEconomics({products:[product({active:false})],costEvidence:evidence,pricingPolicy:policy});
  assert.equal(result.products[0].active,false);
- assert.equal(result.products[0].checkoutEligible,false);\n assert.equal(result.products[0].checkoutEnabled,false);
+ assert.equal(result.products[0].checkoutEligible,false);
+ assert.equal(result.products[0].checkoutEnabled,false);
  assert.equal(result.products[0].customerChargeCreated,false);
 });
 
