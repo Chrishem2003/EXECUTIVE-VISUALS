@@ -19,6 +19,7 @@ const plans=[
   {plan_code:"enterprise",name:"Enterprise",amount_minor:0,currency:"USD",billing_interval:"monthly",status:"draft",is_public:false,included_credits:0}
 ];
 const source="https://dev.runway.com/learn/ai-video-api-pricing";
+// All entries are date-stamped provider forecasts; none can settle customer billing.
 const scenarios=[
   {provider:"runway",model:"gen4.5",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:1.20,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
   {provider:"runway",model:"kling_4",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:2.35,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
