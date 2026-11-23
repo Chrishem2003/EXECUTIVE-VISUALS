@@ -1,5 +1,6 @@
 const DECIMALS={UGX:0,USD:2,EUR:2,GBP:2,KES:2,TZS:2,RWF:0,JPY:0};
 const SCALE=100000000n;
+const nextMonth=month=>{const [year,mon]=String(month).split('-').map(Number);return new Date(Date.UTC(year,mon,1)).toISOString().slice(0,10);};
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 const isDate=value=>/^\\d{4}-\\d{2}-\\d{2}$/.test(String(value||''))&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
 
@@ -14,7 +15,7 @@ export function convertProviderCostWithApprovedFx({amountMinor,sourceCurrency,ta
  const e=fxEvidence;
  if(e.decision!=='approved'||e.source_currency!==sourceCurrency||e.target_currency!==targetCurrency||
     e.purpose!=='settlement_cost'||!['processor_settlement','bank_statement'].includes(e.source_type)||
-    !isDate(e.effective_date)||e.effective_date<periodMonth||e.effective_date>=new Date(Date.parse(periodMonth+'T00:00:00Z')+32*86400000).toISOString().slice(0,10)||
+    !isDate(e.effective_date)||e.effective_date<periodMonth||e.effective_date>=nextMonth(periodMonth)||
     !Number.isSafeInteger(e.rate_scaled)||e.rate_scaled<=0||e.rate_scale!==100000000||
     !e.source_reference||String(e.source_reference).trim().length<3||!e.evidence_id)
   return Object.freeze({...blocked,reason:'FX evidence is unapproved, not settlement-grade, mismatched or outside the reporting month.'});
@@ -31,7 +32,7 @@ export function selectApprovedSettlementFxEvidence(rows=[],{sourceCurrency,targe
  if(!Array.isArray(rows)||rows.length>1000)fail('FX_EVIDENCE_INPUT_INVALID','FX evidence rows must be a bounded array.');
  const eligible=rows.filter(row=>row&&row.decision==='approved'&&row.source_currency===sourceCurrency&&row.target_currency===targetCurrency&&
   row.purpose==='settlement_cost'&&['processor_settlement','bank_statement'].includes(row.source_type)&&row.effective_date>=periodMonth&&
-  row.effective_date<new Date(Date.parse(periodMonth+'T00:00:00Z')+32*86400000).toISOString().slice(0,10));
+  row.effective_date<nextMonth(periodMonth));
  eligible.sort((a,b)=>String(b.effective_date).localeCompare(String(a.effective_date))||String(b.decision_created_at||'').localeCompare(String(a.decision_created_at||'')));
  return eligible[0]||null;
 }
