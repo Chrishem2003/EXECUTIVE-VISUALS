@@ -36,12 +36,13 @@ export function calculateSubscriptionPlanCreditEconomics({
   if(status!=="draft"||plan.is_public===true||plan.isPublic===true)fail("SUBSCRIPTION_ECONOMICS_PLAN_NOT_DRAFT","Only private draft plan hypotheses can be evaluated.");
   if(currency!=="USD"||billingInterval!=="monthly")fail("SUBSCRIPTION_ECONOMICS_PLAN_UNSUPPORTED","Only monthly USD draft plans can be evaluated in this version.");
   const amountMinor=safeInteger(plan.amount_minor??plan.amountMinor,"plan amount",{min:0,max:100_000_000});
-  const includedCredits=safeInteger(plan.included_credits??plan.includedCredits??0,"persisted included credits",{min:0,max:100_000_000});
-  if(includedCredits!==0)fail("SUBSCRIPTION_ECONOMICS_PLAN_ALREADY_CONFIGURED","A plan with configured credits must not be treated as an unconfigured pricing hypothesis.");
+  const includedCredits=safeInteger(plan.included_credits??plan.includedCredits??0,"persisted legacy credits",{min:0,max:100_000_000});
+  const includedGenerationCredits=safeInteger(plan.included_generation_credits??plan.includedGenerationCredits??0,"persisted generation credits",{min:0,max:100_000_000});
+  if(includedCredits!==0||includedGenerationCredits!==0)fail("SUBSCRIPTION_ECONOMICS_PLAN_ALREADY_CONFIGURED","A plan with configured legacy or generation credits must not be treated as an unconfigured pricing hypothesis.");
   const numerator=BigInt(amountMinor)*BigInt(rate)*BigInt(share);
   const allowance=Number(numerator/1_000_000n);
   if(!Number.isSafeInteger(allowance)||allowance>100_000_000)fail("SUBSCRIPTION_ECONOMICS_CREDIT_OVERFLOW","Proposed plan credits exceed safe bounds.");
-  return Object.freeze({planCode,name,currency,billingInterval,status,amountMinor,proposedMonthlyCreditAllowance:allowance});
+  return Object.freeze({planCode,name,currency,billingInterval,status,amountMinor,proposedMonthlyCreditAllowance:allowance,proposedMonthlyGenerationCreditAllowance:allowance});
  });
  const pricedScenarios=scenarios.map(scenario=>{
   const provider=text(scenario.provider,"provider",80).toLowerCase();

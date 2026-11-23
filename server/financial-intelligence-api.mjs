@@ -345,7 +345,7 @@ export function createFinancialIntelligenceApi({
       }
       if(path==="/api/billing/plans"&&method==="GET"){
         const [planRows,priceRows]=await Promise.all([
-          dbRequest("subscription_plans?select=id,plan_code,name,description,billing_interval,amount_minor,currency,included_credits,entitlements,version,status,is_public&status=eq.active&is_public=eq.true&order=amount_minor.asc"),
+          dbRequest("subscription_plans?select=id,plan_code,name,description,billing_interval,amount_minor,currency,included_credits,included_generation_credits,generation_credit_allowance_published,entitlements,version,status,is_public&status=eq.active&is_public=eq.true&order=amount_minor.asc"),
           dbRequest("subscription_plan_provider_prices?select=plan_id,provider,provider_price_id,amount_minor,currency,active&active=eq.true")
         ]);
         const plans=buildPublicSubscriptionCatalogue({
@@ -355,7 +355,7 @@ export function createFinancialIntelligenceApi({
         return response(200,{plans,catalogueVersion:1,checkoutEnabled:plans.some(plan=>plan.checkoutProviders.length>0)});
       }
       if(path==="/api/billing/subscription"&&method==="GET"){
-        const result=await dbRequest("customer_subscriptions?select=id,provider,plan_code,plan_version,status,billing_interval,amount_minor,currency,included_credits,entitlements_snapshot,current_period_start,current_period_end,grace_until,cancel_at_period_end,cancelled_at,scheduled_plan_code,scheduled_plan_version,scheduled_billing_interval,scheduled_amount_minor,scheduled_currency,scheduled_plan_at,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(pending,trialing,active,past_due)&order=created_at.desc&limit=1");
+        const result=await dbRequest("customer_subscriptions?select=id,provider,plan_code,plan_version,status,billing_interval,amount_minor,currency,included_credits,included_generation_credits,scheduled_included_generation_credits,entitlements_snapshot,current_period_start,current_period_end,grace_until,cancel_at_period_end,cancelled_at,scheduled_plan_code,scheduled_plan_version,scheduled_billing_interval,scheduled_amount_minor,scheduled_currency,scheduled_plan_at,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(pending,trialing,active,past_due)&order=created_at.desc&limit=1");
         const subscription=Array.isArray(result.data)?result.data[0]||null:null;
         return response(200,{subscription});
       }
@@ -936,7 +936,7 @@ export function createFinancialIntelligenceApi({
         let quoteCustomerCredits;
         try{quoteCustomerCredits=createCustomerCreditQuotePolicy({env:policyEnv});}
         catch{return error(503,"CUSTOMER_CREDIT_PRICING_UNCONFIGURED","Configure the server-owned customer credit conversion and margin policy before evaluating plan allowances.");}
-        const planRows=await dbRequest("subscription_plans?select=plan_code,name,amount_minor,currency,billing_interval,included_credits,status,is_public&status=eq.draft&is_public=eq.false&order=amount_minor.asc");
+        const planRows=await dbRequest("subscription_plans?select=plan_code,name,amount_minor,currency,billing_interval,included_credits,included_generation_credits,status,is_public&status=eq.draft&is_public=eq.false&order=amount_minor.asc");
         if(!Array.isArray(planRows.data)||planRows.data.length===0)
           return error(409,"SUBSCRIPTION_PLAN_HYPOTHESES_NOT_FOUND","No private draft subscription plan hypotheses are available for evaluation.");
         const estimates=[];

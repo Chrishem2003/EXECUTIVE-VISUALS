@@ -111,3 +111,9 @@ test("does not treat a custom enterprise plan as an included-credit grant",()=>{
  assert.equal(enterprise.proposedMonthlyCreditAllowance,0);
  assert.equal(enterprise.modelCoverage[0].maximumWholeGenerations,0);
 });
+
+test("treats proposed generation allowances as separate from legacy included credits",()=>{
+ const result=calculate();
+ assert.deepEqual(result.plans.map(plan=>plan.proposedMonthlyGenerationCreditAllowance),[630,2030,5530,13930,0]);
+ assert.throws(()=>calculate({plans:[{...plans[0],included_generation_credits:1}]}),{code:"SUBSCRIPTION_ECONOMICS_PLAN_ALREADY_CONFIGURED"});
+});
