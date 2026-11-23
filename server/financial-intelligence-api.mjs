@@ -1678,7 +1678,7 @@ export function createFinancialIntelligenceApi({
         const targetCurrency=String(query.targetCurrency||"").trim().toUpperCase();
         const month=String(query.periodMonth||"");
         if(!/^[A-Z]{3}$/.test(sourceCurrency)||!/^[A-Z]{3}$/.test(targetCurrency)||sourceCurrency===targetCurrency||
-          !/^\\d{4}-\\d{2}-01$/.test(month)||!Number.isFinite(Date.parse(month+"T00:00:00Z"))||
+          !/^\d{4}-\d{2}-01$/.test(month)||!Number.isFinite(Date.parse(month+"T00:00:00Z"))||
           new Date(month+"T00:00:00Z").toISOString().slice(0,10)!==month)
           return error(400,"FINANCIAL_FX_FILTER_INVALID","Provide distinct ISO currencies and a valid reporting month.");
         const nextMonth=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),1)).toISOString().slice(0,10);
@@ -1701,7 +1701,7 @@ export function createFinancialIntelligenceApi({
         const purposes=["settlement_cost","financial_reporting","tax_reporting","reference_only"];
         if(!/^[A-Z]{3}$/.test(sourceCurrency)||!/^[A-Z]{3}$/.test(targetCurrency)||sourceCurrency===targetCurrency||
           !Number.isSafeInteger(rateScaled)||rateScaled<1||rateScaled>100000000000000||
-          !/^\\d{4}-\\d{2}-\\d{2}$/.test(effectiveDate)||!Number.isFinite(Date.parse(effectiveDate+"T00:00:00Z"))||
+          !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)||!Number.isFinite(Date.parse(effectiveDate+"T00:00:00Z"))||
           new Date(effectiveDate+"T00:00:00Z").toISOString().slice(0,10)!==effectiveDate||effectiveDate>new Date().toISOString().slice(0,10)||
           !sourceTypes.includes(sourceType)||!purposes.includes(purpose)||sourceReference.length<3||sourceReference.length>240||
           (evidenceSha256!==null&&!/^[a-f0-9]{64}$/.test(evidenceSha256))||evidenceNote.length<3||evidenceNote.length>1000||
