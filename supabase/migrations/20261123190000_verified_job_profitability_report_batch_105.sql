@@ -104,7 +104,7 @@ begin
       'createdAt',created_at,'reservationId',reservation_id,'actualCredits',actual_credits,
       'revenue',jsonb_build_object('status',
         case when allocation_count=0 then 'missing'
-             when unresolved_count>0 then 'incomplete'
+             when unresolved_count>0 or credits_attributed<>actual_credits then 'incomplete'
              when revenue_currency_count=1 then 'verified'
              when revenue_currency_count=0 then 'non_revenue_only'
              else 'mixed_currency' end,
