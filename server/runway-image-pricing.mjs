@@ -1,4 +1,4 @@
-const SOURCE="https://docs.dev.runwayml.com/guides/pricing/";
+const SOURCE="https://docs.dev.runwayml.com/guides/pricing/#gpt-image-2-6-flare-and-sunburst";
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 const TIERS=Object.freeze({
   "1K":Object.freeze({
@@ -19,19 +19,19 @@ const TIERS=Object.freeze({
 });
 const TABLE=Object.freeze({
   "1K":{
-    "1:1":{low:2,medium:3,high:11},"4:5":{low:1,medium:2,high:8},
-    "3:4":{low:1,medium:2,high:7},"2:3":{low:1,medium:2,high:6},
-    "9:16":{low:1,medium:2,high:5},"21:9":{low:1,medium:1,high:4}
+    "1:1":{low:5,medium:9,high:11},"4:5":{low:4,medium:6,high:8},
+    "3:4":{low:4,medium:6,high:7},"2:3":{low:3,medium:5,high:6},
+    "9:16":{low:2,medium:4,high:5},"21:9":{low:2,medium:3,high:4}
   },
   "2K":{
-    "1:1":{low:2,medium:4,high:16},"4:5":{low:2,medium:3,high:11},
-    "3:4":{low:2,medium:3,high:10},"2:3":{low:1,medium:2,high:8},
-    "9:16":{low:1,medium:2,high:6},"21:9":{low:1,medium:2,high:5}
+    "1:1":{low:8,medium:13,high:16},"4:5":{low:5,medium:9,high:11},
+    "3:4":{low:5,medium:8,high:10},"2:3":{low:4,medium:7,high:8},
+    "9:16":{low:3,medium:5,high:6},"21:9":{low:3,medium:4,high:5}
   },
   "4K":{
-    "1:1":{low:3,medium:5,high:19},"4:5":{low:2,medium:4,high:15},
-    "3:4":{low:2,medium:4,high:14},"2:3":{low:2,medium:4,high:13},
-    "9:16":{low:2,medium:3,high:11},"21:9":{low:1,medium:2,high:7}
+    "1:1":{low:9,medium:16,high:19},"4:5":{low:8,medium:13,high:15},
+    "3:4":{low:7,medium:12,high:14},"2:3":{low:6,medium:11,high:13},
+    "9:16":{low:5,medium:9,high:11},"21:9":{low:4,medium:6,high:7}
   }
 });
 function resolveSize(ratio){
@@ -58,13 +58,12 @@ export function estimateRunwayImageCredits(options={}){
   const size=resolveSize(ratio);
   if(resolution!==undefined&&!size.auto&&resolution!==size.resolution)throw fail("resolution does not match the selected exact pixel ratio size.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   const perImage=TABLE[size.resolution][size.ratioCategory][quality];
-  const subtotalCredits=(perImage+referenceImageCount)*outputCount;
-  const credits=Math.max(2,subtotalCredits);
+  const credits=(perImage+referenceImageCount)*outputCount;
   return Object.freeze({
     provider:"runway",model,pricingDate,source:SOURCE,
     estimatedCredits:credits,estimatedUsd:Math.round(credits*0.01*10000)/10000,
     currency:"USD",resolution:size.resolution,ratio,ratioCategory:size.ratioCategory,quality,reasoningEffort,background,outputCount,referenceImageCount,
-    formula:"max(2-credit request minimum, ("+perImage+" credits/image + "+referenceImageCount+" reference-image credits/output) × "+outputCount+" outputs)",
+    formula:"("+perImage+" credits/image + "+referenceImageCount+" reference-image credits/output) × "+outputCount+" outputs; 2-credit minimum per image",
     autoResolutionReserve:size.auto,
     evidenceType:"published_price_estimate",billable:false,settlementEligible:false
   });
