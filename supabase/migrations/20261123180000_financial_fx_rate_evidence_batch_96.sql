@@ -115,3 +115,14 @@ revoke all on function executive_visuals.record_financial_fx_rate_evidence(uuid,
 revoke all on function executive_visuals.decide_financial_fx_rate_evidence(uuid,uuid,text,text) from public,anon,authenticated;
 grant execute on function executive_visuals.record_financial_fx_rate_evidence(uuid,text,text,bigint,date,text,text,text,text,text,text) to service_role;
 grant execute on function executive_visuals.decide_financial_fx_rate_evidence(uuid,uuid,text,text) to service_role;
+
+-- Current-decision view: evidence rows and decisions remain append-only.
+create or replace view executive_visuals.financial_fx_rate_evidence_current as
+select e.id as evidence_id,e.source_currency,e.target_currency,e.rate_scaled,e.rate_scale,e.effective_date,
+ e.source_type,e.purpose,e.source_reference,e.evidence_sha256,e.evidence_note,e.recorded_by,e.created_at as evidence_created_at,
+ d.decision,d.decision_reason,d.decided_by,d.created_at as decision_created_at
+from executive_visuals.financial_fx_rate_evidence e
+left join lateral (select x.decision,x.decision_reason,x.decided_by,x.created_at
+ from executive_visuals.financial_fx_rate_decisions x where x.evidence_id=e.id
+ order by x.created_at desc,x.id desc limit 1) d on true;
+grant select on executive_visuals.financial_fx_rate_evidence_current to service_role;
