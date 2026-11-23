@@ -53,11 +53,13 @@ The Seedance input-video rate is $0.34 per second at 1080p. Kling's 1080p input-
 
 Sources: [Seedance 2.5 API pricing](https://dev.runwayml.com/learn/seedance-2-5-api) and [Kling 4.0 API pricing](https://dev.runwayml.com/learn/kling-4-0-api).
 
-### Lower-cost generation option
+### Gemini Omni rate-card correction (checked 23 November 2026)
 
-The same dated Runway Dev catalogue lists Gemini Omni 1.2 Flash at $0.07 per second at 720p, with input video billed at $0.01 per second. A 10-second output therefore costs $0.70, or $0.80 with a 10-second source video. Native audio is included at the same rate. The model supports up to 15-second clips; these benchmark examples deliberately hold duration to 10 seconds for like-for-like comparison.
+The current Runway Dev pricing page lists **Gemini Omni Flash (Google)** at $0.10 per second for 720p output, with input video billed at an additional $0.01 per second. A 10-second output therefore costs $1.00, or $1.10 with a 10-second source video. The rate card also lists 360p, 1080p and 4K tiers; this benchmark uses 720p to keep the comparison bounded.
 
-Source: [Gemini Omni 1.2 Flash API pricing](https://dev.runwayml.com/learn/gemini-omni-flash-1-2-api). Google also announced general availability and the $0.07/second 720p price on 5 November 2026: [Google announcement](https://blog.google/innovation-and-ai/technology/developers-tools/introducing-gemini-omni-1-2-flash/).
+A separate Google announcement quoted $0.07 per second for Gemini Omni 1.2 Flash. That is a distinct vendor/API price and must not be silently substituted for the Runway Dev adapter's current rate. Model version, provider route and price source must match the actual production adapter before a scenario is used for billing.
+
+Source: [Runway Dev official API pricing](https://dev.runwayml.com/pricing).
 
 The regression suite therefore checks:
 1. Dated output-only and source-video provider costs remain explicitly marked forecast-only and non-billable.
@@ -66,7 +68,7 @@ The regression suite therefore checks:
 4. A mixed workload can fail a plan's credit allowance even where a per-model-only comparison looks affordable.
 5. Contribution margin and credit sufficiency remain separate assessments.
 6. Video-to-video scenarios include provider-billed reference-video input charges rather than treating edits as output-only.
-7. A lower-cost Gemini Omni 1.2 Flash model is included with separate output and source-video charges.
+7. The current Runway Dev Gemini Omni Flash rate is dated separately from the older Google-direct price announcement.
 8. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
 
 ## Release and finance controls
