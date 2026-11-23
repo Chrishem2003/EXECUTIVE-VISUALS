@@ -58,12 +58,13 @@ export function estimateRunwayImageCredits(options={}){
   const size=resolveSize(ratio);
   if(resolution!==undefined&&!size.auto&&resolution!==size.resolution)throw fail("resolution does not match the selected exact pixel ratio size.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   const perImage=TABLE[size.resolution][size.ratioCategory][quality];
-  const credits=(perImage+referenceImageCount)*outputCount;
+  const subtotalCredits=(perImage+referenceImageCount)*outputCount;
+  const credits=Math.max(2,subtotalCredits);
   return Object.freeze({
     provider:"runway",model,pricingDate,source:SOURCE,
     estimatedCredits:credits,estimatedUsd:Math.round(credits*0.01*10000)/10000,
     currency:"USD",resolution:size.resolution,ratio,ratioCategory:size.ratioCategory,quality,reasoningEffort,background,outputCount,referenceImageCount,
-    formula:"("+perImage+" credits/image + "+referenceImageCount+" reference-image credits/output) × "+outputCount+" outputs",
+    formula:"max(2-credit request minimum, ("+perImage+" credits/image + "+referenceImageCount+" reference-image credits/output) × "+outputCount+" outputs)",
     autoResolutionReserve:size.auto,
     evidenceType:"published_price_estimate",billable:false,settlementEligible:false
   });
@@ -71,7 +72,7 @@ export function estimateRunwayImageCredits(options={}){
 export function listRunwayImageModels(){
   return ["gpt_image_2_6_flare","gpt_image_2_6_sunburst"].map(id=>Object.freeze({
     id,provider:"runway",availability:"adapter_supported",executionAdapter:"runway-image-v1",
-    promptMaxCharacters:32000,maxReferenceImages:16,resolutions:Object.freeze(["1K","2K","4K"]),outputCounts:Object.freeze({min:1,max:1}),
+    promptMaxCharacters:32000,maxReferenceImages:16,resolutions:Object.freeze(["1K","2K","4K"]),outputCounts:Object.freeze({min:1,max:10}),
     sizeTiers:Object.freeze(Object.keys(TIERS)),supportedPixelSizes:Object.freeze(Object.fromEntries(Object.entries(TIERS).map(([tier,sizes])=>[tier,Object.freeze(Object.keys(sizes))]))),
     qualities:Object.freeze(["low","medium","high"]),reasoningEfforts:Object.freeze(["low","medium","high"]),
     backgrounds:Object.freeze(["auto","opaque","transparent"]),outputFormat:"png",
