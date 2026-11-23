@@ -16,6 +16,10 @@ alter table executive_visuals.customer_subscriptions
   add column if not exists scheduled_included_generation_credits bigint;
 
 alter table executive_visuals.customer_subscriptions
+  add column if not exists granted_by uuid references auth.users(id),
+  add column if not exists grant_reason text;
+
+alter table executive_visuals.customer_subscriptions
   drop constraint if exists customer_subscriptions_generation_credits_check;
 alter table executive_visuals.customer_subscriptions
   add constraint customer_subscriptions_generation_credits_check
