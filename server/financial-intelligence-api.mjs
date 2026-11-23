@@ -1225,6 +1225,18 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("subscription_customer_economics_report",{p_actor_id:ownerId,p_period_month:month,p_limit:limit});
         return response(200,{economics:result||{periodMonth:month,customers:[],byCurrency:[],limitations:[]}});
       }
+      if(path==="/api/admin/finance/credit-liability"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const subjectOwnerId=query.ownerId==null||query.ownerId===""?null:String(query.ownerId);
+        if(subjectOwnerId!==null&&!UUID.test(subjectOwnerId))
+          return error(400,"FINANCIAL_CREDIT_LIABILITY_OWNER_INVALID","ownerId must be a verified account UUID.");
+        const report=await rpc("financial_credit_liability_report",{p_actor_id:ownerId,p_owner_id:subjectOwnerId});
+        return response(200,{creditLiability:report||{
+          scope:subjectOwnerId?"single_customer":"all_customers",byCurrency:[],
+          unpriced:{pending_split_credits:0,unattributed_credits:0,integrity_exception_sources:0,currency_unassigned_sources:0},
+          limitations:["Credit liability report is not yet available."]
+        }});
+      }
       if(path==="/api/admin/finance/workload-telemetry"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const month=String(query.periodMonth||new Date().toISOString().slice(0,7)+"-01");
