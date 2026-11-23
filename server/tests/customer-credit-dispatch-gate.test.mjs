@@ -35,6 +35,7 @@ test("missing, malformed or inconsistent per-shot credit quotes fail closed",()=
  for(const customerCreditQuote of [
   undefined,
   {unit:"customer_credits",totalCredits:100,perShot:[{shotId:"shot-1",credits:100}]},
+  {unit:"customer_credits",totalCredits:150,perShot:[{shotId:"wrong-shot",credits:100},{shotId:"shot-2",credits:50}]},
   {unit:"customer_credits",totalCredits:150,perShot:[{shotId:"shot-1",credits:100},{shotId:"shot-2",credits:0}]},
   {unit:"provider_credits",totalCredits:150,perShot:[{shotId:"shot-1",credits:100},{shotId:"shot-2",credits:50}]}
  ]){
