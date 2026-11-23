@@ -52,8 +52,24 @@ begin
   );
 
   perform executive_visuals.post_verified_ai_invoice_to_service_cost_ledger(v_owner,v_import);
-  update executive_visuals.payment_transactions set provider_fee_minor=30
-   where id='71717171-7171-4171-8171-717171717201' and owner_id=v_owner;
+  v_report:=executive_visuals.record_payment_processor_fee_evidence(
+    v_owner,'71717171-7171-4171-8171-717171717201',30,'USD','batch71-provider-paid',
+    jsonb_build_object('evidenceType','provider_payment_receipt','evidenceId','batch107-fee-receipt-0001',
+      'evidenceReference','fixture:batch107:payment-fee:0001','evidenceSha256',repeat('f',64)),
+    'batch107-fee-evidence-key-0001'
+  );
+  if v_report->>'recorded'<>'true' or v_report->>'idempotentReplay'<>'false' then
+    raise exception 'Processor fee evidence was not recorded as a new immutable record: %',v_report;
+  end if;
+  v_report:=executive_visuals.record_payment_processor_fee_evidence(
+    v_owner,'71717171-7171-4171-8171-717171717201',30,'USD','batch71-provider-paid',
+    jsonb_build_object('evidenceType','provider_payment_receipt','evidenceId','batch107-fee-receipt-0001',
+      'evidenceReference','fixture:batch107:payment-fee:0001','evidenceSha256',repeat('f',64)),
+    'batch107-fee-evidence-key-0001'
+  );
+  if v_report->>'idempotentReplay'<>'true' then
+    raise exception 'Processor fee evidence replay was not idempotent: %',v_report;
+  end if;
   v_report:=executive_visuals.financial_job_profitability_report(v_owner,v_owner,100);
   select value into v_job_report
     from jsonb_array_elements(v_report->'jobs')
