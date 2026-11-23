@@ -25,7 +25,7 @@ begin
      or (v_job#>>'{revenue,recognizedMinor}')::bigint<>400
      or v_job#>>'{actualCost,status}'<>'missing'
      or v_job#>>'{profitability,status}'<>'cost_incomplete'
-     or v_job#>'{profitability}' ? 'contributionMinor' then
+     or v_job#>>'{profitability,contributionMinor}' is not null then
     raise exception 'Per-job report failed to recognize verified revenue or failed to withhold margin without posted invoice costs: %',v_job;
   end if;
 
