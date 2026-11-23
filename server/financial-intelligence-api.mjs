@@ -1009,7 +1009,7 @@ export function createFinancialIntelligenceApi({
             pricingPolicy:economics.pricingPolicy
           });
           return response(200,{
-            economics,mixedEconomics,
+            economics,mixedEconomics,creditPackEconomics,
             actualCostEvidence,modelActualCostEvidence:modelCostEvidence,
             allowanceReadiness:{
               status:costEvidence.status==="verified_measured"
