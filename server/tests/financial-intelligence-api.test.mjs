@@ -1952,3 +1952,41 @@ test("customer credit statement rejects unbounded or malformed limits",async()=>
  }
  assert.equal(calls,0);
 });
+
+
+test("verified credit liability report is finance-admin-only, read-only and currency scoped",async()=>{
+ let rpcCalls=0,rpcBody=null;
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Unauthorized credit-liability request must not reach the report RPC.");
+ });
+ const blocked=await denied.handle({method:"GET",path:"/api/admin/finance/credit-liability",ownerId:owner});
+ assert.equal(blocked.status,403);
+
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/financial_credit_liability_report")){
+   rpcCalls++;rpcBody=JSON.parse(options.body);
+   return json({
+    scope:"all_customers",
+    byCurrency:[{currency:"USD",sourceCount:3,creditsGranted:3000,creditsConsumed:1000,creditsRemaining:2000,
+     recognizedRevenueMinor:1000,deferredRevenueLiabilityMinor:2000,pendingSubscriptionSplitCredits:500,
+     unattributedCredits:0,integrityExceptionSources:0}],
+    unpriced:{pending_split_credits:500,unattributed_credits:0,integrity_exception_sources:0,currency_unassigned_sources:1},
+    limitations:["Cash receipts are reported separately."]
+   });
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"GET",path:"/api/admin/finance/credit-liability",ownerId:owner,query:{ownerId:"not-a-uuid"}});
+ assert.equal(invalid.status,400);
+ assert.equal(rpcCalls,0);
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/credit-liability",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.creditLiability.byCurrency[0].deferredRevenueLiabilityMinor,2000);
+ assert.equal(result.body.creditLiability.byCurrency[0].pendingSubscriptionSplitCredits,500);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_owner_id,null);
+ assert.equal(rpcCalls,1);
+});
