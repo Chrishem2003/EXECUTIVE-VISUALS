@@ -153,7 +153,7 @@ begin
   end if;
 
   invoice_number:='EVS-'||to_char(p_verified_at at time zone 'UTC','YYYYMMDD')||'-'||
-    upper(substr(replace(payment_row.id::text,'-',''),1,8));
+    upper(substr(replace(payment_row.id::text,'-',''),1,12));
   insert into executive_visuals.billing_invoices(
     owner_id,payment_transaction_id,invoice_number,currency,total_minor,issued_at,snapshot
   ) values(
