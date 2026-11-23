@@ -19,7 +19,7 @@ test("credit-pack settlement verifies the exact Flutterwave payment and server s
  assert.match(migration,/p_provider_payload->>'id'/);
  assert.match(migration,/p_provider_payload->>'reference'/);
  assert.match(migration,/p_provider_payload->>'amount'/);
- assert.match(migration,/payment_row\.metadata->>'product_type'<>'credit_pack'/);
+ assert.match(migration,/payment_row\.metadata->>'product_type' is distinct from 'credit_pack'/);
  assert.match(migration,/CREDIT_PACK_PAYMENT_NOT_PENDING/);
 });
 
