@@ -29,7 +29,7 @@ Sources checked 23 November 2026:
 - Finance-admin API to record evidence, list evidence and submit decisions.
 - Read-only current-decision view used by the credit-pack profitability calculation.
 - Exact-month selection and conservative ceiling conversion to the target currency's minor unit.
-- UGX credit-pack profitability now uses FX only when evidence is approved, same-month, USD→UGX, purpose `settlement_cost`, and source is a processor settlement or bank statement.
+- UGX credit-pack profitability now uses FX only when evidence is approved, explicitly linked to the invoice reporting month, USD→UGX, purpose `settlement_cost`, and source is a processor settlement or bank statement. The actual settlement effective date is stored separately, so a provider invoice paid after its service month can still be reconciled without pretending the tax/reference rate was the settlement rate.
 - Official-reference and tax-reference rates are explicitly rejected for settlement-cost conversion.
 - Financial Command Centre shows FX evidence type/date and blocked reason.
 
