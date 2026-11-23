@@ -57,7 +57,7 @@ export function calculateCreditPackOverageEconomics({products=[],costEvidence,pr
  const blocked=rows.filter(row=>row.status!=="measured_scenario_only").length;
  return Object.freeze({
   calculationType:"credit_pack_overage_profitability_scenario_not_activation",
-  status:!products.length?"no_credit_pack_products":!evidenceReady?"blocked_invoice_evidence":blocked?"partially_blocked":"measured_scenario_only",
+  status:!evidenceReady?"blocked_invoice_evidence":!products.length?"no_credit_pack_products":blocked?"partially_blocked":"measured_scenario_only",
   evidence: Object.freeze({status:costEvidence?.status||"missing",currency:costEvidence?.currency||null,
    periodMonth:costEvidence?.periodMonth||null,sampleJobs:costEvidence?.sampleJobs??null,
    providerCostPerCustomerCreditMinor:evidenceReady?costEvidence.providerCostPerCustomerCreditMinor:null,
