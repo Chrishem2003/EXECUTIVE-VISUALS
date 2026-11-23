@@ -59,7 +59,7 @@ test("plan simulator is a scenario-only control and does not activate plans or g
 test("Financial Command Centre renders prepaid credit-pack profitability and currency blocks",()=>{
  assert.match(app,/Prepaid credit-pack overage profitability/);
  assert.match(app,/creditPackEconomics/);
- assert.match(app,/blocked_currency_mismatch/);
- assert.match(app,/No foreign-exchange conversion is performed/);
+ assert.match(app,/String\(item.status\|\|item.marginAssessment/);
+ assert.match(app,/no foreign exchange is inferred/);
  assert.match(app,/Inactive products remain draft-only/);
 });
