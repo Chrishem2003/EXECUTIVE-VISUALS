@@ -51,6 +51,7 @@ jobs:
           node --check server/provider-video-cost-estimator.mjs
           node --check server/video-generation-cost-estimator.mjs
           node --check server/runway-video-pricing.mjs
+          node --check server/runway-image-pricing.mjs
           node --check server/subscription-plan-credit-economics.mjs
           node --check server/mixed-subscription-workload-economics.mjs
           node --check server/workload-cost-variance.mjs
@@ -70,5 +71,6 @@ jobs:
           npm run verify:subscription-plan-economics
           npm run verify:mixed-subscription-workload-economics
           node --test server/tests/runway-video-pricing.test.mjs server/tests/video-generation-cost-estimator.test.mjs
+          npm run verify:runway-image-pricing
       - name: Test Batch 48 financial governance rules and UI integration
         run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs

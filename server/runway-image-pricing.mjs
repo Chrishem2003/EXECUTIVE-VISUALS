@@ -44,26 +44,41 @@ function resolveSize(ratio){
 }
 export function estimateRunwayImageCredits(options={}){
   if(!options||typeof options!=="object"||Array.isArray(options))throw fail("Pricing options must be an object.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
-  const allowed=new Set(["model","resolution","ratio","quality","reasoningEffort","background","outputCount","referenceImageCount","pricingDate"]);
+  const allowed=new Set(["model","resolution","ratio","quality","reasoningEffort","background","outputCount","referenceImageCount","pricingDate","outputFormat","frameCount"]);
   const unknown=Object.keys(options).filter(key=>!allowed.has(key));
   if(unknown.length)throw fail("Unsupported pricing options: "+unknown.join(", "),"RUNWAY_IMAGE_PRICE_UNSUPPORTED_OPTION");
-  const {model,resolution,ratio="auto",quality="high",reasoningEffort="high",background="auto",outputCount=1,referenceImageCount=0,pricingDate}=options;
+  const {model,resolution,ratio="auto",quality="high",reasoningEffort="high",background="auto",outputCount=1,referenceImageCount=0,pricingDate,outputFormat="png",frameCount=9}=options;
   if(!["gpt_image_2_6_flare","gpt_image_2_6_sunburst"].includes(model))throw fail("No verified image pricing formula exists for this model.","RUNWAY_IMAGE_PRICE_UNSUPPORTED_MODEL");
   if(!["low","medium","high"].includes(quality))throw fail("quality must be low, medium or high.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   if(!["low","medium","high"].includes(reasoningEffort))throw fail("reasoningEffort must be low, medium or high.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   if(!["auto","opaque","transparent"].includes(background))throw fail("background must be auto, opaque or transparent.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
+  if(!["png","jpeg","webp","gif","svg"].includes(outputFormat))throw fail("outputFormat must be png, jpeg, webp, gif or svg.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   if(!Number.isSafeInteger(outputCount)||outputCount<1||outputCount>10)throw fail("outputCount must be an integer from 1 to 10.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   if(!Number.isSafeInteger(referenceImageCount)||referenceImageCount<0||referenceImageCount>16)throw fail("referenceImageCount must be an integer from 0 to 16.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   if(typeof pricingDate!=="string"||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(pricingDate)||Number.isNaN(Date.parse(pricingDate+"T00:00:00Z"))||new Date(pricingDate+"T00:00:00Z").toISOString().slice(0,10)!==pricingDate)throw fail("pricingDate must be a valid explicit YYYY-MM-DD value.","RUNWAY_IMAGE_PRICE_INPUT_REQUIRED");
+  if(outputFormat==="jpeg"&&background==="transparent")throw fail("JPEG output cannot use a transparent background.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
+  if(outputFormat==="gif"){
+    if(ratio!=="auto"||referenceImageCount!==0)throw fail("GIF requires ratio auto and does not accept reference images.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
+    if(!Number.isSafeInteger(frameCount)||frameCount<2||frameCount>16)throw fail("GIF frameCount must be an integer from 2 to 16.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
+    const frameBand=frameCount<=8?"2-8":frameCount<=12?"9-12":"13-16";
+    const gifRates={"2-8":{low:2,medium:4,high:4},"9-12":{low:4,medium:7,high:8},"13-16":{low:6,medium:10,high:12}};
+    const perAnimation=gifRates[frameBand][quality];
+    const credits=perAnimation*outputCount;
+    return Object.freeze({provider:"runway",model,pricingDate,source:SOURCE,estimatedCredits:credits,estimatedUsd:Math.round(credits*0.01*10000)/10000,currency:"USD",resolution:"animation",ratio,quality,reasoningEffort,background,outputFormat,frameCount,outputCount,referenceImageCount,formula:perAnimation+" credits/animation × "+outputCount+" outputs ("+frameBand+" frames)",evidenceType:"published_price_estimate",billable:false,settlementEligible:false});
+  }
+  if(outputFormat==="svg"&&referenceImageCount!==0)throw fail("SVG does not accept reference images.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
+  if(outputFormat!=="svg"&&options.frameCount!==undefined)throw fail("frameCount is only valid for GIF output.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   const size=resolveSize(ratio);
   if(resolution!==undefined&&!size.auto&&resolution!==size.resolution)throw fail("resolution does not match the selected exact pixel ratio size.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   const perImage=TABLE[size.resolution][size.ratioCategory][quality];
-  const credits=(perImage+referenceImageCount)*outputCount;
+  const imageCredits=(perImage+referenceImageCount)*outputCount;
+  const authoringCredits=outputFormat==="svg"?50*outputCount:0;
+  const credits=imageCredits+authoringCredits;
   return Object.freeze({
     provider:"runway",model,pricingDate,source:SOURCE,
     estimatedCredits:credits,estimatedUsd:Math.round(credits*0.01*10000)/10000,
-    currency:"USD",resolution:size.resolution,ratio,ratioCategory:size.ratioCategory,quality,reasoningEffort,background,outputCount,referenceImageCount,
-    formula:"("+perImage+" credits/image + "+referenceImageCount+" reference-image credits/output) × "+outputCount+" outputs; 2-credit minimum per image",
+    currency:"USD",resolution:size.resolution,ratio,ratioCategory:size.ratioCategory,quality,reasoningEffort,background,outputFormat,outputCount,referenceImageCount,authoringCredits,
+    formula:outputFormat==="svg"?"("+perImage+" image credits + 50 SVG authoring credits) × "+outputCount+" outputs":"("+perImage+" credits/image + "+referenceImageCount+" reference-image credits/output) × "+outputCount+" outputs; 2-credit minimum per image",
     autoResolutionReserve:size.auto,
     evidenceType:"published_price_estimate",billable:false,settlementEligible:false
   });
