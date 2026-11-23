@@ -28,8 +28,8 @@ test("unapproved subscription splits and unattributed credits stay outside curre
 test("integrity exceptions withhold currency liability instead of overstating it",()=>{
  assert.match(migration,/integrity_exception/);
  assert.match(migration,/when count\(\*\) filter\(where integrity_exception\)>0 then null/);
- assert.match(migration,/recognized_revenue_minor\)>s\.allocatable_revenue_minor/);
- assert.match(migration,/consumed_credits\)>s\.credits_granted/);
+ assert.match(migration,/recognized_revenue_minor,0\\)>s\\.allocatable_revenue_minor/);
+ assert.match(migration,/consumed_credits,0\\)>s\\.credits_granted/);
 });
 
 test("report is read-only and keeps cash, refunds, fees and MRR separate",()=>{
