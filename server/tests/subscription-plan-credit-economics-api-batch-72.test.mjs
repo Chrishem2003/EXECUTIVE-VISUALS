@@ -84,6 +84,7 @@ test("plan economics exposes separate invoice-backed cost evidence and never tre
   if(target.includes("ai_usage_cost_events?")&&target.includes("job_id=in."))return json(usageEvents);
   if(target.includes("financial_cost_attribution_links?"))return json(invoiceAttributions);
   if(target.includes("billing_credit_reservations?"))return json(creditReservations);
+  if(target.includes("billing_products?"))return json([{product_code:"creator-pack-1000",name:"Creator 1,000 credits",product_type:"credit_pack",amount_minor:50000,currency:"UGX",credit_units:1000,active:false}]);
   throw new Error("Unexpected request: "+target);
  });
  const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
@@ -106,6 +107,10 @@ test("plan economics exposes separate invoice-backed cost evidence and never tre
  assert.equal(result.body.modelActualCostEvidence.models[0].invoiceCoverage,1);
  assert.equal(result.body.allowanceReadiness.publishable,false);
  assert.match(result.body.allowanceReadiness.status,/requires_finance_product_approval/);
+ assert.equal(result.body.creditPackEconomics.status,"partially_blocked");
+ assert.equal(result.body.creditPackEconomics.products[0].status,"blocked_currency_mismatch");
+ assert.equal(result.body.creditPackEconomics.products[0].costCurrency,"USD");
+ assert.equal(result.body.creditPackEconomics.products[0].contributionMinor,null);
  assert.ok(result.body.economics.scenarios.every(row=>row.estimateType==="forecast_not_actual"));
  assert.ok(calls.every(call=>call.method==="GET"));
 });
@@ -128,6 +133,7 @@ test("plan economics blocks actual-cost readiness when invoice sample is insuffi
  assert.equal(result.status,200);
  assert.equal(result.body.actualCostEvidence.status,"insufficient_sample");
  assert.equal(result.body.actualCostEvidence.providerCostPerCustomerCreditMinor,null);
+ assert.equal(result.body.creditPackEconomics.status,"blocked_invoice_evidence");
  assert.equal(result.body.allowanceReadiness.status,"blocked_waiting_for_sufficient_complete_invoice_evidence");
  assert.equal(result.body.allowanceReadiness.publishable,false);
 });
