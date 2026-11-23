@@ -35,6 +35,7 @@ test("grant trigger is idempotent per subscription period and remains inside act
  assert.match(integration,/Initial generation grant evidence was not recorded exactly once/);
  assert.match(integration,/Purchase replay duplicated generation credits/);
  assert.match(integration,/Renewal replay duplicated generation credits/);
+ assert.match(integration,/Period-end extension duplicated the subscription generation grant/);
  assert.match(integration,/Failed payment unexpectedly granted generation credits/);
 });
 
