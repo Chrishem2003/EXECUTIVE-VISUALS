@@ -48,6 +48,7 @@ test("refund attribution SQL uses confirmed refunds only and fails closed on inc
   assert.match(migration,/unresolved_source_count=0/);
   assert.match(migration,/currency_count=1/);
   assert.match(migration,/p\.currency payment_currency/);
+  assert.match(migration,/select r\.refund_id,r\.owner_id,r\.payment_id,r\.amount_minor,r\.currency,r\.payment_currency/);
   assert.match(migration,/c\.payment_currency=c\.currency/);
   assert.match(migration,/unmatchedConfirmedRefunds/);
   assert.match(migration,/unmatchedPendingRefunds/);
