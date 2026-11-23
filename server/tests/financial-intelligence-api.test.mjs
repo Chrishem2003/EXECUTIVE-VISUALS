@@ -1194,6 +1194,41 @@ test("per-job profitability report is admin-only, bounded and delegates to verif
  assert.equal(invalid.body.error.code,"FINANCIAL_JOB_PROFITABILITY_LIMIT_INVALID");
 });
 
+test("processor fee evidence intake is admin-only, validated and idempotently recorded",async()=>{
+ const paymentId="44444444-4444-4444-8444-444444444444";
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([]);
+  throw new Error("Unauthorized processor fee data must not be queried");
+ });
+ const deniedResult=await denied.handle({method:"POST",path:"/api/admin/finance/payment-processor-fees",ownerId:owner,body:{}});
+ assert.equal(deniedResult.status,403);
+
+ let rpcBody=null;
+ const allowed=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/record_payment_processor_fee_evidence")){
+   rpcBody=JSON.parse(options.body);
+   return json({recorded:true,idempotentReplay:false,feeMinor:30,currency:"USD"});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await allowed.handle({method:"POST",path:"/api/admin/finance/payment-processor-fees",ownerId:owner,
+  body:{paymentId,feeMinor:30,currency:"USD",providerTransactionId:"txn-provider-1",idempotencyKey:"fee-evidence-key-01",
+   evidence:{evidenceType:"provider_payment_receipt",evidenceId:"receipt-001",evidenceReference:"provider-receipt:001",evidenceSha256:"a".repeat(64)}}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.paymentFeeEvidence.feeMinor,30);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_payment_id,paymentId);
+ assert.equal(rpcBody.p_evidence.evidenceSha256,"a".repeat(64));
+
+ const invalid=await allowed.handle({method:"POST",path:"/api/admin/finance/payment-processor-fees",ownerId:owner,
+  body:{paymentId,feeMinor:30,currency:"USD",providerTransactionId:"txn-provider-1",idempotencyKey:"fee-evidence-key-02",
+   evidence:{evidenceType:"provider_payment_receipt",evidenceId:"receipt-001",evidenceReference:"provider-receipt:001",evidenceSha256:"bad"}}});
+ assert.equal(invalid.status,400);
+ assert.equal(invalid.body.error.code,"PAYMENT_PROCESSOR_FEE_EVIDENCE_INVALID");
+});
+
 test("service cost API validates reversals and binds immutable cost evidence to the admin",async()=>{
  let rpcBody=null;
  const service=api(async(url,options={})=>{

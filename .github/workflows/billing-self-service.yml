@@ -191,6 +191,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-credit-revenue-allocation-postgres-integration-batch-71.sql
       - name: Apply Batch 105 verified per-job profitability report
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261123190000_verified_job_profitability_report_batch_105.sql
+      - name: Apply Batch 107 net job contribution and payment fee attribution
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261123210000_net_job_contribution_payment_fees_batch_107.sql
       - name: Verify Batch 105 owner-only revenue and posted-cost margin gates
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-job-profitability-report-postgres-integration-batch-105.sql
       - name: Test Batch 71 verified revenue allocation and Financial Command Centre
