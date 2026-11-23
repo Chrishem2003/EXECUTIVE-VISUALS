@@ -183,8 +183,8 @@ begin
     raise exception 'Unpublished generation allowance was copied into the customer snapshot';
   end if;
 
-  reset role;
 end;
 $subscription_generation_credit_assertions$;
+reset role;
 
 select 'Batch 103 subscription generation credit grants passed' as result;
