@@ -5,6 +5,7 @@ import {createFinancialIntelligenceApi} from "../financial-intelligence-api.mjs"
 
 const owner="11111111-1111-4111-8111-111111111111";
 const migration=readFileSync(new URL("../../supabase/migrations/20261123230000_refund_job_attribution_batch_108.sql",import.meta.url),"utf8");
+const financeUi=readFileSync(new URL("../../src/platform/app.ts",import.meta.url),"utf8");
 
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json"}});}
 function api(fetchImpl){return createFinancialIntelligenceApi({
@@ -129,4 +130,16 @@ test("job profitability withholds net margin when refund currency differs from r
   assert.equal(result.status,200);
   assert.equal(result.body.jobProfitability.jobs[0].netProfitability.status,"currency_mismatch");
   assert.equal(result.body.jobProfitability.jobs[0].netProfitability.contributionMinorAfterRefund,null);
+});
+
+
+test("financial command centre displays refund-adjusted job contribution and separates pending exposure",()=>{
+  assert.match(financeUi,/netProfitability\|\|\{\}/);
+  assert.match(financeUi,/confirmedRefundMinor/);
+  assert.match(financeUi,/recognizedRevenueMinorAfterRefund/);
+  assert.match(financeUi,/contributionMinorAfterRefund/);
+  assert.match(financeUi,/unmatchedConfirmedRefunds/);
+  assert.match(financeUi,/unmatchedPendingRefunds/);
+  assert.match(financeUi,/Pending refunds remain exposure, not realized loss/);
+  assert.match(financeUi,/Profitability evidence limitations/);
 });
