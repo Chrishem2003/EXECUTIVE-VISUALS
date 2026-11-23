@@ -2,6 +2,9 @@
 -- This disposable integration intentionally has no posted invoice cost for the fixture job,
 -- so revenue is visible while contribution/margin remain blocked.
 
+insert into auth.users(id,email) values(
+ '81818181-8181-4181-8181-818181818181','batch105-nonadmin@example.invalid'
+) on conflict(id) do nothing;
 set role service_role;
 do $batch105_job_profitability$
 declare
@@ -37,9 +40,6 @@ begin
     if sqlstate<>'22023' then raise; end if;
   end;
 
-  insert into auth.users(id,email) values(
-    '81818181-8181-4181-8181-818181818181','batch105-nonadmin@example.invalid'
-  ) on conflict(id) do nothing;
   begin
     perform executive_visuals.financial_job_profitability_report(
       '81818181-8181-4181-8181-818181818181',null,10
