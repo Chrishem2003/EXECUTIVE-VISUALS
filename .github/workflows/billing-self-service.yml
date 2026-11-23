@@ -187,6 +187,10 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122230000_verified_credit_revenue_allocation_batch_71.sql
       - name: Verify Batch 71 payment-to-generation revenue allocation
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-credit-revenue-allocation-postgres-integration-batch-71.sql
+      - name: Apply Batch 105 verified per-job profitability report
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261123190000_verified_job_profitability_report_batch_105.sql
+      - name: Verify Batch 105 owner-only revenue and posted-cost margin gates
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-job-profitability-report-postgres-integration-batch-105.sql
       - name: Test Batch 71 verified revenue allocation and Financial Command Centre
         run: npm run verify:verified-credit-revenue-allocation
       - name: Verify Paddle and Pesapal reservation, activation, renewal and lifecycle settlement
