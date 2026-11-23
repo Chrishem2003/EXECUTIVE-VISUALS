@@ -17,6 +17,7 @@ import { calculateCreditPackOverageEconomics } from "./credit-pack-overage-econo
 import { selectApprovedSettlementFxEvidence } from "./approved-fx-rate-conversion.mjs";
 import { deriveInvoiceBackedCreditCostEvidence } from "./subscription-credit-cost-evidence.mjs";
 import { deriveInvoiceBackedModelCostEvidence } from "./model-invoice-cost-evidence.mjs";
+import { loadModelActualCostReport, validateModelActualCostPeriod } from "./model-actual-cost-report.mjs";
 import { analyzeWorkloadCostVariance } from "./workload-cost-variance.mjs";
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
@@ -1382,6 +1383,18 @@ export function createFinancialIntelligenceApi({
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const result=await rpc("financial_profitability_overview",{p_actor_id:ownerId});
         return response(200,{profitability:result||{byCurrency:[],customers:[],sharedCosts:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/model-actual-costs"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        try{
+          const periodMonth=validateModelActualCostPeriod(query.periodMonth||new Date().toISOString().slice(0,7)+"-01");
+          const report=await loadModelActualCostReport({dbRequest,periodMonth});
+          return response(200,{modelActualCostEvidence:report,source:"immutable posted-invoice usage attribution",readOnly:true});
+        }catch(err){
+          const code=String(err?.code||"MODEL_ACTUAL_COST_REPORT_FAILED");
+          const status=code==="MODEL_ACTUAL_COST_PERIOD_INVALID"?400:422;
+          return error(status,code,String(err?.message||"Model actual-cost evidence could not be loaded safely.").slice(0,300));
+        }
       }
       if(path==="/api/admin/finance/scenario-baseline"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
