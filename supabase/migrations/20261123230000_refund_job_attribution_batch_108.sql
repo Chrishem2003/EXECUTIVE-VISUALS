@@ -110,7 +110,13 @@ begin
   ), pending_by_job as (
     select u.job_id,u.owner_id,
       count(distinct r.refund_id)::integer pending_refund_count,
-      coalesce(sum(round(r.amount_minor::numeric*u.credits_consumed/t.total_granted_credits)),0)::bigint pending_refund_exposure_minor,
+      sum(case when t.total_granted_credits>0
+        then round(r.amount_minor::numeric*u.credits_consumed/t.total_granted_credits)
+        else null end)::bigint pending_refund_exposure_minor,
+      count(*) filter(where t.total_granted_credits<=0
+        or u.unresolved_allocations>0 or t.unresolved_source_count>0
+        or t.currency_count<>1 or t.currency<>r.currency
+        or t.currency<>r.payment_currency)::integer incomplete_pending_allocations,
       min(r.currency) currency,count(distinct r.currency)::integer currency_count
     from refund_rows r
     join payment_source_totals t on t.payment_id=r.payment_id and t.owner_id=r.owner_id
@@ -162,8 +168,10 @@ begin
       ),
       'pendingRefundExposure',jsonb_build_object(
         'status',case when coalesce(p.pending_refund_count,0)=0 then 'none'
+          when coalesce(p.incomplete_pending_allocations,0)>0 then 'incomplete_exposure'
           when p.currency_count=1 then 'pending_not_deducted' else 'currency_incomplete' end,
-        'amountMinor',case when p.currency_count=1 then p.pending_refund_exposure_minor else null end,
+        'amountMinor',case when coalesce(p.incomplete_pending_allocations,0)=0 and p.currency_count=1
+          then p.pending_refund_exposure_minor else null end,
         'currency',case when p.currency_count=1 then p.currency else null end,
         'count',coalesce(p.pending_refund_count,0)
       ),
