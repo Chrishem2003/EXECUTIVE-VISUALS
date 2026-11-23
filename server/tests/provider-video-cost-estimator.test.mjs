@@ -105,3 +105,43 @@ test("applies input-image pricing and rounds fractional seconds upward in minor 
  assert.equal(result.costLines.find(x=>x.driver==="input_images").amountMinor,22);
  assert.equal(result.estimatedProviderCostMinor,26);
 });
+
+
+test("models published Runway Seedance 2.5 resolution pricing and reference-video charges",()=>{
+ const rateCard=card({
+  model:"seedance2_5",rateCardVersion:"runway-seedance2_5-2026-11-21",
+  sourceUrl:"https://dev.runway.com/learn/seedance-2-5-api",
+  sourceCheckedAt:"2026-11-23T00:00:00Z",
+  videoSecondMinor:30,
+  pricingDimensions:{
+   videoSecondMinor_480p:20,
+   videoSecondMinor_720p:30,
+   videoSecondMinor_1080p:68,
+   referenceVideoSecondMinor_480p:10,
+   referenceVideoSecondMinor_720p:15,
+   referenceVideoSecondMinor_1080p:34,
+   minimumGenerationMinor:80
+  }
+ });
+ const fiveSecond480=estimateProviderVideoCost({rateCard,request:request({resolution:"480p",outputSeconds:5})});
+ const fiveSecond720=estimateProviderVideoCost({rateCard,request:request({resolution:"720p",outputSeconds:5})});
+ const fiveSecond1080=estimateProviderVideoCost({rateCard,request:request({resolution:"1080p",outputSeconds:5})});
+ const referenced1080=estimateProviderVideoCost({rateCard,request:request({resolution:"1080p",outputSeconds:5,referenceVideoSeconds:2})});
+ assert.equal(fiveSecond480.estimatedProviderCostMinor,100);
+ assert.equal(fiveSecond720.estimatedProviderCostMinor,150);
+ assert.equal(fiveSecond1080.estimatedProviderCostMinor,340);
+ assert.equal(referenced1080.estimatedProviderCostMinor,408);
+ assert.equal(referenced1080.costLines.find(x=>x.driver==="reference_video_seconds").amountMinor,68);
+});
+
+test("applies the published Seedance 2.5 minimum charge to short generations",()=>{
+ const rateCard=card({
+  model:"seedance2_5",rateCardVersion:"runway-seedance2_5-2026-11-21",
+  sourceUrl:"https://dev.runway.com/learn/seedance-2-5-api",
+  sourceCheckedAt:"2026-11-23T00:00:00Z",videoSecondMinor:20,
+  pricingDimensions:{videoSecondMinor_480p:20,minimumGenerationMinor:80}
+ });
+ const result=estimateProviderVideoCost({rateCard,request:request({resolution:"480p",outputSeconds:1})});
+ assert.equal(result.estimatedProviderCostMinor,80);
+ assert.equal(result.costLines.find(x=>x.driver==="minimum_generation_adjustment").amountMinor,60);
+});
