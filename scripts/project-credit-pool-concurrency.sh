@@ -7,13 +7,13 @@ set -euo pipefail
 
 owner="123e4567-e89b-42d3-a456-426614174000"
 project="323e4567-e89b-42d3-a456-426614174000"
-job_a="e23e4567-e89b-42d3-a456-426614174005"
-job_b="e23e4567-e89b-42d3-a456-426614174006"
+job_a="e23e4567-e89b-42d3-a456-426614174105"
+job_b="e23e4567-e89b-42d3-a456-426614174106"
 key_a="pool-concurrency-job-key-0005"
 key_b="pool-concurrency-job-key-0006"
 
 psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 <<SQL
-select * from executive_visuals.configure_project_credit_pool('$owner','$project',0);
+select * from executive_visuals.configure_project_credit_pool('$owner','$project',2000);
 insert into executive_visuals.jobs(id,owner_id,project_id,job_type,status,input,idempotency_key)
 values
  ('$job_a','$owner','$project','video.generate','queued','{"provider":"runway","model":"gen4.5"}'::jsonb,'pool-concurrency-job-05'),
