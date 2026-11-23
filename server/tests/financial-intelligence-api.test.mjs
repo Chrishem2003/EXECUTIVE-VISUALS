@@ -322,8 +322,15 @@ test("Uganda mobile-money checkout uses server-priced active catalogue and idemp
       return json([{product_code:"creator_credits",name:"Creator credits",description:"Test pack",product_type:"credit_pack",version:2,amount_minor:5000,currency:"UGX",credit_units:100}]);
     if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
       return json([]);
-    if(target.endsWith("/payment_transactions")&&options.method==="POST")
-      return json([{id:paymentId,metadata:{product_type:"credit_pack",product_code:"creator_credits",product_version:2,product_amount_minor:5000,product_currency:"UGX",credit_units:100,idempotency_key:"checkout-key-0001",mobile_money_network:"MTN"}}],201);
+    if(target.endsWith("/payment_transactions")&&options.method==="POST"){
+      const payment=JSON.parse(options.body);
+      assert.equal(payment.metadata.product_type,"credit_pack");
+      assert.equal(payment.metadata.product_version,2);
+      assert.equal(payment.metadata.product_amount_minor,5000);
+      assert.equal(payment.metadata.product_currency,"UGX");
+      assert.equal(payment.metadata.credit_units,100);
+      return json([{id:paymentId,metadata:payment.metadata}],201);
+    }
     if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")
       return json({access_token:"provider-test-token",expires_in:600});
     if(target==="https://developersandbox-api.flutterwave.com/orchestration/direct-charges"&&options.method==="POST")
@@ -349,6 +356,19 @@ test("Uganda mobile-money checkout uses server-priced active catalogue and idemp
   assert.equal(charge.options.headers["x-idempotency-key"],"checkout-key-0001");
 });
 
+
+test("credit checkout rejects non-credit-pack products before creating a payment",async()=>{
+  const service=api(async(url,options={})=>{
+    const target=String(url);
+    if(target.includes("billing_products?select=product_code,name,description,product_type,version,amount_minor,currency,credit_units"))
+      return json([{product_code:"studio_service",name:"Studio service",description:"Not a credit pack",product_type:"service",version:1,amount_minor:5000,currency:"UGX",credit_units:100}]);
+    throw new Error("Non-credit-pack products must not create payments or call Flutterwave: "+target);
+  });
+  const result=await service.handle({method:"POST",path:"/api/billing/checkout",ownerId:owner,idempotencyKey:"checkout-non-credit-01",
+    body:{productCode:"studio_service",network:"MTN",email:"buyer@example.com",firstName:"Test",lastName:"Buyer",phoneNumber:"0771234567"}});
+  assert.equal(result.status,503);
+  assert.equal(result.body.error.code,"BILLING_PRODUCT_INVALID");
+});
 
 test("credit checkout idempotency key cannot replay for a different customer email",async()=>{
  let providerCalled=false;
