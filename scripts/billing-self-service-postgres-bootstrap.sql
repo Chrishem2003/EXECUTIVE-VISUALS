@@ -18,7 +18,10 @@ create table auth.users(id uuid primary key,email text,created_at timestamptz no
 create table if not exists executive_visuals.jobs(
  id uuid primary key,
  owner_id uuid not null references auth.users(id),
- job_type text not null default 'video.generate'
+ job_type text not null default 'video.generate',
+ project_id uuid,
+ status text not null default 'succeeded',
+ created_at timestamptz not null default now()
 );
 
 
