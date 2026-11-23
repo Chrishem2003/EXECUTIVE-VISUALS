@@ -1165,6 +1165,35 @@ test("profitability overview is protected and returns evidence-backed unit econo
  assert.equal(result.body.profitability.byCurrency[0].directGrossMarginPct,95);
 });
 
+test("per-job profitability report is admin-only, bounded and delegates to verified ledger evidence",async()=>{
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([]);
+  throw new Error("Unauthorized job profitability data must not be queried");
+ });
+ const deniedResult=await denied.handle({method:"GET",path:"/api/admin/finance/job-profitability",ownerId:owner});
+ assert.equal(deniedResult.status,403);
+
+ const allowed=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/financial_job_profitability_report")){
+   const body=JSON.parse(options.body);
+   assert.equal(body.p_actor_id,owner);
+   assert.equal(body.p_owner_id,owner);
+   assert.equal(body.p_limit,25);
+   return json({count:1,jobs:[{jobId:"job-verified",profitability:{status:"profitable",currency:"USD",contributionMinor:600,grossMarginPct:60}}],limitations:[]});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await allowed.handle({method:"GET",path:"/api/admin/finance/job-profitability",ownerId:owner,query:{ownerId:owner,limit:"25"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.jobProfitability.jobs[0].profitability.contributionMinor,600);
+
+ const invalid=await allowed.handle({method:"GET",path:"/api/admin/finance/job-profitability",ownerId:owner,query:{ownerId:"not-a-uuid",limit:"101"}});
+ assert.equal(invalid.status,400);
+ assert.equal(invalid.body.error.code,"FINANCIAL_JOB_PROFITABILITY_LIMIT_INVALID");
+});
+
 test("service cost API validates reversals and binds immutable cost evidence to the admin",async()=>{
  let rpcBody=null;
  const service=api(async(url,options={})=>{
