@@ -179,6 +179,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-integration.sql
       - name: Apply Paddle and Pesapal provider subscription migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261121120000_paddle_pesapal_provider_billing.sql
+      - name: Apply Batch 106 Paddle lifecycle event idempotency
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261123200000_paddle_lifecycle_event_idempotency_batch_106.sql
       - name: Apply Batch 70 verified job cost coverage migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122170000_verified_job_cost_coverage_batch_70.sql
       - name: Verify Batch 70 invoice-backed job costs, settled credits and revenue gate
