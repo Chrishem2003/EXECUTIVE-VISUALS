@@ -75,11 +75,11 @@ test("job profitability subtracts only confirmed, complete, same-currency refund
     if(target.endsWith("/rpc/financial_job_profitability_report")){
       calls.push("profitability");
       return json({count:2,jobs:[
-        {jobId,ownerId:owner,revenue:{status:"verified",currency:"USD",recognizedMinor:1000},
+        {jobId,ownerId:owner,revenue:{status:"verified",currencies:["USD"],recognizedMinor:1000},
           actualCost:{status:"verified",amountMinor:400,currency:"USD"},
           profitability:{status:"profitable",currency:"USD",contributionMinor:550,grossMarginPct:55}},
         {jobId:"33333333-3333-4333-8333-333333333333",ownerId:owner,
-          revenue:{status:"verified",currency:"USD",recognizedMinor:800},
+          revenue:{status:"verified",currencies:["USD"],recognizedMinor:800},
           profitability:{status:"profitable",currency:"USD",contributionMinor:500,grossMarginPct:62.5}}
       ],limitations:[]});
     }
@@ -116,7 +116,7 @@ test("job profitability withholds net margin when refund currency differs from r
     const target=String(url);
     if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
     if(target.endsWith("/rpc/financial_job_profitability_report"))return json({count:1,jobs:[
-      {jobId:"44444444-4444-4444-8444-444444444444",revenue:{status:"verified",currency:"USD",recognizedMinor:1000},
+      {jobId:"44444444-4444-4444-8444-444444444444",revenue:{status:"verified",currencies:["USD"],recognizedMinor:1000},
         profitability:{status:"profitable",currency:"USD",contributionMinor:500,grossMarginPct:50}}
     ],limitations:[]});
     if(target.endsWith("/rpc/financial_job_refund_attribution_report"))return json({count:1,jobs:[
