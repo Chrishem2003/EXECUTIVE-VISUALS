@@ -7,6 +7,7 @@ const root=join(dirname(fileURLToPath(import.meta.url)),"../../supabase/migratio
 const sql=readFileSync(join(root,"20261123180000_financial_fx_rate_evidence_batch_96.sql"),"utf8");
 test("FX evidence is append-only, scoped, audited and maker-checker controlled",()=>{
  assert.match(sql,/create table if not exists executive_visuals\.financial_fx_rate_evidence/);
+ assert.match(sql,/period_month date not null check/);
  assert.match(sql,/create table if not exists executive_visuals\.financial_fx_rate_decisions/);
  assert.match(sql,/before update or delete on executive_visuals\.financial_fx_rate_evidence/);
  assert.match(sql,/before update or delete on executive_visuals\.financial_fx_rate_decisions/);
