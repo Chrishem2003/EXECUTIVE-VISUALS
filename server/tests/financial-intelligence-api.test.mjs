@@ -1822,7 +1822,7 @@ test("FX evidence API enforces settlement-grade sources and uses audited admin R
  assert.equal(invalid.body.error.code,"FINANCIAL_FX_SETTLEMENT_SOURCE_REQUIRED");
  assert.equal(calls.filter(call=>call.target.endsWith("/rpc/record_financial_fx_rate_evidence")).length,0);
  const recorded=await service.handle({method:"POST",path:"/api/admin/finance/fx-rate-evidence",ownerId:owner,
-  body:{sourceCurrency:"USD",targetCurrency:"UGX",rateScaled:421690000000,effectiveDate:"2026-11-23",
+  body:{sourceCurrency:"USD",targetCurrency:"UGX",periodMonth:"2026-11-01",rateScaled:421690000000,effectiveDate:"2026-11-23",
    sourceType:"processor_settlement",purpose:"settlement_cost",sourceReference:"settlement-2026-11-23",
    evidenceNote:"Matched settlement statement",idempotencyKey:"fx-evidence-key-001"}});
  assert.equal(recorded.status,201);
@@ -1837,7 +1837,7 @@ test("FX evidence API enforces settlement-grade sources and uses audited admin R
   query:{sourceCurrency:"USD",targetCurrency:"UGX",periodMonth:"2026-11-01"}});
  assert.equal(listed.status,200);
  assert.equal(listed.body.evidence[0].decision,"approved");
- assert.ok(calls.some(call=>call.target.includes("financial_fx_rate_evidence_current?")&&call.target.includes("effective_date=gte.2026-11-01")));
+ assert.ok(calls.some(call=>call.target.includes("financial_fx_rate_evidence_current?")&&call.target.includes("period_month=eq.2026-11-01")));
 });
 
 test("FX evidence and approval endpoints require finance administrator authorization",async()=>{
