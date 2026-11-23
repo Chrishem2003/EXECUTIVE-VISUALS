@@ -795,7 +795,7 @@ grant execute on function executive_visuals.financial_job_profitability_report(u
   evidence_id:=nullif(btrim(p_evidence->>'evidenceId'),'');
   evidence_reference:=nullif(btrim(p_evidence->>'evidenceReference'),'');
   evidence_sha256:=lower(coalesce(p_evidence->>'evidenceSha256',''));
-  if evidence_type not in('provider_payment_receipt','provider_settlement_statement','provider_invoice')
+  if coalesce(evidence_type,'') not in('provider_payment_receipt','provider_settlement_statement','provider_invoice')
      or evidence_id is null or evidence_reference is null
      or evidence_sha256 !~ '^[a-f0-9]{64}
 -- allocations and immutable provider invoice attribution links.
@@ -1048,19 +1048,23 @@ grant execute on function executive_visuals.financial_job_profitability_report(u
   if not found or payment_row.status<>'successful' or payment_row.verified_at is null then
     raise exception 'PAYMENT_PROCESSOR_FEE_PAYMENT_NOT_VERIFIED' using errcode='23514';
   end if;
-  if payment_row.currency<>p_currency or payment_row.provider<>lower(payment_row.provider)
-     or payment_row.provider_transaction_id is distinct from p_provider_transaction_id
+  if payment_row.currency<>p_currency
+     or payment_row.provider_transaction_id is distinct from btrim(p_provider_transaction_id)
      or p_fee_minor>payment_row.amount_minor then
     raise exception 'PAYMENT_PROCESSOR_FEE_PAYMENT_MISMATCH' using errcode='23514';
   end if;
 
   select * into existing_row from executive_visuals.payment_processor_fee_evidence
-   where payment_transaction_id=p_payment_id or idempotency_key=p_idempotency_key
-   for update;
+   where payment_transaction_id=p_payment_id for update;
+  if not found then
+    select * into existing_row from executive_visuals.payment_processor_fee_evidence
+     where idempotency_key=p_idempotency_key for update;
+  end if;
   if found then
     if existing_row.payment_transaction_id<>p_payment_id
+       or existing_row.idempotency_key<>p_idempotency_key
        or existing_row.fee_minor<>p_fee_minor or existing_row.currency<>p_currency
-       or existing_row.provider_transaction_id<>p_provider_transaction_id
+       or existing_row.provider_transaction_id<>btrim(p_provider_transaction_id)
        or existing_row.evidence_type<>evidence_type or existing_row.evidence_id<>evidence_id
        or existing_row.evidence_reference<>evidence_reference
        or existing_row.evidence_sha256<>evidence_sha256 then
@@ -1075,7 +1079,7 @@ grant execute on function executive_visuals.financial_job_profitability_report(u
     payment_transaction_id,owner_id,provider,provider_transaction_id,fee_minor,currency,
     evidence_type,evidence_id,evidence_reference,evidence_sha256,idempotency_key,recorded_by
   ) values(
-    payment_row.id,payment_row.owner_id,payment_row.provider,p_provider_transaction_id,
+    payment_row.id,payment_row.owner_id,payment_row.provider,btrim(p_provider_transaction_id),
     p_fee_minor,p_currency,evidence_type,evidence_id,evidence_reference,evidence_sha256,
     p_idempotency_key,p_actor_id
   ) returning id into fee_row_id;
