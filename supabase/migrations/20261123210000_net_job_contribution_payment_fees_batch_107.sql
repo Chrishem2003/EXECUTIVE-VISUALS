@@ -195,6 +195,7 @@ begin
         rows between unbounded preceding and current row) cumulative_credits,
       coalesce(sum(a.credits_consumed) over(partition by a.source_id order by a.created_at,a.id
         rows between unbounded preceding and 1 preceding),0) prior_credits,
+      sum(a.credits_consumed) over(partition by a.source_id) source_consumed_total,
       case when p.fee_minor is null then null else
         round(p.fee_minor::numeric*sum(a.credits_consumed) over(partition by a.source_id order by a.created_at,a.id
           rows between unbounded preceding and current row)/s.credits_granted)
@@ -210,6 +211,7 @@ begin
   ), fee_by_job as (
     select f.job_id,count(*)::integer fee_source_count,
       count(*) filter(where f.provider_fee_minor is null)::integer missing_fee_count,
+      count(*) filter(where f.source_consumed_total>f.credits_granted)::integer invalid_source_count,
       count(distinct f.currency)::integer fee_currency_count,
       coalesce(sum(f.allocated_fee_minor),0)::bigint fee_minor,min(f.currency) fee_currency,
       coalesce(jsonb_agg(jsonb_build_object(
@@ -238,6 +240,7 @@ begin
       coalesce(uv.succeeded_usage_events,0) succeeded_usage_events,
       coalesce(fv.fee_source_count,0) fee_source_count,
       coalesce(fv.missing_fee_count,0) missing_fee_count,
+      coalesce(fv.invalid_source_count,0) invalid_source_count,
       coalesce(fv.fee_currency_count,0) fee_currency_count,
       coalesce(fv.fee_minor,0) fee_minor,fv.fee_currency,
       coalesce(fv.fee_lines,'[]'::jsonb) fee_lines
@@ -275,12 +278,13 @@ begin
         'lines',cost_lines),
       'processorFee',jsonb_build_object(
         'status',case when fee_source_count=0 then 'not_applicable'
+          when invalid_source_count>0 then 'allocation_inconsistent'
           when missing_fee_count>0 then 'missing'
           when fee_currency_count<>1 then 'mixed_currency' else 'verified' end,
         'amountMinor',case when fee_source_count=0 then 0
-          when missing_fee_count=0 and fee_currency_count=1 then fee_minor else null end,
+          when invalid_source_count=0 and missing_fee_count=0 and fee_currency_count=1 then fee_minor else null end,
         'currency',case when fee_currency_count=1 then fee_currency else null end,
-        'sourceCount',fee_source_count,'missingFeeSources',missing_fee_count,'lines',fee_lines
+        'sourceCount',fee_source_count,'missingFeeSources',missing_fee_count,'inconsistentSources',invalid_source_count,'lines',fee_lines
       ),
       'profitability',jsonb_build_object(
         'status',case
@@ -290,6 +294,7 @@ begin
           when cost_currency_count=1 and (revenue_currencies->>0)<>cost_currency then 'currency_mismatch'
           when credits_attributed<>actual_credits then 'revenue_incomplete'
           when invoice_line_count=0 or succeeded_usage_events<>invoice_line_count then 'cost_incomplete'
+          when invalid_source_count>0 then 'processor_fee_allocation_inconsistent'
           when fee_source_count>0 and missing_fee_count>0 then 'processor_fee_incomplete'
           when fee_source_count>0 and fee_currency_count<>1 then 'mixed_currency'
           when fee_source_count>0 and fee_currency<>(revenue_currencies->>0) then 'currency_mismatch'
@@ -309,7 +314,7 @@ begin
         'netContributionMinor',case when unresolved_count=0 and credits_attributed=actual_credits
           and revenue_currency_count=1 and cost_currency_count=1 and invoice_line_count>0
           and succeeded_usage_events=invoice_line_count and (revenue_currencies->>0)=cost_currency
-          and (fee_source_count=0 or (missing_fee_count=0 and fee_currency_count=1 and fee_currency=(revenue_currencies->>0)))
+          and (fee_source_count=0 or (invalid_source_count=0 and missing_fee_count=0 and fee_currency_count=1 and fee_currency=(revenue_currencies->>0)))
           then revenue_minor-cost_minor-coalesce(fee_minor,0) else null end,
         'netMarginPct',case when unresolved_count=0 and credits_attributed=actual_credits
           and revenue_currency_count=1 and cost_currency_count=1 and invoice_line_count>0
