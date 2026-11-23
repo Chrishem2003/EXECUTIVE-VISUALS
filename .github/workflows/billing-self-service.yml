@@ -36,6 +36,7 @@ on:
       - feat/customer-credit-wallet-statement-batch-101-2026-11-23
       - feat/customer-generation-credit-preview-batch-102-2026-11-23
       - feat/subscription-generation-credit-allowance-batch-103-2026-11-23
+      - feat/verified-credit-pack-wallet-purchases-batch-104-2026-11-23
   pull_request:
 
 permissions:
@@ -147,6 +148,10 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261123100000_subscription_generation_credit_allowances_batch_103.sql
       - name: Verify Batch 103 verified subscription generation credit grants
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/subscription-generation-credit-allowances-postgres-integration-batch-103.sql
+      - name: Apply Batch 104 verified credit-pack wallet settlement
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261123110000_verified_credit_pack_generation_wallet_settlement_batch_104.sql
+      - name: Verify Batch 104 credit-pack wallet settlement
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-credit-pack-generation-wallet-postgres-integration-batch-104.sql
       - name: Apply Batch 12 financial command centre migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111090000_financial_command_centre.sql
       - name: Apply Batch 13 dispute evidence migration
@@ -269,6 +274,8 @@ jobs:
         run: node --test server/tests/customer-generation-credit-quote.test.mjs server/tests/neon-customer-credit-policy.test.mjs
       - name: Test Batch 103 subscription generation credit allowance contract
         run: node --test server/tests/subscription-generation-credit-allowances-batch-103.test.mjs server/tests/subscription-plan-catalogue.test.mjs server/tests/subscription-plan-credit-economics-batch-72.test.mjs server/tests/subscription-plan-credit-economics-ui-batch-72.test.mjs
+      - name: Test Batch 104 credit-pack customer wallet interface
+        run: node --test server/tests/credit-pack-wallet-ui-batch-104.test.mjs
       - name: Test Batch 39 revenue movement and cohort API
         run: node --test server/tests/revenue-movement-cohorts.test.mjs
       - name: Test Batch 40 cashflow and liquidity API
