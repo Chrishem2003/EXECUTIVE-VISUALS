@@ -39,11 +39,11 @@ test("mixed workload results render fee-aware contribution, margin target and cr
 });
 
 test("model-specific invoice-backed actual costs render with coverage and verification state",()=>{
- assert.match(app,/Invoice-backed model and operation actual costs/);
+ assert.match(app,/Model and operation cost evidence/);
  assert.match(app,/modelActualCostEvidence/);
  assert.match(app,/invoiceCoverage/);
- assert.match(app,/Verified actual cost/);
- assert.match(app,/partial groups show coverage without extrapolating missing costs/);
+ assert.match(app,/Actual cost/);
+ assert.match(app,/incomplete samples fail closed/);
 });
 
 test("plan simulator is a scenario-only control and does not activate plans or grant credits",()=>{
@@ -63,4 +63,10 @@ test("Financial Command Centre renders prepaid credit-pack profitability and cur
  assert.match(app,/approved processor-settlement or bank-statement evidence explicitly linked to the invoice reporting month/);
  assert.match(app,/official tax\/reference rates are not accepted for settlement costing/);
  assert.match(app,/Inactive products remain draft-only/);
+});
+
+test("model actual-cost evidence can be loaded directly without running plan scenarios",()=>{
+ assert.match(app,/data-finance-model-actual-cost-refresh/);
+ assert.ok(app.includes("/api/admin/finance/model-actual-costs?periodMonth="));
+ assert.match(app,/VERIFIED PROVIDER ACTUALS/);
 });
