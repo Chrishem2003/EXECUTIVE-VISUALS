@@ -388,6 +388,25 @@ test("credit checkout idempotency key cannot replay for a different customer ema
  assert.equal(providerCalled,false);
 });
 
+test("pending credit pack payment blocks a second charge for the same product",async()=>{
+ let providerCalled=false;
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
+   return json([]);
+  if(target.includes("payment_transactions?select=id,tx_ref,status,metadata")&&target.includes("status=eq.pending"))
+   return json([{id:paymentId,tx_ref:"EVS-pending-credit-pack",status:"pending",metadata:{product_type:"credit_pack",product_code:"creator_credits"}}]);
+  if(target.includes("flutterwave"))providerCalled=true;
+  throw new Error("A pending payment must block new product lookup/charge: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/billing/checkout",ownerId:owner,idempotencyKey:"credit-pack-second-key",
+  body:{productCode:"creator_credits",network:"MTN",email:"buyer@example.com",firstName:"Test",lastName:"Buyer",phoneNumber:"0771234567"}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"CREDIT_PACK_PAYMENT_PENDING");
+ assert.equal(result.body.payment.reference,"EVS-pending-credit-pack");
+ assert.equal(providerCalled,false);
+});
+
 test("legacy credit checkout replay is blocked until its generation-credit settlement is reconciled",async()=>{
  const service=api(async url=>{
   const target=String(url);
