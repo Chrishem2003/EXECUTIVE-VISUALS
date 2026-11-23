@@ -77,7 +77,7 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
     fail("PROVIDER_VIDEO_RATE_CARD_UNVERIFIED","A currently effective, governed rate card with matching evidence is required.");
   const dimensions=rateCard.pricingDimensions??rateCard.pricing_dimensions??{};
   if(!dimensions||typeof dimensions!=="object"||Array.isArray(dimensions)||
-    Object.entries(dimensions).some(([key,value])=>!DIMENSION_KEYS.has(key)||typeof value!=="number"||!Number.isSafeInteger(value)||value<0))
+    Object.entries(dimensions).some(([key,value])=>!DIMENSION_KEYS.has(key)||typeof value!=="number"||!Number.isFinite(value)||value<0||(!["referenceVideoPaddingThresholdSeconds","referenceVideoPaddedSeconds"].includes(key)&&!Number.isSafeInteger(value))))
     fail("PROVIDER_VIDEO_RATE_CARD_INVALID","Rate-card pricing dimensions contain unsupported or invalid fields.");
   const resolution=String(request.resolution||"").trim().toLowerCase();
   if(!RESOLUTIONS.has(resolution))fail("PROVIDER_VIDEO_RESOLUTION_INVALID","Choose a supported output resolution.");
