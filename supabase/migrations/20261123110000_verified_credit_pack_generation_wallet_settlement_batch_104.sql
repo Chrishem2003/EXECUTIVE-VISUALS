@@ -67,8 +67,7 @@ begin
      or upper(coalesce(p_provider_payload->>'currency',''))<>payment_row.currency
      or coalesce(p_provider_payload->>'reference','')<>payment_row.tx_ref
      or coalesce((p_provider_payload->>'amount')::numeric,-1)<>payment_row.amount_minor::numeric
-     or (payment_row.provider_transaction_id is not null
-       and payment_row.provider_transaction_id<>p_provider_transaction_id) then
+     or payment_row.provider_transaction_id is distinct from p_provider_transaction_id then
     raise exception 'CREDIT_PACK_PROVIDER_PAYMENT_MISMATCH';
   end if;
 
