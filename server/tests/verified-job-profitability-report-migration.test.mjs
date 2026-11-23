@@ -39,5 +39,7 @@ test("net job contribution allocates only verified payment fees to consumed cred
  assert.match(netSql,/netContributionMinor/);
  assert.match(netSql,/netMarginPct/);
  assert.match(netSql,/processor_fee_incomplete/);
+ assert.match(netSql,/source_consumed_total/);
+ assert.match(netSql,/processor_fee_allocation_inconsistent/);
  assert.match(netSql,/rows between unbounded preceding and current row/i);
 });
