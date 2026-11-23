@@ -20,11 +20,7 @@ begin
     owner_id,entry_type,credit_delta,idempotency_key,payment_transaction_id,reason,metadata
   ) values(
     v_owner,'purchase_grant',200,'batch111-old-ledger-paid',v_payment,'Unused verified paid credit pack','{}'
-  ) on conflict(idempotency_key) do nothing
-  returning id into v_old_grant;
-  if v_old_grant is null then
-    select id into v_old_grant from executive_visuals.credit_ledger where idempotency_key='batch111-old-ledger-paid';
-  end if;
+  ) returning id into v_old_grant;
   select id into v_grant from executive_visuals.billing_credit_ledger
    where idempotency_key='payment-credit-ledger:'||v_old_grant::text;
   if v_grant is null then raise exception 'Batch 111 test paid-credit grant was not mirrored'; end if;
