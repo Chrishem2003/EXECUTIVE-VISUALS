@@ -64,3 +64,10 @@ test("Financial Command Centre renders prepaid credit-pack profitability and cur
  assert.match(app,/official tax\/reference rates are not accepted for settlement costing/);
  assert.match(app,/Inactive products remain draft-only/);
 });
+
+test("customer plan cards label generation allowances separately from legacy render credits",()=>{
+ assert.match(app,/generation_credit_allowance_published/);
+ assert.match(app,/included_generation_credits/);
+ assert.match(app,/AI-generation credits per period/);
+ assert.match(app,/legacy render credits per period/);
+});
