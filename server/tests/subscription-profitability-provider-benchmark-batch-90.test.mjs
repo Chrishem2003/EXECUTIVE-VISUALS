@@ -99,15 +99,16 @@ test("video-reference inputs are priced separately from text-to-video output-onl
   assert.ok([seedanceEdit,klingEdit].every(row=>row.billable===false&&row.settlementEligible===false));
 });
 
-test("Gemini Omni 1.2 Flash adds a low-cost model with separately priced video inputs",()=>{
+test("Runway Dev Gemini Omni Flash uses its current rate-card output and input charges",()=>{
   const result=economics();
   const output=result.scenarios.find(row=>row.model==="gemini_omni_flash"&&row.operation==="text-to-video");
-  const edit=result.scenarios.find(row=>row.model==="gemini_omni_flash_1.2"&&row.operation==="video-to-video");
-  // Runway Dev: $0.07/s at 720p plus $0.01/s for input video.
-  assert.equal(output.providerCostUsd,0.70);
-  assert.equal(edit.providerCostUsd,0.80);
+  const edit=result.scenarios.find(row=>row.model==="gemini_omni_flash"&&row.operation==="video-to-video");
+  // Runway Dev current rate card: $0.10/s at 720p plus $0.01/s for input video.
+  assert.equal(output.providerCostUsd,1.00);
+  assert.equal(edit.providerCostUsd,1.10);
   assert.ok(edit.customerCreditsPerGeneration>output.customerCreditsPerGeneration);
-  assert.equal(output.pricingSource,"https://dev.runwayml.com/pricing");\n  assert.equal(output.pricingDate,"2026-11-23");
+  assert.equal(output.pricingSource,"https://dev.runwayml.com/pricing");
+  assert.equal(output.pricingDate,"2026-11-23");
   assert.ok([output,edit].every(row=>row.billable===false&&row.settlementEligible===false));
 });
 
