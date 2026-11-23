@@ -18,6 +18,7 @@
     "verify:verified-job-cost-coverage": "node --test server/tests/verified-job-cost-coverage.test.mjs",
     "verify:provider-rate-cards": "node --test server/tests/provider-rate-cards.test.mjs",
     "verify:provider-video-cost-estimator": "node --test server/tests/provider-video-cost-estimator.test.mjs server/tests/provider-video-cost-estimator-api.test.mjs",
+    "verify:runway-image-pricing": "node --test server/tests/runway-image-pricing.test.mjs",
     "verify:workload-telemetry": "node --test server/tests/ai-workload-telemetry.test.mjs",
     "verify:subscription-economics": "node --test server/tests/subscription-customer-economics.test.mjs",
     "verify:financial-reconciliation": "node --test server/tests/financial-reconciliation.test.mjs",

@@ -1,4 +1,4 @@
-const SOURCE="https://docs.dev.runwayml.com/guides/pricing/";
+const SOURCE="https://docs.dev.runwayml.com/guides/pricing/#gpt-image-2-6-flare-and-sunburst";
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 const TIERS=Object.freeze({
   "1K":Object.freeze({
@@ -19,19 +19,19 @@ const TIERS=Object.freeze({
 });
 const TABLE=Object.freeze({
   "1K":{
-    "1:1":{low:2,medium:3,high:11},"4:5":{low:1,medium:2,high:8},
-    "3:4":{low:1,medium:2,high:7},"2:3":{low:1,medium:2,high:6},
-    "9:16":{low:1,medium:2,high:5},"21:9":{low:1,medium:1,high:4}
+    "1:1":{low:5,medium:9,high:11},"4:5":{low:4,medium:6,high:8},
+    "3:4":{low:4,medium:6,high:7},"2:3":{low:3,medium:5,high:6},
+    "9:16":{low:2,medium:4,high:5},"21:9":{low:2,medium:3,high:4}
   },
   "2K":{
-    "1:1":{low:2,medium:4,high:16},"4:5":{low:2,medium:3,high:11},
-    "3:4":{low:2,medium:3,high:10},"2:3":{low:1,medium:2,high:8},
-    "9:16":{low:1,medium:2,high:6},"21:9":{low:1,medium:2,high:5}
+    "1:1":{low:8,medium:13,high:16},"4:5":{low:5,medium:9,high:11},
+    "3:4":{low:5,medium:8,high:10},"2:3":{low:4,medium:7,high:8},
+    "9:16":{low:3,medium:5,high:6},"21:9":{low:3,medium:4,high:5}
   },
   "4K":{
-    "1:1":{low:3,medium:5,high:19},"4:5":{low:2,medium:4,high:15},
-    "3:4":{low:2,medium:4,high:14},"2:3":{low:2,medium:4,high:13},
-    "9:16":{low:2,medium:3,high:11},"21:9":{low:1,medium:2,high:7}
+    "1:1":{low:9,medium:16,high:19},"4:5":{low:8,medium:13,high:15},
+    "3:4":{low:7,medium:12,high:14},"2:3":{low:6,medium:11,high:13},
+    "9:16":{low:5,medium:9,high:11},"21:9":{low:4,medium:6,high:7}
   }
 });
 function resolveSize(ratio){
@@ -63,7 +63,7 @@ export function estimateRunwayImageCredits(options={}){
     provider:"runway",model,pricingDate,source:SOURCE,
     estimatedCredits:credits,estimatedUsd:Math.round(credits*0.01*10000)/10000,
     currency:"USD",resolution:size.resolution,ratio,ratioCategory:size.ratioCategory,quality,reasoningEffort,background,outputCount,referenceImageCount,
-    formula:"("+perImage+" credits/image + "+referenceImageCount+" reference-image credits/output) × "+outputCount+" outputs",
+    formula:"("+perImage+" credits/image + "+referenceImageCount+" reference-image credits/output) × "+outputCount+" outputs; 2-credit minimum per image",
     autoResolutionReserve:size.auto,
     evidenceType:"published_price_estimate",billable:false,settlementEligible:false
   });
@@ -71,7 +71,7 @@ export function estimateRunwayImageCredits(options={}){
 export function listRunwayImageModels(){
   return ["gpt_image_2_6_flare","gpt_image_2_6_sunburst"].map(id=>Object.freeze({
     id,provider:"runway",availability:"adapter_supported",executionAdapter:"runway-image-v1",
-    promptMaxCharacters:32000,maxReferenceImages:16,resolutions:Object.freeze(["1K","2K","4K"]),outputCounts:Object.freeze({min:1,max:1}),
+    promptMaxCharacters:32000,maxReferenceImages:16,resolutions:Object.freeze(["1K","2K","4K"]),outputCounts:Object.freeze({min:1,max:10}),
     sizeTiers:Object.freeze(Object.keys(TIERS)),supportedPixelSizes:Object.freeze(Object.fromEntries(Object.entries(TIERS).map(([tier,sizes])=>[tier,Object.freeze(Object.keys(sizes))]))),
     qualities:Object.freeze(["low","medium","high"]),reasoningEfforts:Object.freeze(["low","medium","high"]),
     backgrounds:Object.freeze(["auto","opaque","transparent"]),outputFormat:"png",
