@@ -126,12 +126,14 @@ begin
           when unresolved_count>0 then 'revenue_incomplete'
           when allocation_count=0 or revenue_currency_count=0 then 'revenue_unavailable'
           when revenue_currency_count<>1 or cost_currency_count>1 then 'mixed_currency'
+          when cost_currency_count=1 and (revenue_currencies->>0)<>cost_currency then 'currency_mismatch'
+          when credits_attributed<>actual_credits then 'revenue_incomplete'
           when invoice_line_count=0 or succeeded_usage_events<>invoice_line_count then 'cost_incomplete'
           when revenue_minor-cost_minor>0 then 'profitable'
           when revenue_minor-cost_minor=0 then 'break_even'
           else 'loss_making' end,
-        'currency',case when unresolved_count=0 and revenue_currency_count=1 and cost_currency_count=1
-          and invoice_line_count>0 and succeeded_usage_events=invoice_line_count
+        'currency',case when unresolved_count=0 and credits_attributed=actual_credits and revenue_currency_count=1 and cost_currency_count=1
+          and (revenue_currencies->>0)=cost_currency and invoice_line_count>0 and succeeded_usage_events=invoice_line_count
           and (revenue_currencies->>0)=cost_currency then cost_currency else null end,
         'contributionMinor',case when unresolved_count=0 and revenue_currency_count=1 and cost_currency_count=1
           and invoice_line_count>0 and succeeded_usage_events=invoice_line_count
