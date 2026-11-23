@@ -13,3 +13,18 @@ test("SQL migration keeps identity separate from auth and protects append-only e
 
 test("lease-fenced finalization commits job and financial settlement through one database function",async()=>{let call;const f=createNeonVideoFinancials({pool:{query:async(sql,values)=>{call={sql,values};return{rows:[{finished:true}]};}}});assert.equal(await f.finishVideoJob({jobId:id,ownerId:id,workerId:"worker-a",leaseToken:"223e4567-e89b-42d3-a456-426614174000",status:"succeeded",output:{provider:"runway",model:"gen4.5",providerTaskId:"task-1",costEvidenceReference:"receipt-1"},actualAmount:0,actualCredits:0,financialEvidence:{provider:"runway",model:"gen4.5",providerTaskId:"task-1",evidenceType:"provider_task_receipt",evidenceReference:"receipt-1"}}),true);assert.match(call.sql,/finish_video_generation_job_v1/);assert.equal(call.values[2],"worker-a");assert.equal(call.values[7],0);});
 test("video finalization rejects missing lease and invalid terminal states before database access",async()=>{const f=createNeonVideoFinancials({pool:{query:async()=>{throw new Error("must not query");}}});await assert.rejects(()=>f.finishVideoJob({jobId:id,ownerId:id,workerId:"worker",leaseToken:"bad",status:"succeeded"}),/lease identifiers/);await assert.rejects(()=>f.finishVideoJob({jobId:id,ownerId:id,workerId:"worker",leaseToken:"223e4567-e89b-42d3-a456-426614174000",status:"unknown"}),/terminal status/);});
+
+test("Batch 104 migration binds credit releases to persisted provider-submission evidence",async()=>{
+ const {readFile}=await import("node:fs/promises");
+ const sql=await readFile(new URL("../../database/neon/migrations/0006_verified_credit_release_guard.sql",import.meta.url),"utf8");
+ assert.match(sql,/before insert on executive_visuals\.billing_credit_ledger/);
+ assert.match(sql,/new\.idempotency_key not like 'credit-release:%'/);
+ assert.match(sql,/VIDEO_CREDIT_RELEASE_NO_SUBMISSION_NOT_PROVEN/);
+ assert.match(sql,/VIDEO_CREDIT_RELEASE_PROVIDER_NO_CHARGE_NOT_PROVEN/);
+ assert.match(sql,/submission\.state not in \('prepared','failed','cancelled'\)/);
+ assert.match(sql,/submission\.metadata->>'noChargeConfirmed'/);
+ assert.match(sql,/submission\.provider_task_id/);
+ assert.match(sql,/for key share/);
+ assert.match(sql,/revoke all on function executive_visuals\.guard_video_generation_credit_release_v1\(\) from public/);
+ assert.doesNotMatch(sql,/auth\.users|drop table|truncate|delete from/i);
+});
