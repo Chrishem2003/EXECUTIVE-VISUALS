@@ -1,4 +1,5 @@
 -- Runs after Batch 103 subscription-generation allowance migration in disposable billing PostgreSQL.
+grant usage on schema executive_visuals to service_role;
 insert into auth.users(id,email) values
  ('33333333-3333-4333-8333-333333333333','generation-credit-owner@example.test'),
  ('44444444-4444-4444-8444-444444444444','generation-credit-failed@example.test'),
