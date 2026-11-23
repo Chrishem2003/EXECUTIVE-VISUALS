@@ -184,6 +184,15 @@ begin
     raise exception 'Unpublished generation allowance was copied into the customer snapshot';
   end if;
 
+  -- Keep disposable fixtures from contaminating later finance-dashboard assertions.
+  update executive_visuals.customer_subscriptions
+     set status='expired',updated_at=now()
+   where owner_id in (
+     '33333333-3333-4333-8333-333333333333',
+     '55555555-5555-4555-8555-555555555555',
+     '66666666-6666-4666-8666-666666666666'
+   ) and status='active';
+
 end;
 $subscription_generation_credit_assertions$;
 reset role;
