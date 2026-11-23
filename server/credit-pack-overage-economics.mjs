@@ -58,7 +58,7 @@ export function calculateCreditPackOverageEconomics({products=[],costEvidence,pr
   const contributionMarginBps=Math.floor(contributionMinor*10000/amountMinor);
   const marginAssessment=contributionMarginBps>=targetMarginBps?"meets_target_before_other_costs":"below_target_before_other_costs";
   return Object.freeze({...base,status:"measured_scenario_only",costCurrency:currency,
-   providerCostPerCreditMinor:costEvidence.providerCostPerCustomerCreditMinor,providerCostMinor,
+   providerCostPerCreditMinor:costEvidence.providerCostPerCustomerCreditMinor,sourceProviderCostMinor,providerCostMinor,fxConversion:conversion,
    paymentFeeMinor,supportReserveMinor,contributionMinor,contributionMarginBps,
    targetMarginBps,marginAssessment,customerChargeCreated:false,checkoutEnabled:false});
  });
