@@ -7,7 +7,7 @@ const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 
 export function validateModelActualCostPeriod(value){
  const periodMonth=String(value||"");
- if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||
+ if(!/^\d{4}-\d{2}-01$/.test(periodMonth)||
     !Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
     new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
   fail("MODEL_ACTUAL_COST_PERIOD_INVALID","Choose a valid reporting month.");
