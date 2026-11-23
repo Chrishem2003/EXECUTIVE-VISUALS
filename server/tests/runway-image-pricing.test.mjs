@@ -86,9 +86,9 @@ test("model catalogue accurately advertises supported output counts and referenc
 
 
 test("prices GIF animations by frame-count band and output count", () => {
-  const twoToEight = estimateRunwayImageCredits({ ...base, outputFormat: "gif", frameCount: 8, outputCount: 3 });
-  const nineToTwelve = estimateRunwayImageCredits({ ...base, outputFormat: "gif", frameCount: 9, quality: "medium" });
-  const thirteenToSixteen = estimateRunwayImageCredits({ ...base, outputFormat: "gif", frameCount: 16, quality: "high", outputCount: 2 });
+  const twoToEight = estimateRunwayImageCredits({ ...base, ratio: "auto", outputFormat: "gif", frameCount: 8, outputCount: 3 });
+  const nineToTwelve = estimateRunwayImageCredits({ ...base, ratio: "auto", outputFormat: "gif", frameCount: 9, quality: "medium" });
+  const thirteenToSixteen = estimateRunwayImageCredits({ ...base, ratio: "auto", outputFormat: "gif", frameCount: 16, quality: "high", outputCount: 2 });
   assert.equal(twoToEight.estimatedCredits, 12);
   assert.equal(nineToTwelve.estimatedCredits, 7);
   assert.equal(thirteenToSixteen.estimatedCredits, 24);
@@ -107,9 +107,9 @@ test("prices SVG with a separate fifty-credit authoring charge per output", () =
 });
 
 test("rejects GIF references, non-auto ratios and out-of-range frame counts", () => {
-  assert.throws(() => estimateRunwayImageCredits({ ...base, outputFormat: "gif", referenceImageCount: 1 }), { code: "RUNWAY_IMAGE_PRICE_INVALID_INPUT" });
+  assert.throws(() => estimateRunwayImageCredits({ ...base, ratio: "auto", outputFormat: "gif", referenceImageCount: 1 }), { code: "RUNWAY_IMAGE_PRICE_INVALID_INPUT" });
   assert.throws(() => estimateRunwayImageCredits({ ...base, outputFormat: "gif", ratio: "1920:1920" }), { code: "RUNWAY_IMAGE_PRICE_INVALID_INPUT" });
-  assert.throws(() => estimateRunwayImageCredits({ ...base, outputFormat: "gif", frameCount: 17 }), { code: "RUNWAY_IMAGE_PRICE_INVALID_INPUT" });
+  assert.throws(() => estimateRunwayImageCredits({ ...base, ratio: "auto", outputFormat: "gif", frameCount: 17 }), { code: "RUNWAY_IMAGE_PRICE_INVALID_INPUT" });
 });
 
 test("rejects SVG references and frameCount on non-GIF output", () => {
