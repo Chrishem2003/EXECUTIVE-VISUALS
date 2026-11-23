@@ -52,6 +52,8 @@ begin
   );
 
   perform executive_visuals.post_verified_ai_invoice_to_service_cost_ledger(v_owner,v_import);
+  update executive_visuals.payment_transactions set provider_fee_minor=30
+   where id='71717171-7171-4171-8171-717171717201' and owner_id=v_owner;
   v_report:=executive_visuals.financial_job_profitability_report(v_owner,v_owner,100);
   select value into v_job_report
     from jsonb_array_elements(v_report->'jobs')
@@ -64,7 +66,11 @@ begin
      or (v_job_report#>>'{actualCost,amountMinor}')::bigint<>500
      or v_job_report#>>'{profitability,status}'<>'loss_making'
      or (v_job_report#>>'{profitability,contributionMinor}')::bigint<>-100
-     or (v_job_report#>>'{profitability,grossMarginPct}')::numeric<>-25 then
+     or (v_job_report#>>'{profitability,grossMarginPct}')::numeric<>-25
+     or v_job_report#>>'{processorFee,status}'<>'verified'
+     or (v_job_report#>>'{processorFee,amountMinor}')::bigint<>12
+     or (v_job_report#>>'{profitability,netContributionMinor}')::bigint<>-112
+     or (v_job_report#>>'{profitability,netMarginPct}')::numeric<>-28 then
     raise exception 'Verified job revenue and posted invoice cost did not produce the expected loss report: %',v_job_report;
   end if;
 end
