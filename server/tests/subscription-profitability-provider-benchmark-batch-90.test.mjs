@@ -132,6 +132,23 @@ test("WAN 3.0 tiers and MiniMax H3 Max use documented Runway Dev IDs and resolut
   assert.ok([wan,prime,h3].every(row=>row.billable===false&&row.settlementEligible===false));
 });
 
+test("lower-cost models improve the hypothetical Starter allowance without changing routing",()=>{
+  const result=economics();
+  const starter=result.plans.find(plan=>plan.planCode==="starter_creator");
+  const row=model=>starter.modelCoverage.find(item=>item.model===model);
+  const omni11=row("gemini_omni_flash_1.1");
+  const omni12=row("gemini_omni_flash_1.2");
+  const h3=row("h3_max");
+  const wan=row("wan3");
+  const seedance=row("seedance2_5");
+  assert.ok(omni12.customerCreditsPerGeneration<omni11.customerCreditsPerGeneration);
+  assert.ok(omni12.maximumWholeGenerations>seedance.maximumWholeGenerations);
+  assert.ok(h3.maximumWholeGenerations>seedance.maximumWholeGenerations);
+  assert.ok(wan.maximumWholeGenerations>seedance.maximumWholeGenerations);
+  assert.equal(starter.proposedMonthlyCreditAllowance,630);
+  assert.equal(result.calculationType,"subscription_plan_credit_scenario_not_activation");
+});
+
 test("the benchmark never converts scenario output into a published price, allowance or actual invoice cost",()=>{
   const result=economics();
   assert.equal("publishable" in result,false);
