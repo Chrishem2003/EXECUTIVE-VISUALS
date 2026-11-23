@@ -102,6 +102,7 @@ begin
  end if;
  select * into v_evidence from financial_fx_rate_evidence where id=p_evidence_id;
  if not found then raise exception 'FX evidence not found' using errcode='P0002'; end if;
+ if v_evidence.recorded_by=p_actor_id then raise exception 'FX evidence maker cannot approve their own evidence' using errcode='42501'; end if;
  select * into v_latest from financial_fx_rate_decisions where evidence_id=p_evidence_id order by created_at desc,id desc limit 1;
  if v_latest.decision='revoked' then raise exception 'Revoked FX evidence cannot be re-approved' using errcode='55000'; end if;
  if v_latest.decision=p_decision then raise exception 'The same FX decision is already current' using errcode='23505'; end if;
