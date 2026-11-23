@@ -200,6 +200,15 @@ export function createFinancialIntelligenceApi({
       });
       return {matched:true,status:"successful",paymentId:payment.id,subscriptionRenewed:true,renewal};
     }
+    if(payment.metadata?.product_type==="credit_pack"){
+      const creditPack=await rpc("finalize_credit_pack_purchase",{
+        p_payment_id:payment.id,
+        p_provider_transaction_id:String(providerChargeId),
+        p_provider_payload:charge,
+        p_verified_at:new Date().toISOString()
+      });
+      return {matched:true,status:"successful",paymentId:payment.id,creditPackPurchased:true,creditPack};
+    }
     const settlement=await rpc("finalize_payment_purchase",{
       p_payment_id:payment.id,p_provider_transaction_id:String(providerChargeId),
       p_provider_payload:charge,p_verified_at:new Date().toISOString()
@@ -460,7 +469,7 @@ export function createFinancialIntelligenceApi({
         return response(200,{entries,limit:rawLimit,hasMore:entries.length===rawLimit});
       }
       if(path==="/api/billing/products"&&method==="GET"){
-        const result=await dbRequest("billing_products?select=product_code,name,description,product_type,amount_minor,currency,credit_units&active=eq.true&order=amount_minor.asc");
+        const result=await dbRequest("billing_products?select=product_code,name,description,product_type,version,amount_minor,currency,credit_units&active=eq.true&order=amount_minor.asc");
         return response(200,{products:Array.isArray(result.data)?result.data:[]});
       }
       if(path==="/api/billing/subscription/checkout"&&method==="POST"){
@@ -617,19 +626,25 @@ export function createFinancialIntelligenceApi({
             return error(409,"IDEMPOTENCY_KEY_REUSED","This idempotency key is already bound to a different checkout request.");
           return response(200,{payment:{id:row.id,reference:row.tx_ref,status:row.status,providerChargeId:row.provider_transaction_id,nextAction:row.metadata?.next_action||null},idempotentReplay:true});
         }
-        const productResult=await dbRequest("billing_products?select=product_code,name,description,amount_minor,currency,credit_units&product_code=eq."+encodeURIComponent(productCode)+"&active=eq.true&limit=1");
+        const productResult=await dbRequest("billing_products?select=product_code,name,description,product_type,version,amount_minor,currency,credit_units&product_code=eq."+encodeURIComponent(productCode)+"&active=eq.true&limit=1");
         const product=Array.isArray(productResult.data)?productResult.data[0]:null;
         if(!product)return error(404,"BILLING_PRODUCT_UNAVAILABLE","This purchase option is not currently available.");
-        if(product.currency!=="UGX"||!Number.isSafeInteger(Number(product.amount_minor))||Number(product.amount_minor)<=0||
-          !Number.isSafeInteger(Number(product.credit_units))||Number(product.credit_units)<=0)
-          return error(503,"BILLING_PRODUCT_INVALID","This purchase option is not configured safely.");
+        if(product.product_type!=="credit_pack"||!Number.isSafeInteger(Number(product.version))||Number(product.version)<1||
+          product.currency!=="UGX"||!Number.isSafeInteger(Number(product.amount_minor))||Number(product.amount_minor)<=0||
+          !Number.isSafeInteger(Number(product.credit_units))||Number(product.credit_units)<=0||Number(product.credit_units)>1000000000)
+          return error(503,"BILLING_PRODUCT_INVALID","This purchase option is not configured safely for generation-credit checkout.");
         const txRef="EV"+randomUUID().replaceAll("-","");
         const createdRows=await dbRequest("payment_transactions",{
           method:"POST",body:{
             owner_id:ownerId,tx_ref:txRef,amount_minor:Number(product.amount_minor),currency:"UGX",
             status:"pending",payment_method:"mobile_money",customer_email:email,
             description:String(product.name).slice(0,250),
-            metadata:{product_code:product.product_code,credit_units:Number(product.credit_units),idempotency_key:key,mobile_money_network:network}
+            metadata:{
+              product_type:"credit_pack",product_code:product.product_code,
+              product_version:Number(product.version),product_amount_minor:Number(product.amount_minor),
+              product_currency:product.currency,credit_units:Number(product.credit_units),
+              idempotency_key:key,mobile_money_network:network
+            }
           },prefer:"return=representation"
         });
         const payment=Array.isArray(createdRows.data)?createdRows.data[0]:null;
