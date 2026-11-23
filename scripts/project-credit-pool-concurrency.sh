@@ -72,7 +72,7 @@ psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 <<SQL
 -- leaves the shared disposable database exactly as it found the monthly spend
 -- budget for the following member-policy integration.
 select * from executive_visuals.release_generation_credit_reservation(
- (select reservation_id from executive_visuals.project_credit_pool_reservations
+ (select id from executive_visuals.project_credit_pool_reservations
   where job_id in ('$job_a','$job_b') and state='reserved'),
  'Concurrency acceptance fixture cleanup'
 );
