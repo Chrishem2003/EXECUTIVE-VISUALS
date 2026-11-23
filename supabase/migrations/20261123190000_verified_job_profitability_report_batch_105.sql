@@ -134,11 +134,11 @@ begin
           else 'loss_making' end,
         'currency',case when unresolved_count=0 and credits_attributed=actual_credits and revenue_currency_count=1 and cost_currency_count=1
           and (revenue_currencies->>0)=cost_currency and invoice_line_count>0 and succeeded_usage_events=invoice_line_count
-          and (revenue_currencies->>0)=cost_currency then cost_currency else null end,
-        'contributionMinor',case when unresolved_count=0 and revenue_currency_count=1 and cost_currency_count=1
+          then cost_currency else null end,
+        'contributionMinor',case when unresolved_count=0 and credits_attributed=actual_credits and revenue_currency_count=1 and cost_currency_count=1
           and invoice_line_count>0 and succeeded_usage_events=invoice_line_count
           and (revenue_currencies->>0)=cost_currency then revenue_minor-cost_minor else null end,
-        'grossMarginPct',case when unresolved_count=0 and revenue_currency_count=1 and cost_currency_count=1
+        'grossMarginPct',case when unresolved_count=0 and credits_attributed=actual_credits and revenue_currency_count=1 and cost_currency_count=1
           and invoice_line_count>0 and succeeded_usage_events=invoice_line_count
           and (revenue_currencies->>0)=cost_currency and revenue_minor>0
           then round(((revenue_minor-cost_minor)*100.0)/revenue_minor,2) else null end
