@@ -71,6 +71,14 @@ begin
      and evidence->>'paymentId'=payment_id::text;
   if grant_count<>1 then raise exception 'Initial generation grant evidence was not recorded exactly once'; end if;
 
+  -- A loyalty/access extension changes only the period end; it must not issue a second grant.
+  update executive_visuals.customer_subscriptions
+     set current_period_end=current_period_end+interval '1 day'
+   where id=subscription_id;
+  select count(*) into grant_count from executive_visuals.billing_credit_ledger
+   where owner_id='33333333-3333-4333-8333-333333333333' and event_type='grant';
+  if grant_count<>1 then raise exception 'Period-end extension duplicated the subscription generation grant'; end if;
+
   replay_reservation:=executive_visuals.reserve_subscription_purchase(
     '33333333-3333-4333-8333-333333333333','generation-monthly',
     'generation-credit-owner@example.test','MTN','generation-purchase-001','EVS-GEN-PURCHASE-REPLAY'
