@@ -435,6 +435,30 @@ export function createFinancialIntelligenceApi({
           available:Number(balance.available_credits)
         }});
       }
+      if(path==="/api/billing/credits/ledger"&&method==="GET"){
+        const rawLimit=Number(query.limit??20);
+        if(!Number.isSafeInteger(rawLimit)||rawLimit<1||rawLimit>50)
+          return error(400,"CREDIT_LEDGER_LIMIT_INVALID","Credit history limit must be an integer from 1 to 50.");
+        const result=await dbRequest(
+          "billing_credit_ledger?select=id,amount,event_type,reference_id,description,created_at"+
+          "&owner_id=eq."+encodeURIComponent(ownerId)+
+          "&order=created_at.desc,id.desc&limit="+rawLimit
+        );
+        const rows=Array.isArray(result.data)?result.data:[];
+        const entries=rows.map(row=>{
+          const amount=Number(row.amount);
+          if(!UUID.test(String(row.id||""))||!Number.isSafeInteger(amount)||amount===0||
+             typeof row.event_type!=="string"||typeof row.created_at!=="string")
+            throw Object.assign(new Error("Credit ledger returned an invalid statement row."),{code:"CREDIT_LEDGER_ROW_INVALID"});
+          return {
+            id:row.id,amount,eventType:row.event_type,
+            referenceId:UUID.test(String(row.reference_id||""))?row.reference_id:null,
+            description:typeof row.description==="string"?row.description.slice(0,500):"",
+            createdAt:row.created_at
+          };
+        });
+        return response(200,{entries,limit:rawLimit,hasMore:entries.length===rawLimit});
+      }
       if(path==="/api/billing/products"&&method==="GET"){
         const result=await dbRequest("billing_products?select=product_code,name,description,product_type,amount_minor,currency,credit_units&active=eq.true&order=amount_minor.asc");
         return response(200,{products:Array.isArray(result.data)?result.data:[]});
