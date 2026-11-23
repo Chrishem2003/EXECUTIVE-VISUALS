@@ -95,4 +95,13 @@ $$;
 
 revoke all on function executive_visuals.enqueue_video_generation_job_v1(uuid,uuid,text,jsonb,uuid,numeric,bigint,integer)
  from public;
+
+do $service_role_grants$
+begin
+ if exists(select 1 from pg_roles where rolname='service_role') then
+  execute 'revoke all on function executive_visuals.enqueue_video_generation_job_v1_pre_replay_guard(uuid,uuid,text,jsonb,uuid,numeric,bigint,integer) from service_role';
+  execute 'grant execute on function executive_visuals.enqueue_video_generation_job_v1(uuid,uuid,text,jsonb,uuid,numeric,bigint,integer) to service_role';
+ end if;
+end;
+$service_role_grants$;
 commit;
