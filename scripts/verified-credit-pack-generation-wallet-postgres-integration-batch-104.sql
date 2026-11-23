@@ -17,19 +17,19 @@ on conflict(product_code) do update set
  credit_units=excluded.credit_units,version=excluded.version,active=true;
 
 insert into executive_visuals.payment_transactions(
- id,owner_id,provider,tx_ref,amount_minor,currency,status,payment_method,customer_email,description,metadata
+ id,owner_id,provider,provider_transaction_id,tx_ref,amount_minor,currency,status,payment_method,customer_email,description,metadata
 ) values
- ('88888888-8888-4888-8888-888888888888','87777777-7777-4777-8777-777777777777','flutterwave',
+ ('88888888-8888-4888-8888-888888888888','87777777-7777-4777-8777-777777777777','flutterwave','chg-batch104-verified',
   'EV-CREDIT-PACK-TEST-001',5000,'UGX','pending','mobile_money','batch104-credit-pack@example.test',
   'Batch 104 test pack',
   jsonb_build_object('product_type','credit_pack','product_code','batch104-test-pack','product_version',3,
     'product_amount_minor',5000,'product_currency','UGX','credit_units',1250,'idempotency_key','batch104-credit-pack-key-001')),
- ('89999999-9999-4999-8999-999999999999','87777777-7777-4777-8777-777777777777','flutterwave',
+ ('89999999-9999-4999-8999-999999999999','87777777-7777-4777-8777-777777777777','flutterwave','chg-batch104-failed',
   'EV-CREDIT-PACK-TEST-FAILED',5000,'UGX','failed','mobile_money','batch104-credit-pack@example.test',
   'Batch 104 failed pack',
   jsonb_build_object('product_type','credit_pack','product_code','batch104-test-pack','product_version',3,
     'product_amount_minor',5000,'product_currency','UGX','credit_units',1250,'idempotency_key','batch104-credit-pack-key-failed')),
- ('8aaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','87777777-7777-4777-8777-777777777777','flutterwave',
+ ('8aaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','87777777-7777-4777-8777-777777777777','flutterwave','chg-batch104-mismatch',
   'EV-CREDIT-PACK-TEST-MISMATCH',5000,'UGX','pending','mobile_money','batch104-credit-pack@example.test',
   'Batch 104 mismatch pack',
   jsonb_build_object('product_type','credit_pack','product_code','batch104-test-pack','product_version',3,
