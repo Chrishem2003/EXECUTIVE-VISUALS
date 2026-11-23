@@ -67,6 +67,7 @@ end
 SQL
 
 
+psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 <<SQL
 -- Release the winning fixture reservation after the race assertion so this test
 -- leaves the shared disposable database exactly as it found the monthly spend
 -- budget for the following member-policy integration.
@@ -87,5 +88,6 @@ begin
  end if;
 end
 \$credit_concurrency_cleanup\$;
+SQL
 
 echo "Concurrent project-wallet reservation race passed: one 500-credit reservation accepted, one rejected; fixture reservation released and 920 credits restored."
