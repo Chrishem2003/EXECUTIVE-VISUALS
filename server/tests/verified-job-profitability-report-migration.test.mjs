@@ -28,6 +28,11 @@ test("job profitability keeps revenue and invoice costs currency-scoped",()=>{
 
 test("net job contribution allocates only verified payment fees to consumed credit sources",()=>{
  assert.match(netSql,/provider_fee_minor/);
+ assert.match(netSql,/payment_processor_fee_evidence/);
+ assert.match(netSql,/record_payment_processor_fee_evidence/);
+ assert.match(netSql,/PAYMENT_PROCESSOR_FEE_EVIDENCE_IS_APPEND_ONLY/);
+ assert.match(netSql,/evidence_sha256/);
+
  assert.match(netSql,/cumulative_credits/);
  assert.match(netSql,/allocated_fee_minor/);
  assert.match(netSql,/missing_fee_count>0/);
