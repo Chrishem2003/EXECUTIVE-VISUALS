@@ -24,7 +24,9 @@ const scenarios=[
   {provider:"runway",model:"kling_4",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:2.35,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
   {provider:"runway",model:"seedance2_5",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:6.80,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
   {provider:"runway",model:"seedance2_5",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:10.20,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
-  {provider:"runway",model:"kling_4",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:3.76,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false}
+  {provider:"runway",model:"kling_4",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"1080p",amount:3.76,pricingSource:source,pricingDate:"2026-11-22",billable:false,settlementEligible:false},
+  {provider:"runway",model:"gemini_omni_flash_1.2",operation:"text-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:0.70,pricingSource:"https://dev.runwayml.com/learn/gemini-omni-flash-1-2-api",pricingDate:"2026-11-22",billable:false,settlementEligible:false},
+  {provider:"runway",model:"gemini_omni_flash_1.2",operation:"video-to-video",currency:"USD",durationSeconds:10,resolution:"720p",amount:0.80,pricingSource:"https://dev.runwayml.com/learn/gemini-omni-flash-1-2-api",pricingDate:"2026-11-22",billable:false,settlementEligible:false}
 ];
 const economics=()=>calculateSubscriptionPlanCreditEconomics({
   plans,scenarios,quoteCustomerCredits:quote,creditsPerUsd:100,creditBudgetShareBps:7000
@@ -32,7 +34,7 @@ const economics=()=>calculateSubscriptionPlanCreditEconomics({
 
 test("November 2026 official provider-price benchmark remains forecast-only and non-billable",()=>{
   const result=economics();
-  assert.deepEqual(result.scenarios.map(item=>item.providerCostUsd),[1.2,2.35,6.8,10.2,3.76]);
+  assert.deepEqual(result.scenarios.map(item=>item.providerCostUsd),[1.2,2.35,6.8,10.2,3.76,0.7,0.8]);
   assert.ok(result.scenarios.every(item=>item.estimateType==="forecast_not_actual"&&item.billable===false&&item.settlementEligible===false));
   assert.ok(result.scenarios.every(item=>item.pricingSource===source&&item.pricingDate==="2026-11-22"));
   assert.equal(result.calculationType,"subscription_plan_credit_scenario_not_activation");
@@ -94,6 +96,18 @@ test("video-reference inputs are priced separately from text-to-video output-onl
   assert.ok(seedanceEdit.customerCreditsPerGeneration>seedanceText.customerCreditsPerGeneration);
   assert.ok(klingEdit.customerCreditsPerGeneration>klingText.customerCreditsPerGeneration);
   assert.ok([seedanceEdit,klingEdit].every(row=>row.billable===false&&row.settlementEligible===false));
+});
+
+test("Gemini Omni 1.2 Flash adds a low-cost model with separately priced video inputs",()=>{
+  const result=economics();
+  const output=result.scenarios.find(row=>row.model==="gemini_omni_flash_1.2"&&row.operation==="text-to-video");
+  const edit=result.scenarios.find(row=>row.model==="gemini_omni_flash_1.2"&&row.operation==="video-to-video");
+  // Runway Dev: $0.07/s at 720p plus $0.01/s for input video.
+  assert.equal(output.providerCostUsd,0.70);
+  assert.equal(edit.providerCostUsd,0.80);
+  assert.ok(edit.customerCreditsPerGeneration>output.customerCreditsPerGeneration);
+  assert.equal(output.pricingSource,"https://dev.runwayml.com/learn/gemini-omni-flash-1-2-api");
+  assert.ok([output,edit].every(row=>row.billable===false&&row.settlementEligible===false));
 });
 
 test("the benchmark never converts scenario output into a published price, allowance or actual invoice cost",()=>{
