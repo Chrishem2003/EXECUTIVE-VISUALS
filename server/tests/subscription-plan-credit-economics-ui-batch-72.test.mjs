@@ -55,3 +55,11 @@ test("plan simulator is a scenario-only control and does not activate plans or g
  assert.doesNotMatch(panel,/\/api\/billing\/subscription/);
  assert.doesNotMatch(panel,/grant_generation_credits|reserve_generation_credits|checkout/);
 });
+
+test("Financial Command Centre renders prepaid credit-pack profitability and currency blocks",()=>{
+ assert.match(app,/Prepaid credit-pack overage profitability/);
+ assert.match(app,/creditPackEconomics/);
+ assert.match(app,/blocked_currency_mismatch/);
+ assert.match(app,/No foreign-exchange conversion is performed/);
+ assert.match(app,/Inactive products remain draft-only/);
+});
