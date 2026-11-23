@@ -1715,7 +1715,7 @@ export function createFinancialIntelligenceApi({
           p_source_reference:sourceReference,p_evidence_sha256:evidenceSha256,p_evidence_note:evidenceNote,
           p_idempotency_key:idempotencyKey
         });
-        return response(201,{evidence:result});
+        return response(result?.idempotentReplay?200:201,{evidence:result});
       }
       if(path==="/api/admin/finance/fx-rate-evidence/decision"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
