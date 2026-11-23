@@ -133,6 +133,7 @@ test("plan economics blocks actual-cost readiness when invoice sample is insuffi
  assert.equal(result.status,200);
  assert.equal(result.body.actualCostEvidence.status,"insufficient_sample");
  assert.equal(result.body.actualCostEvidence.providerCostPerCustomerCreditMinor,null);
+ assert.equal(result.body.creditPackEconomics.status,"blocked_invoice_evidence");
  assert.equal(result.body.allowanceReadiness.status,"blocked_waiting_for_sufficient_complete_invoice_evidence");
  assert.equal(result.body.allowanceReadiness.publishable,false);
 });
