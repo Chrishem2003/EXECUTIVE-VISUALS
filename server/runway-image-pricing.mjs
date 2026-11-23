@@ -56,6 +56,7 @@ export function estimateRunwayImageCredits(options={}){
   if(!Number.isSafeInteger(outputCount)||outputCount<1||outputCount>10)throw fail("outputCount must be an integer from 1 to 10.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   if(!Number.isSafeInteger(referenceImageCount)||referenceImageCount<0||referenceImageCount>16)throw fail("referenceImageCount must be an integer from 0 to 16.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   if(typeof pricingDate!=="string"||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(pricingDate)||Number.isNaN(Date.parse(pricingDate+"T00:00:00Z"))||new Date(pricingDate+"T00:00:00Z").toISOString().slice(0,10)!==pricingDate)throw fail("pricingDate must be a valid explicit YYYY-MM-DD value.","RUNWAY_IMAGE_PRICE_INPUT_REQUIRED");
+  if(outputFormat==="jpeg"&&background==="transparent")throw fail("JPEG output cannot use a transparent background.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   if(outputFormat==="gif"){
     if(ratio!=="auto"||referenceImageCount!==0)throw fail("GIF requires ratio auto and does not accept reference images.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
     if(!Number.isSafeInteger(frameCount)||frameCount<2||frameCount>16)throw fail("GIF frameCount must be an integer from 2 to 16.","RUNWAY_IMAGE_PRICE_INVALID_INPUT");
