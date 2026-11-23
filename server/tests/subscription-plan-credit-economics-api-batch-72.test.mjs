@@ -85,6 +85,7 @@ test("plan economics exposes separate invoice-backed cost evidence and never tre
   if(target.includes("financial_cost_attribution_links?"))return json(invoiceAttributions);
   if(target.includes("billing_credit_reservations?"))return json(creditReservations);
   if(target.includes("billing_products?"))return json([{product_code:"creator-pack-1000",name:"Creator 1,000 credits",product_type:"credit_pack",amount_minor:50000,currency:"UGX",credit_units:1000,active:false}]);
+  if(target.includes("financial_fx_rate_evidence_current?"))return json([]);
   throw new Error("Unexpected request: "+target);
  });
  const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
@@ -108,8 +109,9 @@ test("plan economics exposes separate invoice-backed cost evidence and never tre
  assert.equal(result.body.allowanceReadiness.publishable,false);
  assert.match(result.body.allowanceReadiness.status,/requires_finance_product_approval/);
  assert.equal(result.body.creditPackEconomics.status,"partially_blocked");
- assert.equal(result.body.creditPackEconomics.products[0].status,"blocked_currency_mismatch");
+ assert.equal(result.body.creditPackEconomics.products[0].status,"blocked_fx_evidence");
  assert.equal(result.body.creditPackEconomics.products[0].costCurrency,"USD");
+ assert.equal(result.body.creditPackEconomics.products[0].fxReason,"No approved settlement FX evidence is available for this currency pair and reporting month.");
  assert.equal(result.body.creditPackEconomics.products[0].contributionMinor,null);
  assert.ok(result.body.economics.scenarios.every(row=>row.estimateType==="forecast_not_actual"));
  assert.ok(calls.every(call=>call.method==="GET"));
