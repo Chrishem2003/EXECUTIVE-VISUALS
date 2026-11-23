@@ -14,6 +14,7 @@ import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.
 import { calculateSubscriptionPlanCreditEconomics } from "./subscription-plan-credit-economics.mjs";
 import { calculateMixedSubscriptionWorkloadEconomics } from "./mixed-subscription-workload-economics.mjs";
 import { calculateCreditPackOverageEconomics } from "./credit-pack-overage-economics.mjs";
+import { selectApprovedSettlementFxEvidence } from "./approved-fx-rate-conversion.mjs";
 import { deriveInvoiceBackedCreditCostEvidence } from "./subscription-credit-cost-evidence.mjs";
 import { deriveInvoiceBackedModelCostEvidence } from "./model-invoice-cost-evidence.mjs";
 import { analyzeWorkloadCostVariance } from "./workload-cost-variance.mjs";
@@ -998,15 +999,21 @@ export function createFinancialIntelligenceApi({
               "Evidence is historical and read-only; finance/product approval is still required before any allowance can be published."
             ]
           };
-          // Top-up margin is measured only when invoice-backed unit cost and
-          // catalogue product currency match. No FX or browser-supplied prices.
+          // Credit-pack products and approved FX evidence are server-owned.
+          // Only processor/bank settlement evidence may convert historical USD cost into UGX.
           const creditPackProducts=costEvidence.status==="verified_measured"
             ?await dbRequest("billing_products?select=product_code,name,product_type,amount_minor,currency,credit_units,active&product_type=eq.credit_pack&order=amount_minor.asc&limit=100")
             :{data:[]};
+          const catalogueProducts=Array.isArray(creditPackProducts.data)?creditPackProducts.data:[];
+          const needsFx=catalogueProducts.some(product=>product.currency!==costEvidence.currency);
+          const fxRows=needsFx&&costEvidence.status==="verified_measured"
+            ?await dbRequest("financial_fx_rate_evidence_current?select=evidence_id,source_currency,target_currency,period_month,rate_scaled,rate_scale,effective_date,source_type,purpose,source_reference,decision,decision_reason,decided_by,decision_created_at&source_currency=eq.USD&target_currency=eq.UGX&purpose=eq.settlement_cost&period_month=eq."+encodeURIComponent(periodMonth)+"&decision=eq.approved&order=effective_date.desc,decision_created_at.desc&limit=100")
+            :{data:[]};
+          const fxEvidence=selectApprovedSettlementFxEvidence(Array.isArray(fxRows.data)?fxRows.data:[],
+            {sourceCurrency:"USD",targetCurrency:"UGX",periodMonth});
           const creditPackEconomics=calculateCreditPackOverageEconomics({
-            products:Array.isArray(creditPackProducts.data)?creditPackProducts.data:[],
-            costEvidence:{...actualCostEvidence,evidence:costEvidence.evidence},
-            pricingPolicy:economics.pricingPolicy
+            products:catalogueProducts,costEvidence:{...actualCostEvidence,evidence:costEvidence.evidence},
+            pricingPolicy:economics.pricingPolicy,fxEvidence
           });
           return response(200,{
             economics,mixedEconomics,creditPackEconomics,
@@ -1663,6 +1670,64 @@ export function createFinancialIntelligenceApi({
           p_actor_id:ownerId,p_period_month:periodMonth,p_currency:currency,p_cost_category:category
         });
         return response(200,{run:result});
+      }
+      if(path==="/api/admin/finance/fx-rate-evidence"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const sourceCurrency=String(query.sourceCurrency||"").trim().toUpperCase();
+        const targetCurrency=String(query.targetCurrency||"").trim().toUpperCase();
+        const month=String(query.periodMonth||"");
+        if(!/^[A-Z]{3}$/.test(sourceCurrency)||!/^[A-Z]{3}$/.test(targetCurrency)||sourceCurrency===targetCurrency||
+          !/^\d{4}-\d{2}-01$/.test(month)||!Number.isFinite(Date.parse(month+"T00:00:00Z"))||
+          new Date(month+"T00:00:00Z").toISOString().slice(0,10)!==month)
+          return error(400,"FINANCIAL_FX_FILTER_INVALID","Provide distinct ISO currencies and a valid reporting month.");
+        const rows=await dbRequest("financial_fx_rate_evidence_current?select=evidence_id,source_currency,target_currency,period_month,rate_scaled,rate_scale,effective_date,source_type,purpose,source_reference,evidence_sha256,evidence_note,recorded_by,evidence_created_at,decision,decision_reason,decided_by,decision_created_at&source_currency=eq."+sourceCurrency+"&target_currency=eq."+targetCurrency+"&period_month=eq."+month+"&order=effective_date.desc,decision_created_at.desc&limit=100");
+        return response(200,{evidence:Array.isArray(rows.data)?rows.data:[],source:"append-only evidence and maker-checker decision records"});
+      }
+      if(path==="/api/admin/finance/fx-rate-evidence"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const sourceCurrency=String(body.sourceCurrency||"").trim().toUpperCase();
+        const targetCurrency=String(body.targetCurrency||"").trim().toUpperCase();
+        const rateScaled=Number(body.rateScaled);
+        const periodMonth=String(body.periodMonth||"");
+        const effectiveDate=String(body.effectiveDate||"");
+        const sourceType=String(body.sourceType||"");
+        const purpose=String(body.purpose||"");
+        const sourceReference=String(body.sourceReference||"").trim();
+        const evidenceSha256=body.evidenceSha256==null||body.evidenceSha256===""?null:String(body.evidenceSha256).trim().toLowerCase();
+        const evidenceNote=String(body.evidenceNote||"").trim();
+        const idempotencyKey=String(body.idempotencyKey||"").trim();
+        const sourceTypes=["processor_settlement","bank_statement","official_reference","tax_reference","other"];
+        const purposes=["settlement_cost","financial_reporting","tax_reporting","reference_only"];
+        if(!/^[A-Z]{3}$/.test(sourceCurrency)||!/^[A-Z]{3}$/.test(targetCurrency)||sourceCurrency===targetCurrency||
+          !/^\d{4}-\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth||periodMonth>new Date().toISOString().slice(0,7)+"-01"||
+          !Number.isSafeInteger(rateScaled)||rateScaled<1||rateScaled>100000000000000||
+          !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)||!Number.isFinite(Date.parse(effectiveDate+"T00:00:00Z"))||
+          new Date(effectiveDate+"T00:00:00Z").toISOString().slice(0,10)!==effectiveDate||effectiveDate>new Date().toISOString().slice(0,10)||
+          !sourceTypes.includes(sourceType)||!purposes.includes(purpose)||sourceReference.length<3||sourceReference.length>240||
+          (evidenceSha256!==null&&!/^[a-f0-9]{64}$/.test(evidenceSha256))||evidenceNote.length<3||evidenceNote.length>1000||
+          idempotencyKey.length<8||idempotencyKey.length>160)
+          return error(400,"FINANCIAL_FX_EVIDENCE_INVALID","Provide valid currencies, a positive scaled rate, past effective date, supported source/purpose, source reference, evidence note and idempotency key.");
+        if(purpose==="settlement_cost"&&!["processor_settlement","bank_statement"].includes(sourceType))
+          return error(400,"FINANCIAL_FX_SETTLEMENT_SOURCE_REQUIRED","Settlement-cost FX must come from a processor settlement or bank statement, not an official or tax reference rate.");
+        const result=await rpc("record_financial_fx_rate_evidence",{
+          p_actor_id:ownerId,p_source_currency:sourceCurrency,p_target_currency:targetCurrency,p_period_month:periodMonth,
+          p_rate_scaled:rateScaled,p_effective_date:effectiveDate,p_source_type:sourceType,p_purpose:purpose,
+          p_source_reference:sourceReference,p_evidence_sha256:evidenceSha256,p_evidence_note:evidenceNote,
+          p_idempotency_key:idempotencyKey
+        });
+        return response(result?.idempotentReplay?200:201,{evidence:result});
+      }
+      if(path==="/api/admin/finance/fx-rate-evidence/decision"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const evidenceId=String(body.evidenceId||"");
+        const decision=String(body.decision||"");
+        const decisionReason=String(body.decisionReason||"").trim();
+        if(!UUID.test(evidenceId)||!["approved","rejected","revoked"].includes(decision)||decisionReason.length<3||decisionReason.length>500)
+          return error(400,"FINANCIAL_FX_DECISION_INVALID","Provide a valid evidence UUID, approval/rejection/revocation decision and reason.");
+        const result=await rpc("decide_financial_fx_rate_evidence",{
+          p_actor_id:ownerId,p_evidence_id:evidenceId,p_decision:decision,p_decision_reason:decisionReason
+        });
+        return response(200,{decision:result});
       }
       if(path==="/api/admin/finance/service-cost"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
