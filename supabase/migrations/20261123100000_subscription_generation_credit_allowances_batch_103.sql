@@ -106,6 +106,7 @@ set search_path = pg_catalog, executive_visuals
 as $grant_verified_subscription_generation_credits$
 declare
   payment_row executive_visuals.payment_transactions%rowtype;
+  existing_grant executive_visuals.billing_credit_ledger%rowtype;
   grant_result record;
   grant_key text;
   grant_evidence jsonb;
@@ -123,6 +124,22 @@ begin
 
   grant_key := 'subscription-generation:' || new.id::text || ':' ||
     to_char(new.current_period_start at time zone 'UTC','YYYYMMDDHH24MISSUS');
+
+  -- Period-end extensions (for example a verified loyalty reward) must not
+  -- replay the same period grant with different evidence or issue another grant.
+  select * into existing_grant
+    from executive_visuals.billing_credit_ledger l
+   where l.idempotency_key = grant_key;
+  if existing_grant.id is not null then
+    if existing_grant.owner_id is distinct from new.owner_id
+       or existing_grant.amount is distinct from new.included_generation_credits
+       or existing_grant.event_type <> 'grant'
+       or existing_grant.evidence->>'subscriptionId' is distinct from new.id::text
+       or existing_grant.evidence->>'periodKey' is distinct from grant_key then
+      raise exception 'SUBSCRIPTION_GENERATION_CREDIT_PERIOD_CONFLICT';
+    end if;
+    return new;
+  end if;
 
   if new.provider = 'flutterwave' then
     select * into payment_row
@@ -155,6 +172,7 @@ begin
       'planVersion',new.plan_version,
       'periodStart',new.current_period_start,
       'periodEnd',new.current_period_end,
+      'periodKey',grant_key,
       'verifiedAt',payment_row.verified_at
     );
   elsif new.granted_by is not null then
@@ -167,7 +185,8 @@ begin
       'planCode',new.plan_code,
       'planVersion',new.plan_version,
       'periodStart',new.current_period_start,
-      'periodEnd',new.current_period_end
+      'periodEnd',new.current_period_end,
+      'periodKey',grant_key
     );
   else
     raise exception 'SUBSCRIPTION_GENERATION_CREDIT_GRANT_EVIDENCE_MISSING';
