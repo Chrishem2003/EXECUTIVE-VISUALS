@@ -23,6 +23,7 @@ on:
       - feat/live-workload-telemetry-batch-36
       - feat/subscription-customer-economics-batch-37
       - feat/financial-governance-batch-48
+      - feat/customer-credit-wallet-statement-batch-101-2026-11-23
   pull_request:
 
 permissions:

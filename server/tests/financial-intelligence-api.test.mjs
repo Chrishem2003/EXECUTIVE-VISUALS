@@ -1845,3 +1845,39 @@ test("FX evidence and approval endpoints require finance administrator authoriza
  const result=await service.handle({method:"POST",path:"/api/admin/finance/fx-rate-evidence",ownerId:owner,body:{}});
  assert.equal(result.status,403);
 });
+
+test("customer credit statement is bounded, owner-scoped and omits private evidence",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url);calls.push({target,options});
+  if(target.includes("/rest/v1/billing_credit_ledger?")){
+   return json([
+    {id:"44444444-4444-4444-8444-444444444444",amount:250,event_type:"grant",reference_id:null,description:"Monthly allowance",created_at:"2026-11-23T10:00:00Z"},
+    {id:"55555555-5555-4555-8555-555555555555",amount:-40,event_type:"generation_reserve",reference_id:"66666666-6666-4666-8666-666666666666",description:"Generation reservation",created_at:"2026-11-23T10:05:00Z"}
+   ]);
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"GET",path:"/api/billing/credits/ledger",ownerId:owner,query:{limit:"10"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.entries.length,2);
+ assert.equal(result.body.entries[0].amount,250);
+ assert.equal(result.body.entries[1].eventType,"generation_reserve");
+ assert.equal(result.body.entries[1].referenceId,"66666666-6666-4666-8666-666666666666");
+ assert.equal(result.body.hasMore,false);
+ assert.match(calls[0].target,/owner_id=eq\.11111111-1111-4111-8111-111111111111/);
+ assert.match(calls[0].target,/limit=10$/);
+ assert.match(calls[0].target,/select=id,amount,event_type,reference_id,description,created_at/);
+ assert.doesNotMatch(calls[0].target,/evidence|idempotency_key/);
+});
+
+test("customer credit statement rejects unbounded or malformed limits",async()=>{
+ let calls=0;
+ const service=api(async()=>{calls++;throw new Error("Invalid limit must not reach storage.");});
+ for(const limit of ["0","51","1.5","not-a-number"]){
+  const result=await service.handle({method:"GET",path:"/api/billing/credits/ledger",ownerId:owner,query:{limit}});
+  assert.equal(result.status,400);
+  assert.equal(result.body.error.code,"CREDIT_LEDGER_LIMIT_INVALID");
+ }
+ assert.equal(calls,0);
+});
