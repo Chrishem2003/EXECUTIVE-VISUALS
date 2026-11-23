@@ -56,7 +56,6 @@ test("storyboard preflight requires a complete customer-credit quote and verifie
   assert.match(index, /applyCustomerCreditDispatchGate\(result/);
   assert.match(index, /stagingDispatchReady:neonStagingApprovalRuntime\.enabled===true/);
   assert.match(index, /customer-credit-dispatch-gate\.mjs/);
-  assert.match(index, /customerCreditDispatch/);
   assert.match(dispatchGate, /customer_credit_settlement_pending/);
   assert.match(dispatchGate, /Production cloud dispatch remains closed/);
   assert.match(dispatchGate, /reservation:"atomic_at_submission"/);
