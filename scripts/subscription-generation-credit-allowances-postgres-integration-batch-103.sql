@@ -2,7 +2,8 @@
 insert into auth.users(id,email) values
  ('33333333-3333-4333-8333-333333333333','generation-credit-owner@example.test'),
  ('44444444-4444-4444-8444-444444444444','generation-credit-failed@example.test'),
- ('55555555-5555-4555-8555-555555555555','generation-credit-admin@example.test')
+ ('55555555-5555-4555-8555-555555555555','generation-credit-admin@example.test'),
+ ('66666666-6666-4666-8666-666666666666','generation-credit-unpublished@example.test')
 on conflict(id) do nothing;
 
 insert into executive_visuals.subscription_plans(
@@ -163,6 +164,23 @@ begin
       and amount=7654 and evidence->>'evidenceType'='admin_granted_subscription'
       and evidence->>'subscriptionId'=admin_subscription::text) then
     raise exception 'Admin-granted active subscription did not issue its published generation allowance';
+  end if;
+
+  insert into executive_visuals.customer_subscriptions(
+    owner_id,plan_id,plan_code,plan_version,status,billing_interval,amount_minor,currency,
+    included_credits,entitlements_snapshot,provider,current_period_start,current_period_end
+  ) values(
+    '66666666-6666-4666-8666-666666666666',
+    '65555555-5555-4555-8555-555555555555','generation-unpublished',1,'active','monthly',25000,'UGX',
+    0,'{}',null,now(),now()+interval '1 month'
+  );
+  if exists(select 1 from executive_visuals.billing_credit_ledger
+    where owner_id='66666666-6666-4666-8666-666666666666') then
+    raise exception 'Unpublished generation allowance unexpectedly granted credits';
+  end if;
+  if (select included_generation_credits from executive_visuals.customer_subscriptions
+    where owner_id='66666666-6666-4666-8666-666666666666')<>0 then
+    raise exception 'Unpublished generation allowance was copied into the customer snapshot';
   end if;
 
   reset role;
