@@ -83,7 +83,8 @@ begin
     raise exception 'SUBSCRIPTION_GENERATION_CREDIT_SCHEDULE_MISMATCH';
   end if;
   new.scheduled_included_generation_credits :=
-    case when plan_row.generation_credit_allowance_published
+    case when plan_row.status = 'active' and plan_row.is_public
+        and plan_row.generation_credit_allowance_published
       then plan_row.included_generation_credits else 0 end;
   return new;
 end;
