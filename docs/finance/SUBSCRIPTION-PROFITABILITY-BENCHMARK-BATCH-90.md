@@ -40,13 +40,26 @@ These are scenario outputs, not published entitlements. The 70% budget share is 
 
 At the dated 10-second list prices, one generation costs USD 1.20, USD 2.35, or USD 6.80 before retries, input-video charges, taxes, FX, storage, delivery, or other overhead. A customer who mixes models can consume the same credit budget much faster than one who uses only a low-cost model.
 
+### Reference-video input exposure
+
+Output-only examples understate costs for editing and video-to-video workflows. The benchmark now adds a second 10-second request shape with a 10-second source video:
+
+| Model | Output charge | Input-video charge | Combined provider cost |
+|---|---:|---:|---:|
+| Seedance 2.5, 1080p | $6.80 | $3.40 | $10.20 |
+| Kling 4.0, 1080p | $2.35 | $1.41 | $3.76 |
+
+The Seedance input-video rate is $0.34 per second at 1080p. Kling's 1080p input-video rate is $0.141 per second; the provider bills output seconds plus the longer of input-video duration and output duration. These examples assume a 10-second source and a 10-second output, with no additional references, HDR surcharge, retries, or other billable inputs.
+
+Sources: [Seedance 2.5 API pricing](https://dev.runwayml.com/learn/seedance-2-5-api) and [Kling 4.0 API pricing](https://dev.runwayml.com/learn/kling-4-0-api).
+
 The regression suite therefore checks:
-1. Dated provider costs remain explicitly marked forecast-only and non-billable.
+1. Dated output-only and source-video provider costs remain explicitly marked forecast-only and non-billable.
 2. The five proposed tiers remain private draft hypotheses with no persisted credits.
 3. The same credit quote policy prices each model independently.
 4. A mixed workload can fail a plan's credit allowance even where a per-model-only comparison looks affordable.
 5. Contribution margin and credit sufficiency remain separate assessments.
-6. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
+6. Video-to-video scenarios include provider-billed reference-video input charges rather than treating edits as output-only.\n7. No scenario output publishes plan pricing, grants credits, or replaces invoice-backed actual cost evidence.
 
 ## Release and finance controls
 
