@@ -268,7 +268,7 @@ jobs:
       - name: Test Batch 102 customer generation credit preview
         run: node --test server/tests/customer-generation-credit-quote.test.mjs server/tests/neon-customer-credit-policy.test.mjs
       - name: Test Batch 103 subscription generation credit allowance contract
-        run: node --test server/tests/subscription-generation-credit-allowances-batch-103.test.mjs server/tests/subscription-plan-catalogue.test.mjs server/tests/subscription-plan-credit-economics-batch-72.test.mjs
+        run: node --test server/tests/subscription-generation-credit-allowances-batch-103.test.mjs server/tests/subscription-plan-catalogue.test.mjs server/tests/subscription-plan-credit-economics-batch-72.test.mjs server/tests/subscription-plan-credit-economics-ui-batch-72.test.mjs
       - name: Test Batch 39 revenue movement and cohort API
         run: node --test server/tests/revenue-movement-cohorts.test.mjs
       - name: Test Batch 40 cashflow and liquidity API
