@@ -318,12 +318,12 @@ test("Uganda mobile-money checkout uses server-priced active catalogue and idemp
   const calls=[];
   const service=api(async(url,options={})=>{
     const target=String(url);calls.push({target,options});
-    if(target==="https://project.supabase.co/rest/v1/billing_products?select=product_code,name,description,amount_minor,currency,credit_units&product_code=eq.creator_credits&active=eq.true&limit=1")
-      return json([{product_code:"creator_credits",name:"Creator credits",description:"Test pack",amount_minor:5000,currency:"UGX",credit_units:100}]);
+    if(target==="https://project.supabase.co/rest/v1/billing_products?select=product_code,name,description,product_type,version,amount_minor,currency,credit_units&product_code=eq.creator_credits&active=eq.true&limit=1")
+      return json([{product_code:"creator_credits",name:"Creator credits",description:"Test pack",product_type:"credit_pack",version:2,amount_minor:5000,currency:"UGX",credit_units:100}]);
     if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
       return json([]);
     if(target.endsWith("/payment_transactions")&&options.method==="POST")
-      return json([{id:paymentId,metadata:{product_code:"creator_credits",credit_units:100,idempotency_key:"checkout-key-0001",mobile_money_network:"MTN"}}],201);
+      return json([{id:paymentId,metadata:{product_type:"credit_pack",product_code:"creator_credits",product_version:2,product_amount_minor:5000,product_currency:"UGX",credit_units:100,idempotency_key:"checkout-key-0001",mobile_money_network:"MTN"}}],201);
     if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")
       return json({access_token:"provider-test-token",expires_in:600});
     if(target==="https://developersandbox-api.flutterwave.com/orchestration/direct-charges"&&options.method==="POST")
@@ -380,15 +380,17 @@ test("payment webhook verifies Flutterwave charge and atomically fulfils once",a
     if(target==="https://developersandbox-api.flutterwave.com/charges/chg_paid")
       return json({data:{id:"chg_paid",reference:"EV-TEST-REFERENCE",amount:5000,currency:"UGX",status:"succeeded",payment_method_details:{type:"mobile_money"}}});
     if(target.includes("payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref"))
-      return json([{id:paymentId,owner_id:owner,provider_transaction_id:"chg_paid",tx_ref:"EV-TEST-REFERENCE",amount_minor:5000,currency:"UGX",status:"pending",metadata:{product_code:"creator_credits",credit_units:100},description:"Creator credits"}]);
-    if(target.includes("/rpc/finalize_payment_purchase")){grants++;return json({status:"successful",credit_units:100,invoice_number:"EV-20261110-TEST"});}
+      return json([{id:paymentId,owner_id:owner,provider_transaction_id:"chg_paid",tx_ref:"EV-TEST-REFERENCE",amount_minor:5000,currency:"UGX",status:"pending",metadata:{product_type:"credit_pack",product_code:"creator_credits",product_version:2,product_amount_minor:5000,product_currency:"UGX",credit_units:100,idempotency_key:"checkout-key-0001"},description:"Creator credits"}]);
+    if(target.includes("/rpc/finalize_credit_pack_purchase")){grants++;return json({status:"successful",creditUnits:100,ledgerId:"44444444-4444-4444-8444-444444444444",idempotentReplay:false});}
     if(target.includes("/payment_webhook_events?provider=eq.flutterwave"))return new Response(null,{status:204});
     throw new Error("Unexpected request: "+target);
   });
   const result=await service.handleWebhook({rawBody,signatureV4:signature});
   assert.equal(result.status,200);
   assert.equal(result.body.result.status,"successful");
+  assert.equal(result.body.result.creditPackPurchased,true);
   assert.equal(grants,1);
+  assert.equal(s.includes("/rpc/finalize_payment_purchase"),false);
 });
 
 
