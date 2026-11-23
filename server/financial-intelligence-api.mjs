@@ -345,7 +345,7 @@ export function createFinancialIntelligenceApi({
       }
       if(path==="/api/billing/plans"&&method==="GET"){
         const [planRows,priceRows]=await Promise.all([
-          dbRequest("subscription_plans?select=id,plan_code,name,description,billing_interval,amount_minor,currency,included_credits,included_generation_credits,generation_credit_allowance_published,entitlements,version,status,is_public&status=eq.active&is_public=eq.true&order=amount_minor.asc"),
+          dbRequest("subscription_plans?select=id,plan_code,name,description,billing_interval,amount_minor,currency,included_credits,credit_allowance_published,included_generation_credits,generation_credit_allowance_published,entitlements,version,status,is_public&status=eq.active&is_public=eq.true&order=amount_minor.asc"),
           dbRequest("subscription_plan_provider_prices?select=plan_id,provider,provider_price_id,amount_minor,currency,active&active=eq.true")
         ]);
         const plans=buildPublicSubscriptionCatalogue({
