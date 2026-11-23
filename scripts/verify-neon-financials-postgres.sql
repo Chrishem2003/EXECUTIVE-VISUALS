@@ -138,7 +138,7 @@ values(
 );
 
 -- A forged post-submission cancellation receipt must not release a prepared job.
-do $
+do $$
 begin
  begin
   perform executive_visuals.finalize_video_generation_financials_v1(
@@ -150,7 +150,7 @@ begin
  exception when others then
   if sqlerrm<>'VIDEO_CREDIT_RELEASE_PROVIDER_NO_CHARGE_NOT_PROVEN' then raise; end if;
  end;
-end $;
+end $$;
 
 -- A failure without proof that the provider did not charge must not release credits.
 do $$
