@@ -75,7 +75,7 @@ begin
     raise exception 'CREDIT_PACK_PROVIDER_PAYMENT_MISMATCH';
   end if;
 
-  if payment_row.metadata->>'product_type'<>'credit_pack'
+  if payment_row.metadata->>'product_type' is distinct from 'credit_pack'
      or nullif(payment_row.metadata->>'product_code','') is null
      or nullif(payment_row.metadata->>'idempotency_key','') is null then
     raise exception 'CREDIT_PACK_PRODUCT_SNAPSHOT_INVALID';
@@ -111,7 +111,7 @@ begin
   select * into product_row
     from executive_visuals.billing_products p
    where p.product_code=payment_row.metadata->>'product_code';
-  if product_row.product_code is null or product_row.product_type<>'credit_pack' then
+  if product_row.product_code is null or product_row.product_type is distinct from 'credit_pack' then
     raise exception 'CREDIT_PACK_PRODUCT_NOT_FOUND';
   end if;
 
