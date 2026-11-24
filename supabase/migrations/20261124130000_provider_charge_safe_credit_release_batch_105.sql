@@ -29,6 +29,14 @@ begin
           errcode = '55000';
       end if;
     end if;
+  elsif tg_table_name = 'project_credit_pool_reservations' then
+    if new.state = 'released' then
+      if tg_op = 'INSERT' or old.state is distinct from 'released' then
+        raise exception using
+          message = 'PROJECT_CREDIT_POOL_RELEASE_REQUIRES_VERIFIED_NO_CHARGE_EVIDENCE',
+          errcode = '55000';
+      end if;
+    end if;
   else
     raise exception 'CREDIT_RELEASE_GUARD_TABLE_UNSUPPORTED';
   end if;
@@ -283,3 +291,11 @@ revoke all on function executive_visuals.finish_job(uuid,text,text,jsonb,jsonb)
   from public,anon,authenticated;
 grant execute on function executive_visuals.finish_job(uuid,text,text,jsonb,jsonb)
   to service_role;
+
+
+drop trigger if exists ev_project_credit_pool_reservations_require_no_charge_evidence
+  on executive_visuals.project_credit_pool_reservations;
+create trigger ev_project_credit_pool_reservations_require_no_charge_evidence
+before insert or update of state on executive_visuals.project_credit_pool_reservations
+for each row
+execute function executive_visuals.reject_unverified_credit_reservation_release();
