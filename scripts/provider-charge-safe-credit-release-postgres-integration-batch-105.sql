@@ -65,7 +65,7 @@ begin
 
   -- The legacy finalizer is guarded by the same database-level invariant.
   update executive_visuals.jobs
-    set status='processing',lease_owner='batch105-worker-legacy',lease_expires_at=clock_timestamp()+interval '2 minutes'
+    set status='processing',lease_owner='batch105-worker-legacy',lease_token=gen_random_uuid(),lease_expires_at=clock_timestamp()+interval '2 minutes'
     where id=v_legacy_job;
   begin
     v_finished := executive_visuals.finish_job(
