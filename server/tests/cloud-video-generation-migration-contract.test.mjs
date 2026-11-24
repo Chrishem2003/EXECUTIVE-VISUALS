@@ -281,7 +281,7 @@ test("member limits count settled actual usage, ignore released reservations, an
  assert.match(projectMemberPolicySql,/r\.state<>'released'/i);
  assert.match(projectMemberPolicySql,/for update/i);
  assert.match(projectMemberPolicyIntegration,/member reservation replay charged the shared wallet twice/i);
- assert.match(projectMemberPolicyIntegration,/member settlement, release or usage reporting did not reconcile/i);
+ assert.match(projectMemberPolicyIntegration,/member settlement, held reservation or usage reporting did not reconcile/i);
 });
 
 test("project member spend policy migration and PostgreSQL integration are sequenced after shared wallet foundation",()=>{
