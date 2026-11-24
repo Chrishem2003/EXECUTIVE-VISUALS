@@ -14,16 +14,20 @@ set search_path = pg_catalog, executive_visuals
 as $reject_unverified_credit_reservation_release$
 begin
   if tg_table_name = 'credit_reservations' then
-    if new.status = 'released' and (tg_op = 'INSERT' or old.status is distinct from 'released') then
-      raise exception using
-        message = 'CREDIT_RELEASE_REQUIRES_VERIFIED_NO_CHARGE_EVIDENCE',
-        errcode = '55000';
+    if new.status = 'released' then
+      if tg_op = 'INSERT' or old.status is distinct from 'released' then
+        raise exception using
+          message = 'CREDIT_RELEASE_REQUIRES_VERIFIED_NO_CHARGE_EVIDENCE',
+          errcode = '55000';
+      end if;
     end if;
   elsif tg_table_name = 'billing_credit_reservations' then
-    if new.state = 'released' and (tg_op = 'INSERT' or old.state is distinct from 'released') then
-      raise exception using
-        message = 'BILLING_CREDIT_RELEASE_REQUIRES_VERIFIED_NO_CHARGE_EVIDENCE',
-        errcode = '55000';
+    if new.state = 'released' then
+      if tg_op = 'INSERT' or old.state is distinct from 'released' then
+        raise exception using
+          message = 'BILLING_CREDIT_RELEASE_REQUIRES_VERIFIED_NO_CHARGE_EVIDENCE',
+          errcode = '55000';
+      end if;
     end if;
   else
     raise exception 'CREDIT_RELEASE_GUARD_TABLE_UNSUPPORTED';
