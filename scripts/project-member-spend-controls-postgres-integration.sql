@@ -114,9 +114,21 @@ select * from executive_visuals.reserve_generation_credits(
  '223e4567-e89b-42d3-a456-426614174000',
  'e23e4567-e89b-42d3-a456-426614174007',40,'project-member-reserve-0007'
 );
-select * from executive_visuals.release_generation_credit_reservation(
- (select reservation_id from member_pool_release_result),'Member cancelled before provider submission'
-);
+do $member_release_requires_evidence$
+declare caught boolean:=false;
+begin
+ begin
+  perform * from executive_visuals.release_generation_credit_reservation(
+   (select reservation_id from member_pool_release_result),'Member cancelled before provider submission'
+  );
+  raise exception 'Unverified project-wallet release unexpectedly succeeded';
+ exception when sqlstate '55000' then
+  if sqlerrm<>'PROJECT_CREDIT_POOL_RELEASE_REQUIRES_VERIFIED_NO_CHARGE_EVIDENCE' then raise; end if;
+  caught:=true;
+ end;
+ if not caught then raise exception 'Unverified project-wallet release was not blocked'; end if;
+end
+$member_release_requires_evidence$;
 
 do $member_release_and_usage$
 declare usage record; reservation_state text; pool_balance bigint;
@@ -129,9 +141,9 @@ begin
   where job_id='e23e4567-e89b-42d3-a456-426614174007';
  select coalesce(sum(amount),0) into pool_balance from executive_visuals.project_credit_pool_ledger
   where project_id='323e4567-e89b-42d3-a456-426614174000';
- if usage.used_this_month<>50 or usage.monthly_limit_credits<>100 or usage.remaining_this_month<>50
-    or reservation_state<>'released' or pool_balance<>870 then
-  raise exception 'Member settlement, release or usage reporting did not reconcile';
+ if usage.used_this_month<>90 or usage.monthly_limit_credits<>100 or usage.remaining_this_month<>10
+    or reservation_state<>'reserved' or pool_balance<>830 then
+  raise exception 'Member settlement, held reservation or usage reporting did not reconcile';
  end if;
 end
 $member_release_and_usage$;
