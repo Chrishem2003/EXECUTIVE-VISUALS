@@ -19,10 +19,13 @@ declare
   v_legacy_job uuid := gen_random_uuid();
   v_direct_job uuid := gen_random_uuid();
   v_billing_job uuid := gen_random_uuid();
+  v_pool_job uuid := gen_random_uuid();
+  v_project_id uuid := gen_random_uuid();
   v_v2_reservation uuid;
   v_legacy_reservation uuid;
   v_direct_reservation uuid;
   v_billing_reservation uuid;
+  v_pool_reservation uuid;
   v_finished boolean;
   v_claim executive_visuals.jobs%rowtype;
 begin
@@ -34,7 +37,8 @@ begin
     (v_v2_job,v_owner,'batch105.v2','queued','{}'::jsonb,'batch105-v2-'||v_v2_job::text,2),
     (v_legacy_job,v_owner,'batch105.legacy','queued','{}'::jsonb,'batch105-legacy-'||v_legacy_job::text,2),
     (v_direct_job,v_owner,'batch105.direct','queued','{}'::jsonb,'batch105-direct-'||v_direct_job::text,2),
-    (v_billing_job,v_owner,'video.generate','queued','{"provider":"runway","model":"model-router"}'::jsonb,'batch105-billing-'||v_billing_job::text,2);
+    (v_billing_job,v_owner,'video.generate','queued','{"provider":"runway","model":"model-router"}'::jsonb,'batch105-billing-'||v_billing_job::text,2),
+    (v_pool_job,v_owner,'video.generate','queued','{"provider":"runway","model":"model-router"}'::jsonb,'batch105-pool-'||v_pool_job::text,2);
 
   v_v2_reservation := (executive_visuals.reserve_credit_units(
     v_owner,50,'batch105-v2-reserve-'||v_v2_job::text,'Batch 105 v2 reservation',v_v2_job,'{}'::jsonb
@@ -86,6 +90,28 @@ begin
   end;
   if (select status from executive_visuals.credit_reservations where id=v_direct_reservation) <> 'reserved' then
     raise exception 'BATCH105_DIRECT_RELEASE_CHANGED_RESERVATION';
+  end if;
+
+  -- Agency/project-shared wallets are a third reservation path and must be guarded too.
+  insert into executive_visuals.projects(id,owner_id,name)
+  values(v_project_id,v_owner,'Batch 105 shared-wallet test project');
+  insert into executive_visuals.project_credit_pools(project_id,owner_id,monthly_spend_limit_credits)
+  values(v_project_id,v_owner,10000);
+  insert into executive_visuals.project_credit_pool_reservations(
+    project_id,owner_id,job_id,idempotency_key,reserved_credits
+  ) values(v_project_id,v_owner,v_pool_job,'batch105-pool-reserve-'||v_pool_job::text,100)
+  returning id into v_pool_reservation;
+
+  begin
+    perform * from executive_visuals.release_generation_credit_reservation(v_pool_reservation,'provider cancellation requested');
+    raise exception 'BATCH105_PROJECT_POOL_RELEASE_WAS_NOT_BLOCKED';
+  exception when sqlstate '55000' then
+    if sqlerrm <> 'PROJECT_CREDIT_POOL_RELEASE_REQUIRES_VERIFIED_NO_CHARGE_EVIDENCE' then raise; end if;
+  end;
+  if (select state from executive_visuals.project_credit_pool_reservations where id=v_pool_reservation) <> 'reserved'
+     or exists(select 1 from executive_visuals.project_credit_pool_ledger
+       where reference_id=v_pool_job and event_type='generation_refund') then
+    raise exception 'BATCH105_PROJECT_POOL_RELEASE_CHANGED_CREDITS_OR_LEDGER';
   end if;
 
   -- Customer workflow credits have a separate release RPC; it must fail closed too.
