@@ -49,36 +49,32 @@ begin
   -- finish_job_v2 must not atomically refund an unresolved provider charge.
   select * into v_claim from executive_visuals.claim_next_job_v2('batch105-worker-v2',90,array['batch105.v2']);
   if v_claim.id is distinct from v_v2_job then raise exception 'BATCH105_V2_FIXTURE_CLAIM_FAILED'; end if;
-  begin
-    v_finished := executive_visuals.finish_job_v2(
-      v_v2_job,'batch105-worker-v2',v_claim.lease_token,'failed',null,
-      '{"code":"PROVIDER_FAILURE","message":"provider charge not reconciled"}'::jsonb
-    );
-    raise exception 'BATCH105_V2_UNVERIFIED_RELEASE_WAS_NOT_BLOCKED';
-  exception when sqlstate '55000' then
-    if sqlerrm <> 'CREDIT_RELEASE_REQUIRES_VERIFIED_NO_CHARGE_EVIDENCE' then raise; end if;
-  end;
-  if (select status from executive_visuals.jobs where id=v_v2_job) <> 'processing'
-     or (select status from executive_visuals.credit_reservations where id=v_v2_reservation) <> 'reserved' then
-    raise exception 'BATCH105_V2_FAILURE_DID_NOT_ROLL_BACK_ATOMICALLY';
+  v_finished := executive_visuals.finish_job_v2(
+    v_v2_job,'batch105-worker-v2',v_claim.lease_token,'failed',null,
+    '{"code":"PROVIDER_FAILURE","message":"provider charge not reconciled"}'::jsonb
+  );
+  if not v_finished
+     or (select status from executive_visuals.jobs where id=v_v2_job) <> 'failed'
+     or (select status from executive_visuals.credit_reservations where id=v_v2_reservation) <> 'reserved'
+     or coalesce((select (metadata->>'reconciliation_required')::boolean
+       from executive_visuals.credit_reservations where id=v_v2_reservation),false) is not true then
+    raise exception 'BATCH105_V2_FAILURE_DID_NOT_PRESERVE_RECONCILIATION_HOLD';
   end if;
 
   -- The legacy finalizer is guarded by the same database-level invariant.
   update executive_visuals.jobs
     set status='processing',lease_owner='batch105-worker-legacy',lease_token=gen_random_uuid(),lease_expires_at=clock_timestamp()+interval '2 minutes'
     where id=v_legacy_job;
-  begin
-    v_finished := executive_visuals.finish_job(
-      v_legacy_job,'batch105-worker-legacy','cancelled',null,
-      '{"code":"CANCELLED","message":"provider charge not reconciled"}'::jsonb
-    );
-    raise exception 'BATCH105_LEGACY_UNVERIFIED_RELEASE_WAS_NOT_BLOCKED';
-  exception when sqlstate '55000' then
-    if sqlerrm <> 'CREDIT_RELEASE_REQUIRES_VERIFIED_NO_CHARGE_EVIDENCE' then raise; end if;
-  end;
-  if (select status from executive_visuals.jobs where id=v_legacy_job) <> 'processing'
-     or (select status from executive_visuals.credit_reservations where id=v_legacy_reservation) <> 'reserved' then
-    raise exception 'BATCH105_LEGACY_FAILURE_DID_NOT_ROLL_BACK_ATOMICALLY';
+  v_finished := executive_visuals.finish_job(
+    v_legacy_job,'batch105-worker-legacy','cancelled',null,
+    '{"code":"CANCELLED","message":"provider charge not reconciled"}'::jsonb
+  );
+  if not v_finished
+     or (select status from executive_visuals.jobs where id=v_legacy_job) <> 'cancelled'
+     or (select status from executive_visuals.credit_reservations where id=v_legacy_reservation) <> 'reserved'
+     or coalesce((select (metadata->>'reconciliation_required')::boolean
+       from executive_visuals.credit_reservations where id=v_legacy_reservation),false) is not true then
+    raise exception 'BATCH105_LEGACY_FAILURE_DID_NOT_PRESERVE_RECONCILIATION_HOLD';
   end if;
 
   -- The direct generic release RPC cannot bypass the trigger.
