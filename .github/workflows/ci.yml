@@ -317,6 +317,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261125120000_platform_margin_floor_policy_batch_108.sql
       - name: Verify platform margin policy versioning and audit history
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/platform-margin-floor-policy-postgres-integration-batch-108.sql
+      - name: Apply customer credit settlement refund and overdraft guards
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261125140000_customer_credit_settlement_refund_overdraft_guard_batch_109.sql
+      - name: Verify billing and project credit settlement guards
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/customer-credit-settlement-refund-overdraft-postgres-integration-batch-109.sql
       - name: Apply project member spend attribution and hard limits
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122110000_project_member_spend_controls.sql
       - name: Verify member attribution, monthly limits, pause and role enforcement
