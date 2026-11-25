@@ -114,6 +114,7 @@ test("uses the governed source repository by default and exposes scoped source r
   };
   const composition = createGoogleGeminiGcsFilesComposition({
     env, sourceRepository, repository,
+    now: () => Date.parse("2026-11-05T00:00:00.000Z"),
     getAccessToken: async () => token,
     authorizePrivateAsset: async () => ({ id: assetId, ownerId, projectId }),
     fetchImpl: async (url, options) => {
