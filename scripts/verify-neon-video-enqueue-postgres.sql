@@ -78,3 +78,62 @@ begin
  if v_jobs_before<>v_jobs_after or v_jobs_after<>0 then raise exception 'failed financial reservation left a queue job behind'; end if;
 end $atomic_video_enqueue$;
 select 'NEON_ATOMIC_VIDEO_ENQUEUE_POSTGRES_INTEGRATION_OK' as result;
+
+-- Replay lifecycle regression: a queued job cannot replay a released reservation.
+do $replay_lifecycle_guard$
+declare caught boolean:=false;
+begin
+ update executive_visuals.billing_credit_reservations
+  set state='released',actual_credits=0,
+      evidence='{"provider":"runway","evidenceType":"verified_no_submission","evidenceId":"ci-fake-release","evidenceReference":"ci-fake-proof"}'::jsonb
+  where job_id=(select id from executive_visuals.jobs where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and idempotency_key='ci-video-request-1');
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job_v1(
+   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+   'ci-video-request-1',
+   '{"provider":"runway","model":"gen4.5","requestHash":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","prompt":"CI atomic enqueue"}'::jsonb,
+   (select id from executive_visuals.video_generation_budget_approvals where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and request_hash='cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' order by created_at desc limit 1),
+   4,150,2
+  );
+  raise exception 'queued job accepted replay after its credits were released';
+ exception when others then
+  if sqlerrm='VIDEO_FINANCIAL_REPLAY_LIFECYCLE_CONFLICT' then caught:=true;
+  elsif sqlerrm='queued job accepted replay after its credits were released' then raise;
+  else raise;
+  end if;
+ end;
+ if not caught then raise exception 'released-reservation replay was not rejected'; end if;
+ update executive_visuals.billing_credit_reservations
+  set state='reserved',actual_credits=null,evidence='{}'::jsonb,settled_at=null
+  where job_id=(select id from executive_visuals.jobs where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and idempotency_key='ci-video-request-1');
+end
+$replay_lifecycle_guard$;
+
+-- A terminal-success job must not replay while either reservation is still active.
+do $terminal_replay_guard$
+declare caught boolean:=false;
+begin
+ update executive_visuals.jobs set status='succeeded'
+  where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and idempotency_key='ci-video-request-1';
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job_v1(
+   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+   'ci-video-request-1',
+   '{"provider":"runway","model":"gen4.5","requestHash":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","prompt":"CI atomic enqueue"}'::jsonb,
+   (select id from executive_visuals.video_generation_budget_approvals where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and request_hash='cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' order by created_at desc limit 1),
+   4,150,2
+  );
+  raise exception 'succeeded job accepted replay with unsettled reservations';
+ exception when others then
+  if sqlerrm='VIDEO_FINANCIAL_REPLAY_LIFECYCLE_CONFLICT' then caught:=true;
+  elsif sqlerrm='succeeded job accepted replay with unsettled reservations' then raise;
+  else raise;
+  end if;
+ end;
+ if not caught then raise exception 'terminal job reservation mismatch was not rejected'; end if;
+ update executive_visuals.jobs set status='queued'
+  where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and idempotency_key='ci-video-request-1';
+end
+$terminal_replay_guard$;
+
+select 'NEON_FINANCIAL_REPLAY_LIFECYCLE_GUARD_OK' as result;
