@@ -1362,8 +1362,8 @@ export function createFinancialIntelligenceApi({
           const inIds="in.("+importIds.join(",")+")";
           const serviceIn="in.("+serviceIds.join(",")+")";
           const [importResult,lineResult,reconResult,costResult]=await Promise.all([
-            dbRequest("ai_provider_invoice_imports?select=id,provider,invoice_reference,currency,total_minor,imported_line_count,matched_line_count,reconciliation_status,source_fingerprint,imported_at&id="+inIds+"&limit=5000"),
-            dbRequest("ai_provider_invoice_lines?select=id,import_id,provider_line_reference,provider,model,operation,currency,amount_minor,matched_usage_event_id,match_status&import_id="+inIds+"&limit=5000"),
+            dbRequest("ai_provider_invoice_imports?select=id,provider,invoice_reference,currency,period_start,period_end,total_minor,imported_line_count,matched_line_count,reconciliation_status,source_fingerprint,imported_at&id="+inIds+"&limit=5000"),
+            dbRequest("ai_provider_invoice_lines?select=id,import_id,provider_line_reference,usage_period,provider,model,operation,currency,amount_minor,matched_usage_event_id,match_status&import_id="+inIds+"&limit=5000"),
             dbRequest("ai_provider_invoice_reconciliation_events?select=id,invoice_import_id,invoice_line_id,usage_event_id,match_status,candidate_count,expected_amount_minor,observed_amount_minor,currency&invoice_import_id="+inIds+"&limit=5000"),
             serviceIds.length?dbRequest("financial_service_cost_events?select=id,period_month,owner_id,cost_category,source_type,currency,amount_minor,entry_type,source_reference,created_at&id="+serviceIn+"&limit=5000"):{data:[]}
           ]);
