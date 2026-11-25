@@ -18,11 +18,11 @@ The official documentation states one Runway Dev credit equals USD $0.01. Prices
 | Seedance 2.5 1080p | 68 credits/sec | 340 credits / $3.40 |
 | Seedance 2.5 4K | 110 credits/sec | 550 credits / $5.50 |
 | Kling 3.0 Standard, silent | 9 credits/sec | 45 credits / $0.45 |
-| Kling 3.0 Standard, audio | 13 credits/sec | 65 credits / $0.65 |
+| Kling 3.0 Standard, audio | 13 credits/sec | 65 credits / $0.65 |\n| Kling 3.0 Pro, silent | 12 credits/sec | 60 credits / $0.60 |\n| Kling 3.0 Pro, audio | 17 credits/sec | 85 credits / $0.85 |\n| Kling 3.0 4K | 43 credits/sec | 215 credits / $2.15 |
 | WAN 3.0 480p | 5 credits/sec | 25 credits / $0.25 |
 | WAN 3.0 720p | 10 credits/sec | 50 credits / $0.50 |
 | WAN 3.0 1080p | 20 credits/sec | 100 credits / $1.00 |
-| WAN 3.0 Prime 1080p | 28 credits/sec | 140 credits / $1.40 |
+| WAN 3.0 Prime 1080p | 28 credits/sec | 140 credits / $1.40 |\n| Gemini Omni Flash 1.1 1080p | 15 credits/sec | 75 credits / $0.75 |
 
 Seedance 2.5 video references add 34 credits per input-video second at 1080p and 57 credits per input-video second at 4K. The documented 80-credit minimum and input/reference-video combined billing cap remain implemented in the existing estimator.
 
