@@ -95,12 +95,12 @@ export function buildJobCostSourceEvidenceReadiness({
       invoice.provider===usage.provider&&invoice.currency===curr&&line.import_id===invoice.id&&
       line.provider===usage.provider&&line.model===clean(usage.requested_model)&&
       line.currency===curr&&line.match_status==="matched"&&
-      line.matched_usage_event_id===usage.id&&line.job_id===id&&
+      line.matched_usage_event_id===usage.id&&
       recon.invoice_import_id===invoice.id&&recon.invoice_line_id===line.id&&
       recon.usage_event_id===usage.id&&recon.match_status==="matched"&&
       Number(recon.candidate_count)===1&&Number(recon.expected_amount_minor)===value&&
       Number(recon.observed_amount_minor)===value&&recon.currency===curr&&
-      usage.cost_basis==="provider_reported"&&usage.status==="succeeded"&&
+      usage.cost_basis==="provider_reported"&&
       usage.job_id===id&&usage.provider===link.provider&&
       clean(usage.response_model||usage.requested_model)===clean(link.model)&&
       usage.operation===link.operation&&usage.currency===curr&&
@@ -141,6 +141,7 @@ export function buildJobCostSourceEvidenceReadiness({
   if(usages.some(row=>row.cost_basis==="provider_reported"&&!linkedUsageIds.has(clean(row.id))))
     problems.push("At least one provider-reported usage event has no unique posted invoice attribution.");
   if(links.length!==accepted.length)problems.push("One or more attribution links could not be verified.");
+  accepted.sort((a,b)=>a.invoiceImportId.localeCompare(b.invoiceImportId)||a.invoiceLineId.localeCompare(b.invoiceLineId));
   const categories=CATEGORIES.map(category=>{
     if(category==="compute"&&accepted.length&&problems.length===0&&currency){
       const amountMicros=currencyMinorToMicros(totalMinor,currency);
