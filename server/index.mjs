@@ -1380,7 +1380,10 @@ export function createAppServer() {
               }}};
               Object.assign(result,applyCustomerCreditDispatchGate(result,{
                 stagingDispatchReady:neonStagingApprovalRuntime.enabled===true&&
-                  neonStagingApprovalRuntime.readiness?.applicationDispatchReady===true
+                  neonStagingApprovalRuntime.readiness?.applicationDispatchReady===true,
+                // Fail closed until the platform policy, full variable-cost model and
+                // per-shot customer-price evidence are composed from trusted server data.
+                platformMarginPolicyResult:null
               }));
             }catch{
               result.status="pricing_unverified";result.readyForApproval=false;
