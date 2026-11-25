@@ -28,11 +28,17 @@ It requires:
 - A fresh quote timestamp.
 - Same-currency verified recognized-revenue allocation from subscription or top-up
   accounting, with an evidence reference and SHA-256 digest.
+- A separate verified variable-cost model for compute, storage, egress, payment
+  processing, moderation, retry allowance, tax, refund reserve and support. The model
+  must explicitly cover every category, including categories whose forecast amount
+  is zero; missing cost categories block dispatch.
 - A configured, enabled platform policy.
 
 Credit units are not money and are never used as recognized revenue. Each shot must
 clear the floor independently; a profitable shot cannot subsidize a loss-making shot.
-The production evaluator also checks the aggregate same-currency result.
+The production evaluator also checks the aggregate same-currency result, requires a
+distinct recognized-revenue allocation for every shot, and prevents one shot's
+revenue evidence from being reused to inflate another shot's margin.
 
 ## Dispatch enforcement
 
