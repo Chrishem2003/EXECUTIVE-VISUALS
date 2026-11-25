@@ -58,3 +58,29 @@ test("Gemini Omni Flash 1.1 1080p uses its distinct published fifteen-credit rat
  assert.equal(result.estimatedCredits,75);
  assert.equal(result.estimatedUsd,0.75);
 });
+
+test("Kling 4.0 promotional pricing rounds the list charge before applying the discount",()=>{
+ const five1080=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:"2026-11-25",hdr:false});
+ const five720=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-11-25",hdr:false});
+ assert.equal(five1080.estimatedCredits,95);
+ assert.equal(five720.estimatedCredits,64);
+ assert.equal(five1080.discount,"20% promotion through 2026-11-30 UTC");
+});
+
+test("Kling 4.0 promotion ends after November 30 and 4K is not discounted",()=>{
+ const dec1080=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:"2026-12-01",hdr:false});
+ const promo4k=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"4k",pricingDate:"2026-11-25",hdr:false});
+ assert.equal(dec1080.estimatedCredits,118);
+ assert.equal(dec1080.discount,null);
+ assert.equal(promo4k.estimatedCredits,275);
+ assert.equal(promo4k.discount,null);
+});
+
+test("Gemini Omni Flash 1.2 and Kling 4.0 Flash retain distinct current price tiers",()=>{
+ const gemini1080=estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:5,resolution:"1080p",pricingDate:"2026-11-25"});
+ const gemini720=estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:5,resolution:"720p",pricingDate:"2026-11-25"});
+ const klingFlash=estimateRunwayVideoCredits({model:"kling_4_flash",durationSeconds:5,resolution:"720p",pricingDate:"2026-11-25"});
+ assert.equal(gemini1080.estimatedCredits,50);
+ assert.equal(gemini720.estimatedCredits,35);
+ assert.equal(klingFlash.estimatedCredits,47);
+});
