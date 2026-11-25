@@ -311,6 +311,8 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/provider-charge-safe-credit-release-postgres-integration-batch-105.sql
       - name: Apply durable provider outcome evidence ledger
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261125100000_durable_provider_outcome_evidence_batch_107.sql
+      - name: Allow unknown provider usage metrics to remain null
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261125170000_unknown_provider_outcome_metric_nullability_batch_112.sql
       - name: Verify provider outcome evidence, cost variance, replay and immutable history
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/provider-outcome-evidence-postgres-integration-batch-107.sql
       - name: Apply platform-owner gross-margin floor policy

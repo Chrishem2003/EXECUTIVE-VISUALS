@@ -54,7 +54,6 @@ export function verifyProviderOutcomeEvidence({envelope,secret,expected,maxAgeMs
  const model=requiredText(envelope.model,"model");
  const route=requiredText(envelope.route,"route");
  const sourceReference=requiredText(envelope.sourceReference,"sourceReference");
- const audioEnabled=envelope.audioEnabled;
  const outcome=String(envelope.outcome||"");
  const finalState=String(envelope.finalState||"");
  if(!OUTCOMES.has(outcome)||!STATES.has(finalState))
@@ -62,9 +61,15 @@ export function verifyProviderOutcomeEvidence({envelope,secret,expected,maxAgeMs
  const currency=String(envelope.currency||"").toUpperCase();
  if(!CURRENCY.test(currency))fail("PROVIDER_OUTCOME_CURRENCY_INVALID","A three-letter ISO currency is required.");
  const amountMinor=envelope.amountMinor===null?null:safeInteger(envelope.amountMinor,"amountMinor");
- const billableSeconds=safeInteger(envelope.billableSeconds,"billableSeconds",{max:MAX_SECONDS});
- const inputReferenceCount=safeInteger(envelope.inputReferenceCount,"inputReferenceCount",{max:1000});
- if(typeof envelope.audioEnabled!=="boolean")fail("PROVIDER_OUTCOME_FIELD_INVALID","audioEnabled must be boolean.");
+ const billableSeconds=outcome==="unknown"&&envelope.billableSeconds===null?null:
+  safeInteger(envelope.billableSeconds,"billableSeconds",{max:MAX_SECONDS});
+ const inputReferenceCount=outcome==="unknown"&&envelope.inputReferenceCount===null?null:
+  safeInteger(envelope.inputReferenceCount,"inputReferenceCount",{max:1000});
+ const audioEnabled=outcome==="unknown"&&envelope.audioEnabled===null?null:envelope.audioEnabled;
+ if(outcome!=="unknown"&&(billableSeconds===null||inputReferenceCount===null||typeof audioEnabled!=="boolean"))
+  fail("PROVIDER_OUTCOME_FIELD_INVALID","Charged and no-charge outcomes require complete billable-usage metrics.");
+ if(outcome==="unknown"&&audioEnabled!==null&&typeof audioEnabled!=="boolean")
+  fail("PROVIDER_OUTCOME_FIELD_INVALID","audioEnabled must be boolean or null for an unknown outcome.");
  if(outcome==="charged"&&(amountMinor===null||amountMinor<1))
   fail("PROVIDER_OUTCOME_AMOUNT_INVALID","A charged outcome requires a positive actual amount.");
  if(outcome==="no_charge"&&(amountMinor!==0||billableSeconds!==0))

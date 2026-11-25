@@ -148,7 +148,7 @@ begin
  -- An unresolved provider charge is durably recorded without inventing a cost.
  select * into v_result from executive_visuals.record_provider_outcome_evidence(
   v_task_bad,'runway','runway-task-batch107-mismatch','account-test','seedance-2.5','runway-dev',
-  'provider-event-unknown','unknown','cancelled','USD',null,0,0,false,
+  'provider-event-unknown','unknown','cancelled','USD',null,null,null,null,
   'provider-status:unknown',clock_timestamp(),'HMAC-SHA256',repeat('1',64),
   'runway-adapter','1.0.0'
  );

@@ -34,11 +34,16 @@ test("accepts authenticated no-charge evidence only when amount and billable usa
  assert.equal(result.chargeConfirmed,false);
 });
 
-test("unknown provider outcome remains reconciliation-only",()=>{
- const result=verifyProviderOutcomeEvidence(options(envelope({outcome:"unknown",amountMinor:null,billableSeconds:0,finalState:"failed"})));
+test("unknown provider outcome preserves unavailable billing metrics as null",()=>{
+ const result=verifyProviderOutcomeEvidence(options(envelope({
+  outcome:"unknown",amountMinor:null,billableSeconds:null,inputReferenceCount:null,audioEnabled:null,finalState:"failed"
+ })));
  assert.equal(result.reconciliationRequired,true);
  assert.equal(result.verifiedNoCharge,false);
  assert.equal(result.chargeConfirmed,false);
+ assert.equal(result.billableSeconds,null);
+ assert.equal(result.inputReferenceCount,null);
+ assert.equal(result.audioEnabled,null);
 });
 
 test("rejects tampered evidence",()=>{
@@ -48,6 +53,10 @@ test("rejects tampered evidence",()=>{
 
 test("rejects caller-supplied identity that differs from the persisted task",()=>{
  assert.throws(()=>verifyProviderOutcomeEvidence(options(envelope(),{expected:{...expected,providerTaskId:"another-task"}})),{code:"PROVIDER_OUTCOME_IDENTITY_MISMATCH"});
+});
+
+test("rejects charged outcomes with unknown billable metrics",()=>{
+ assert.throws(()=>verifyProviderOutcomeEvidence(options(envelope({billableSeconds:null}))),{code:"PROVIDER_OUTCOME_FIELD_INVALID"});
 });
 
 test("rejects unverified no-charge claims with nonzero billing",()=>{

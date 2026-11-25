@@ -103,11 +103,14 @@ test("persists authenticated no-charge evidence as zero provider cost without re
 
 test("persists unknown outcome without fabricating actual cost",async()=>{
  const mock=makeFetch({task:{...expectedTask,state:"failed"},rpcRows:[{evidence_row_id:"evidence-unknown",replayed:false,actual_cost_micros:null,estimated_cost_micros:3400000,variance_micros:null}]});
- const envelope=signed({evidenceId:"evt-unknown",outcome:"unknown",finalState:"failed",amountMinor:null,billableSeconds:0});
+ const envelope=signed({evidenceId:"evt-unknown",outcome:"unknown",finalState:"failed",amountMinor:null,billableSeconds:null,inputReferenceCount:null,audioEnabled:null});
  const result=await create(mock.fetchImpl).ingest({authorization:"Bearer "+token,envelope});
  const rpc=JSON.parse(mock.calls[1].options.body);
  assert.equal(result.outcome,"unknown");
  assert.equal(rpc.p_actual_cost_micros,null);
+ assert.equal(rpc.p_billable_seconds,null);
+ assert.equal(rpc.p_input_reference_count,null);
+ assert.equal(rpc.p_audio_enabled,null);
  assert.equal(result.customerCreditsChanged,false);
 });
 
