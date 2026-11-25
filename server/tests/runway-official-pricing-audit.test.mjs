@@ -42,3 +42,19 @@ test("WAN 3.0 Prime remains a separate higher-priced model tier",()=>{
  assert.equal(base.estimatedCredits,100);
  assert.equal(prime.estimatedCredits,140);
 });
+
+test("Kling 3.0 Pro and 4K published tiers remain distinct from Standard",()=>{
+ const proSilent=estimateRunwayVideoCredits({model:"kling3.0_pro",durationSeconds:5,audio:false,pricingDate});
+ const proAudio=estimateRunwayVideoCredits({model:"kling3.0_pro",durationSeconds:5,audio:true,pricingDate});
+ const fourK=estimateRunwayVideoCredits({model:"kling3.0_4k",durationSeconds:5,audio:false,pricingDate});
+ assert.equal(proSilent.estimatedCredits,60);
+ assert.equal(proAudio.estimatedCredits,85);
+ assert.equal(fourK.estimatedCredits,215);
+});
+
+test("Gemini Omni Flash 1.1 1080p uses its distinct published fifteen-credit rate",()=>{
+ const result=estimateRunwayVideoCredits({model:"gemini_omni_flash_1.1",durationSeconds:5,
+  resolution:"1080p",pricingDate});
+ assert.equal(result.estimatedCredits,75);
+ assert.equal(result.estimatedUsd,0.75);
+});
