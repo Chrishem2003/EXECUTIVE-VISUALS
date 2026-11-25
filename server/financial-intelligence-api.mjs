@@ -979,7 +979,7 @@ export function createFinancialIntelligenceApi({
         const tasks=Array.isArray(tasksResult.data)?tasksResult.data:[];
         let evidence=[];
         if(tasks.length){
-          const taskIds=tasks.map(task=>task.id).filter(value=>typeof value==="string"&&/^[0-9a-f-]{36}$/i.test(value));
+          const taskIds=tasks.map(task=>String(task.id||"")).filter(value=>/^[A-Za-z0-9-]{1,36}$/.test(value));
           if(taskIds.length){
             const evidenceResult=await dbRequest("provider_outcome_evidence?select=task_id,provider,provider_task_id,model,route,evidence_id,outcome,final_state,currency,actual_cost_micros,estimated_cost_micros,variance_micros,billable_seconds,input_reference_count,audio_enabled,source_reference,evidence_digest,observed_at&task_id=in.("+taskIds.join(",")+")&order=observed_at.desc&limit=1000");
             evidence=Array.isArray(evidenceResult.data)?evidenceResult.data:[];
