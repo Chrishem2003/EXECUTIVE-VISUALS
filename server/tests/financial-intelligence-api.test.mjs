@@ -2016,3 +2016,66 @@ test("platform margin policy API reports conflicting idempotency keys without ch
  assert.equal(result.status,409);
  assert.equal(result.body.error.code,"PLATFORM_FINANCIAL_POLICY_IDEMPOTENCY_CONFLICT");
 });
+
+test("provider cost reconciliation is owner-only and available without enabling billing",async()=>{
+ const denied=api(async url=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  throw new Error("Billing administrator must not access provider cost reconciliation.");
+ },{billingEnabled:false});
+ const deniedResult=await denied.handle({method:"GET",path:"/api/admin/finance/provider-cost-reconciliation",ownerId:owner});
+ assert.equal(deniedResult.status,403);
+ assert.equal(deniedResult.body.error.code,"PLATFORM_OWNER_REQUIRED");
+
+ const empty=api(async url=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.includes("/video_generation_approvals?"))return json([]);
+  if(target.includes("/video_generation_tasks?"))return json([]);
+  throw new Error("Unexpected request: "+target);
+ },{billingEnabled:false});
+ const emptyResult=await empty.handle({method:"GET",path:"/api/admin/finance/provider-cost-reconciliation",ownerId:owner});
+ assert.equal(emptyResult.status,200);
+ assert.equal(emptyResult.body.status,"no_data");
+ assert.equal(emptyResult.body.automaticPosting,false);
+});
+
+test("provider cost reconciliation returns adapter-verified actual costs without credit-to-money conversion",async()=>{
+ const approval={id:"approval-01",owner_id:owner,project_id:"project-01",currency:"USD",created_at:"2026-11-25T10:00:00+00:00"};
+ const task={id:"task-01",approval_id:"approval-01",owner_id:owner,project_id:"project-01",shot_index:0,provider:"runway",model:"seedance-2.5",state:"succeeded",provider_task_id:"provider-task-01",currency:"USD",estimated_cost_micros:3400000,created_at:"2026-11-25T10:01:00+00:00"};
+ const evidence={task_id:"task-01",provider:"runway",provider_task_id:"provider-task-01",model:"seedance-2.5",route:"runway-dev",evidence_id:"invoice-line-01",outcome:"charged",final_state:"succeeded",currency:"USD",actual_cost_micros:3500000,estimated_cost_micros:3400000,variance_micros:100000,billable_seconds:5,input_reference_count:0,audio_enabled:true,source_reference:"provider-usage-export:line-01",evidence_digest:"a".repeat(64),observed_at:"2026-11-25T10:05:00+00:00"};
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"platform_admin"}]);
+  if(target.includes("/video_generation_approvals?"))return json([approval]);
+  if(target.includes("/video_generation_tasks?"))return json([task]);
+  if(target.includes("/provider_outcome_evidence?"))return json([evidence]);
+  throw new Error("Unexpected request: "+target);
+ },{billingEnabled:false});
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/provider-cost-reconciliation",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.status,"complete_provider_outcomes");
+ assert.equal(result.body.summary.totals.actualCostMicrosByCurrency.USD,3500000);
+ assert.equal(result.body.summary.totals.varianceMicrosByCurrency.USD,100000);
+ assert.equal(result.body.items[0].evidenceStatus,"verified_provider_reported");
+ assert.equal(result.body.sourceType,"adapter_verified_provider_outcome_not_invoice_reconciled");
+ assert.ok(result.body.controls.some(x=>x.includes("Customer credit units are not money")));
+});
+
+test("provider cost reconciliation marks duplicate evidence incomplete instead of double counting",async()=>{
+ const approval={id:"approval-01",owner_id:owner,project_id:"project-01",currency:"USD",created_at:"2026-11-25T10:00:00+00:00"};
+ const task={id:"task-01",approval_id:"approval-01",owner_id:owner,project_id:"project-01",shot_index:0,provider:"runway",model:"seedance-2.5",state:"succeeded",provider_task_id:"provider-task-01",currency:"USD",estimated_cost_micros:3400000,created_at:"2026-11-25T10:01:00+00:00"};
+ const evidence={task_id:"task-01",provider:"runway",provider_task_id:"provider-task-01",model:"seedance-2.5",route:"runway-dev",evidence_id:"invoice-line-01",outcome:"charged",final_state:"succeeded",currency:"USD",actual_cost_micros:3500000,estimated_cost_micros:3400000,variance_micros:100000,billable_seconds:5,input_reference_count:0,audio_enabled:true,source_reference:"provider-usage-export:line-01",evidence_digest:"a".repeat(64),observed_at:"2026-11-25T10:05:00+00:00"};
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.includes("/video_generation_approvals?"))return json([approval]);
+  if(target.includes("/video_generation_tasks?"))return json([task]);
+  if(target.includes("/provider_outcome_evidence?"))return json([evidence,{...evidence,evidence_id:"invoice-line-02"}]);
+  throw new Error("Unexpected request: "+target);
+ },{billingEnabled:false});
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/provider-cost-reconciliation",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.status,"incomplete");
+ assert.equal(result.body.summary.multipleEvidence,1);
+ assert.deepEqual(result.body.summary.totals.actualCostMicrosByCurrency,{});
+});

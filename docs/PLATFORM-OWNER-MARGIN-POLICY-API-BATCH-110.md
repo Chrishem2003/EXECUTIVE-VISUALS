@@ -2,7 +2,8 @@
 
 ## Enablement
 
-The control plane can be enabled independently of payment processing with
+The owner finance control plane (margin policy administration and provider cost
+reconciliation) can be enabled independently of payment processing with
 `PLATFORM_MARGIN_POLICY_API_ENABLED=true`. It still requires Supabase authentication
 and server-only Supabase credentials. Leave `BILLING_API_ENABLED=false` if payment
 processing is not approved; the API health response continues to report billing as
