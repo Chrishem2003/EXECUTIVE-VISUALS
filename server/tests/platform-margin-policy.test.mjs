@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {evaluatePlatformMarginFloor} from "../platform-margin-policy.mjs";
+import {evaluatePlatformMarginFloor,evaluatePlatformMarginFloorForShots} from "../platform-margin-policy.mjs";
 
 const now=Date.parse("2026-11-25T16:00:00.000Z");
 const policy={enabled:true,minimumGrossMarginBps:3500,quoteMaxAgeSeconds:900,rateCardMaxAgeSeconds:86400,version:4};
@@ -61,4 +61,31 @@ test("rejects estimates that cannot be represented safely in currency micro-unit
  const result=evaluatePlatformMarginFloor({...input,providerEstimate:{...providerEstimate,amount:Number.MAX_VALUE}});
  assert.equal(result.readyForDispatch,false);
  assert.equal(result.code,"PLATFORM_MARGIN_PROVIDER_COST_INVALID");
+});
+
+test("production margin gate requires every shot to clear the floor independently",()=>{
+ const shots=[
+  {shotId:"shot-1",providerEstimate,customerRevenueEvidence:revenue,quoteObservedAt:input.quoteObservedAt},
+  {shotId:"shot-2",providerEstimate:{...providerEstimate,amount:2},customerRevenueEvidence:{...revenue,recognizedRevenueMicros:4_000_000},quoteObservedAt:input.quoteObservedAt}
+ ];
+ const approved=evaluatePlatformMarginFloorForShots({policy,shots,now});
+ assert.equal(approved.readyForDispatch,true);
+ assert.equal(approved.shotCount,2);
+ assert.equal(approved.providerCostMicros,5_400_000);
+ assert.equal(approved.revenueMicros,10_000_000);
+ assert.equal(approved.grossMarginBps,4600);
+ const blocked=evaluatePlatformMarginFloorForShots({policy,shots:[shots[0],{...shots[1],customerRevenueEvidence:{...revenue,recognizedRevenueMicros:2_100_000}}],now});
+ assert.equal(blocked.readyForDispatch,false);
+ assert.equal(blocked.blockedShotId,"shot-2");
+ assert.equal(blocked.code,"PLATFORM_GROSS_MARGIN_BELOW_FLOOR");
+});
+
+test("production margin gate rejects mixed currencies and invalid shot sets",()=>{
+ assert.equal(evaluatePlatformMarginFloorForShots({policy,shots:[],now}).code,"PLATFORM_MARGIN_SHOT_SET_INVALID");
+ const mixed=evaluatePlatformMarginFloorForShots({policy,shots:[
+  {shotId:"one",providerEstimate,customerRevenueEvidence:revenue,quoteObservedAt:input.quoteObservedAt},
+  {shotId:"two",providerEstimate:{...providerEstimate,currency:"EUR"},customerRevenueEvidence:{...revenue,currency:"EUR"},quoteObservedAt:input.quoteObservedAt}
+ ],now});
+ assert.equal(mixed.readyForDispatch,false);
+ assert.equal(mixed.code,"PLATFORM_MARGIN_CURRENCY_MISMATCH");
 });
