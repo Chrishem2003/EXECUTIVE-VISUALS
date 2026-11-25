@@ -25,7 +25,9 @@ export function buildAssetStorageRetentionMeasurement({asset,intervalStart,inter
   const quantity=(bytes/GB)*(elapsedSeconds/86400);
   if(!Number.isFinite(quantity)||quantity<=0)
     return {ready:false,code:"ASSET_STORAGE_QUANTITY_INVALID"};
-  const suppliedKey=clean(measurementId);\n  if(suppliedKey&&(suppliedKey.length<8||suppliedKey.length>160))return {ready:false,code:"ASSET_STORAGE_MEASUREMENT_ID_INVALID"};\n  const intervalKey=suppliedKey||stableId([id,intervalStart,intervalEnd].join("|"));
+  const suppliedKey=clean(measurementId);
+  if(suppliedKey&&(suppliedKey.length<8||suppliedKey.length>160))return {ready:false,code:"ASSET_STORAGE_MEASUREMENT_ID_INVALID"};
+  const intervalKey=suppliedKey||stableId([id,intervalStart,intervalEnd].join("|"));
   return Object.freeze({ready:true,measurement:Object.freeze({
     measurementId:"asset-storage:"+intervalKey,
     measuredAt:new Date(Date.parse(intervalEnd)).toISOString(),
