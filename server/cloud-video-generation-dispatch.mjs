@@ -11,7 +11,7 @@ function parseSnapshot(value){
 }
 function safeError(error){
  const code=String(error?.code||"CLOUD_VIDEO_DISPATCH_FAILED").slice(0,80);
- const known=new Set(["VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT","VIDEO_APPROVAL_PROJECT_SCOPE_INVALID","VIDEO_APPROVAL_INVALID","VIDEO_APPROVAL_SNAPSHOT_INVALID","VIDEO_APPROVAL_NOT_EXECUTABLE","VIDEO_JOB_IDEMPOTENCY_CONFLICT","VIDEO_REPOSITORY_TIMEOUT","SUBSCRIPTION_ENTITLEMENT_REQUIRED","SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE","SUBSCRIPTION_RECORD_AMBIGUOUS","VIDEO_CUSTOMER_CREDIT_SETTLEMENT_NOT_CONFIGURED","PLATFORM_MARGIN_POLICY_NOT_CONFIGURED","PLATFORM_GROSS_MARGIN_BELOW_FLOOR","PLATFORM_MARGIN_POLICY_UNAVAILABLE"]);
+ const known=new Set(["VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT","VIDEO_APPROVAL_PROJECT_SCOPE_INVALID","VIDEO_APPROVAL_INVALID","VIDEO_APPROVAL_SNAPSHOT_INVALID","VIDEO_APPROVAL_NOT_EXECUTABLE","VIDEO_JOB_IDEMPOTENCY_CONFLICT","VIDEO_REPOSITORY_TIMEOUT","SUBSCRIPTION_ENTITLEMENT_REQUIRED","SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE","SUBSCRIPTION_RECORD_AMBIGUOUS","VIDEO_CUSTOMER_CREDIT_SETTLEMENT_NOT_CONFIGURED","PLATFORM_MARGIN_POLICY_NOT_CONFIGURED","PLATFORM_GROSS_MARGIN_BELOW_FLOOR","PLATFORM_MARGIN_POLICY_UNAVAILABLE","PLATFORM_MARGIN_QUOTE_STALE","PLATFORM_MARGIN_RATE_CARD_STALE","PLATFORM_MARGIN_REVENUE_UNVERIFIED"]);
  return {code:known.has(code)?code:"CLOUD_VIDEO_DISPATCH_FAILED",message:known.has(code)?String(error?.message||"Cloud generation dispatch failed.").slice(0,300):"Cloud generation dispatch could not be confirmed. Retry the same approval safely."};
 }
 /**
@@ -81,10 +81,12 @@ export function createCloudVideoGenerationDispatch({db,repositories,queue=null,a
     const marginReady=marginPolicyResult===true||marginPolicyResult?.readyForDispatch===true;
     if(!marginReady){
      const requestedCode=String(marginPolicyResult?.code||"PLATFORM_MARGIN_POLICY_NOT_CONFIGURED");
-     const code=["PLATFORM_GROSS_MARGIN_BELOW_FLOOR","PLATFORM_MARGIN_POLICY_UNAVAILABLE"].includes(requestedCode)
-      ? requestedCode : "PLATFORM_MARGIN_POLICY_NOT_CONFIGURED";
+     const allowedCodes=["PLATFORM_GROSS_MARGIN_BELOW_FLOOR","PLATFORM_MARGIN_POLICY_UNAVAILABLE","PLATFORM_MARGIN_QUOTE_STALE","PLATFORM_MARGIN_RATE_CARD_STALE","PLATFORM_MARGIN_REVENUE_UNVERIFIED"];
+     const code=allowedCodes.includes(requestedCode)?requestedCode:"PLATFORM_MARGIN_POLICY_NOT_CONFIGURED";
      const message=String(marginPolicyResult?.reason||"A current platform-owner margin policy and verified same-currency revenue allocation are required before billable generation.").slice(0,300);
-     return {status:503,body:{error:{code,message},providerRequestsSubmitted:false}};
+     const status=code==="PLATFORM_GROSS_MARGIN_BELOW_FLOOR"?422:
+      code==="PLATFORM_MARGIN_QUOTE_STALE"||code==="PLATFORM_MARGIN_RATE_CARD_STALE"?409:503;
+     return {status,body:{error:{code,message},providerRequestsSubmitted:false}};
     }
    }
 
