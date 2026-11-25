@@ -50,6 +50,10 @@ export function buildJobCostSourceEvidenceReadiness({
 
   const usages=array(usageEvents).filter(row=>row?.job_id===id);
   const links=array(attributionLinks).filter(row=>row?.job_id===id);
+  const duplicateIds=rows=>rows.some((row,index)=>!clean(row?.id)||rows.findIndex(other=>other?.id===row.id)!==index);
+  if(duplicateIds(usages)||duplicateIds(invoiceImports)||duplicateIds(invoiceLines)||
+     duplicateIds(reconciliationEvents)||duplicateIds(serviceCostEvents))
+    return fail("JOB_COST_EVIDENCE_DUPLICATE_SOURCE_ID","A source collection contains a missing or duplicate immutable record ID.");
   const importsById=uniqueBy(invoiceImports,"id");
   const linesById=uniqueBy(invoiceLines,"id");
   const reconById=uniqueBy(reconciliationEvents,"id");
@@ -111,14 +115,32 @@ export function buildJobCostSourceEvidenceReadiness({
       cost.owner_id===usage.owner_id&&cost.period_month===usage.period_month&&
       clean(cost.source_reference).length>0&&
       link.owner_id===usage.owner_id&&link.project_id===usage.project_id&&
-      link.provider===usage.provider&&clean(link.model)===clean(usage.response_model||usage.requested_model)&&
-      link.operation===usage.operation&&link.currency===curr&&
-      clean(invoice.imported_at).length>0&&isDate(invoice.imported_at)&&
-      clean(cost.created_at).length>0&&isDate(cost.created_at);
-    if(!exact){problems.push("A linked invoice attribution failed exact provider, model, operation, amount, currency, job or immutable-ledger checks.");continue;}
-    const allLines=importLineRows.get(invoice.id)||[];
+      link.provider===usage.provider&&clean(link.model)===clea    const allLines=importLineRows.get(invoice.id)||[];
     const allRecon=reconImportRows.get(invoice.id)||[];
     const lineTotal=allLines.reduce((sum,row)=>sum+(amount(row.amount_minor)??NaN),0);
+    const reconByLine=new Map();
+    for(const row of allRecon){
+      const lineKey=clean(row?.invoice_line_id);
+      if(!reconByLine.has(lineKey))reconByLine.set(lineKey,[]);
+      reconByLine.get(lineKey).push(row);
+    }
+    const everyLineExactlyReconciled=allLines.every(invoiceLine=>{
+      const matches=reconByLine.get(clean(invoiceLine.id))||[];
+      const lineAmount=amount(invoiceLine.amount_minor);
+      return matches.length===1&&matches[0].invoice_import_id===invoice.id&&
+        matches[0].match_status==="matched"&&Number(matches[0].candidate_count)===1&&
+        amount(matches[0].expected_amount_minor)===lineAmount&&
+        amount(matches[0].observed_amount_minor)===lineAmount&&
+        matches[0].currency===invoiceLine.currency&&
+        invoiceLine.provider===invoice.provider&&invoiceLine.currency===invoice.currency&&
+        lineAmount!==null&&lineAmount>0;
+    });
+    if(allLines.length!==Number(invoice.imported_line_count)||
+       allRecon.length!==allLines.length||!everyLineExactlyReconciled||
+       !Number.isSafeInteger(lineTotal)||lineTotal!==Number(invoice.total_minor)){
+      problems.push("The source invoice is not completely reconciled line-for-line to its declared total.");continue;
+    }
+.amount_minor)??NaN),0);
     if(allLines.length!==Number(invoice.imported_line_count)||
        
        allRecon.length!==allLines.length||
