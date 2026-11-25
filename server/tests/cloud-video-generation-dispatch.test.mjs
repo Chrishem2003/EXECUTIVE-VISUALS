@@ -167,3 +167,12 @@ test("consumed approval replay does not re-evaluate mutable margin policy",async
  assert.equal(result.status,200);
  assert.equal(checks,0);
 });
+
+test("dispatch preserves a missing fully-loaded cost model as a fail-closed reason",async()=>{
+ const f=fixture({platformMarginPolicyReady:async()=>({readyForDispatch:false,code:"PLATFORM_MARGIN_VARIABLE_COSTS_UNVERIFIED",reason:"Cost model incomplete."})});
+ const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,503);
+ assert.equal(result.body.error.code,"PLATFORM_MARGIN_VARIABLE_COSTS_UNVERIFIED");
+ assert.equal(result.body.providerRequestsSubmitted,false);
+ assert.equal(f.calls.some(x=>x[0]==="register"||x[0]==="enqueue"),false);
+});
