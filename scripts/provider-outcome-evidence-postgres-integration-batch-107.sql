@@ -96,14 +96,13 @@ begin
   if sqlerrm<>'PROVIDER_OUTCOME_TASK_IDENTITY_OR_STATE_MISMATCH' then raise; end if;
  end;
 
- -- Table writes are not granted to the adapter role; the append-only trigger is
- -- an additional owner-level guard against privileged mutation.
+ -- Service-role mutation privileges are still stopped by the append-only trigger.
  begin
   update executive_visuals.provider_outcome_evidence set route='tampered'
    where id=v_evidence;
   raise exception 'BATCH107_EVIDENCE_MUTATION_WAS_ACCEPTED';
- exception when sqlstate '42501' then
-  null;
+ exception when sqlstate '55000' then
+  if sqlerrm<>'PROVIDER_OUTCOME_EVIDENCE_IS_APPEND_ONLY' then raise; end if;
  end;
 
  begin
