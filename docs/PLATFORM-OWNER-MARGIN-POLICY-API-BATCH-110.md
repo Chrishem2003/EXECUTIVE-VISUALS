@@ -33,7 +33,7 @@ The request body accepts only:
 - `quoteMaxAgeSeconds`: integer from 60 to 3600
 - `rateCardMaxAgeSeconds`: integer from 3600 to 3888000
 
-Supply an idempotency key in the request's idempotency header. The server derives
+Supply an `Idempotency-Key` HTTP header. The server derives
 `p_actor_id` from the authenticated account; callers cannot choose another actor.
 The API invokes the service-role-only `configure_platform_video_margin_policy` RPC,
 which serializes version updates and writes append-only history.
