@@ -101,8 +101,14 @@ declare
  v_evidence jsonb:=jsonb_build_object('provider','runway','evidenceType','provider_invoice','evidenceId','batch109-project-invoice-1');
  v_balance bigint;
 begin
+ insert into auth.users(id) values(v_member);
  insert into executive_visuals.projects(id,owner_id,name)
  values(v_project,v_owner,'Batch 109 settlement guard project');
+ insert into executive_visuals.project_members(project_id,member_id,role,invited_by)
+ values(v_project,v_member,'editor',v_owner);
+ insert into executive_visuals.project_credit_pool_member_policies(
+  project_id,owner_id,member_id,status,monthly_limit_credits
+ ) values(v_project,v_owner,v_member,'active',500);
  insert into executive_visuals.jobs(id,owner_id,project_id,job_type,status,input,idempotency_key,max_attempts)
  values(v_job,v_member,v_project,'video.generate','cancelled','{}'::jsonb,'batch109-project-job-'||v_job::text,2);
  insert into executive_visuals.project_credit_pools(project_id,owner_id,monthly_spend_limit_credits)
