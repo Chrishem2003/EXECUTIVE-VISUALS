@@ -7,7 +7,7 @@ const policy={enabled:true,minimumGrossMarginBps:3500,quoteMaxAgeSeconds:900,rat
 const providerEstimate={available:true,estimated:true,currency:"USD",amount:3.4,
  pricing:{sourceUrl:"https://provider.example/pricing",observedAt:"2026-11-25T15:30:00.000Z",expiresAt:"2026-11-26T00:00:00.000Z"}};
 const priceEvidence={status:"verified_quote",currency:"USD",customerPriceMicros:6_000_000,
- evidenceReference:"customer-price-quote:job-01",evidenceSha256:"a".repeat(64)};
+ evidenceReference:"customer-price-quote:job-01",policyFingerprint:"c".repeat(64),evidenceSha256:"a".repeat(64)};
 const additionalCostEvidence={status:"verified",currency:"USD",additionalCostMicros:200_000,
  evidenceReference:"variable-cost-model:job-01",evidenceSha256:"b".repeat(64),
  coveredCategories:["compute","storage","egress","payment_processing","moderation","retry_allowance","tax","refund_reserve","support"]};
@@ -46,7 +46,7 @@ test("fails closed when policy is missing, disabled or malformed",()=>{
 });
 
 test("does not treat customer credit units as monetary customer price",()=>{
- const result=evaluatePlatformMarginFloor({...input,customerPriceEvidence:{status:"estimated",currency:"USD",customerPriceMicros:6_000_000,evidenceReference:"credits:100",evidenceSha256:"a".repeat(64)}});
+ const result=evaluatePlatformMarginFloor({...input,customerPriceEvidence:{status:"estimated",currency:"USD",customerPriceMicros:6_000_000,evidenceReference:"credits:100",policyFingerprint:"c".repeat(64),evidenceSha256:"a".repeat(64)}});
  assert.equal(result.readyForDispatch,false);
  assert.equal(result.code,"PLATFORM_MARGIN_CUSTOMER_PRICE_UNVERIFIED");
 });
