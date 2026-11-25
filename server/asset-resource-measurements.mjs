@@ -27,14 +27,16 @@ export function buildAssetStorageRetentionMeasurement({asset,intervalStart,inter
     return {ready:false,code:"ASSET_STORAGE_QUANTITY_INVALID"};
   const suppliedKey=clean(measurementId);
   if(suppliedKey&&(suppliedKey.length<8||suppliedKey.length>160))return {ready:false,code:"ASSET_STORAGE_MEASUREMENT_ID_INVALID"};
-  const intervalKey=suppliedKey||stableId([id,intervalStart,intervalEnd].join("|"));
+  const start=new Date(Date.parse(intervalStart)).toISOString();
+  const end=new Date(Date.parse(intervalEnd)).toISOString();
+  const intervalKey=suppliedKey||stableId([id,start,end].join("|"));
   return Object.freeze({ready:true,measurement:Object.freeze({
     measurementId:"asset-storage:"+intervalKey,
-    measuredAt:new Date(Date.parse(intervalEnd)).toISOString(),
+    measuredAt:end,
     resourceType:"storage_gb_day",quantity,unit:"gb_day",
     evidenceSource:"worker_instrumentation",evidenceMeasurement:"asset_storage_retention_interval",
-    dimensions:Object.freeze({assetId:id,intervalStart:new Date(Date.parse(intervalStart)).toISOString(),
-      intervalEnd:new Date(Date.parse(intervalEnd)).toISOString(),bytes,accountingUnit:"decimal_gb_day"})
+    dimensions:Object.freeze({assetId:id,intervalStart:start,
+      intervalEnd:end,bytes,accountingUnit:"decimal_gb_day"})
   }),ownerId,projectId,operationId:id});
 }
 
