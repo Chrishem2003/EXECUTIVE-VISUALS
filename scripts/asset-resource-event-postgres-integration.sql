@@ -160,7 +160,7 @@ begin
   raise exception using errcode='P9999',message='asset resource evidence update was accepted';
  exception when raise_exception then
   if sqlerrm='asset resource evidence update was accepted' then raise; end if;
-  if sqlerrm<>'IMMUTABLE_FINANCIAL_EVIDENCE' then raise; end if;
+  if sqlerrm<>'ASSET_RESOURCE_MEASUREMENTS_IMMUTABLE' then raise; end if;
  end;
 end
 $immutability$;
