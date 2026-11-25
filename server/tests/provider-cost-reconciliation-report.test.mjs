@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildProviderCostReconciliationReport } from "../provider-cost-reconciliation-report.mjs";
 
-const approval={id:"approval-01",owner_id:"owner-01",project_id:"project-01",currency:"USD",created_at:"2026-11-25T10:00:00.000Z"};
-const task={id:"task-01",approval_id:"approval-01",owner_id:"owner-01",project_id:"project-01",shot_index:0,provider:"runway",model:"seedance-2.5",provider_task_id:"provider-task-01",state:"succeeded",currency:"USD",estimated_cost_micros:3400000,created_at:"2026-11-25T10:01:00.000Z"};
-const evidence={task_id:"task-01",provider:"runway",provider_task_id:"provider-task-01",model:"seedance-2.5",route:"runway-dev",evidence_id:"invoice-line-01",outcome:"charged",final_state:"succeeded",currency:"USD",actual_cost_micros:3500000,estimated_cost_micros:3400000,variance_micros:100000,billable_seconds:5,input_reference_count:0,audio_enabled:true,source_reference:"provider-usage-export:line-01",evidence_digest:"a".repeat(64),observed_at:"2026-11-25T10:05:00.000Z"};
+const approval={id:"approval-01",owner_id:"owner-01",project_id:"project-01",currency:"USD",created_at:"2026-11-25T10:00:00+00:00"};
+const task={id:"task-01",approval_id:"approval-01",owner_id:"owner-01",project_id:"project-01",shot_index:0,provider:"runway",model:"seedance-2.5",provider_task_id:"provider-task-01",state:"succeeded",currency:"USD",estimated_cost_micros:3400000,created_at:"2026-11-25T10:01:00+00:00"};
+const evidence={task_id:"task-01",provider:"runway",provider_task_id:"provider-task-01",model:"seedance-2.5",route:"runway-dev",evidence_id:"invoice-line-01",outcome:"charged",final_state:"succeeded",currency:"USD",actual_cost_micros:"3500000",estimated_cost_micros:"3400000",variance_micros:"100000",billable_seconds:5,input_reference_count:0,audio_enabled:true,source_reference:"provider-usage-export:line-01",evidence_digest:"a".repeat(64),observed_at:"2026-11-25T10:05:00+00:00"};
 
 test("reports one verified provider cost and variance without converting credits to money",()=>{
  const report=buildProviderCostReconciliationReport({approvals:[approval],tasks:[task],evidence:[evidence],generatedAt:"2026-11-25T10:06:00.000Z"});
@@ -54,4 +54,19 @@ test("keeps currencies separate and rejects duplicate task rows",()=>{
  assert.equal(report.summary.totals.actualCostMicrosByCurrency.USD,3500000);
  assert.equal(report.summary.totals.actualCostMicrosByCurrency.EUR,100);
  assert.throws(()=>buildProviderCostReconciliationReport({approvals:[approval],tasks:[task,task],evidence:[]}),{code:"PROVIDER_COST_REPORT_DUPLICATE_TASK"});
+});
+
+test("marks in-flight tasks pending rather than missing provider evidence",()=>{
+ const pending={...task,state:"processing"};
+ const report=buildProviderCostReconciliationReport({approvals:[approval],tasks:[pending],evidence:[]});
+ assert.equal(report.status,"incomplete");
+ assert.equal(report.summary.pendingTasks,1);
+ assert.equal(report.summary.missingEvidence,0);
+ assert.equal(report.items[0].evidenceStatus,"pending");
+});
+
+test("returns no_data when no generation tasks exist",()=>{
+ const report=buildProviderCostReconciliationReport({approvals:[],tasks:[],evidence:[]});
+ assert.equal(report.status,"no_data");
+ assert.equal(report.summary.tasks,0);
 });
