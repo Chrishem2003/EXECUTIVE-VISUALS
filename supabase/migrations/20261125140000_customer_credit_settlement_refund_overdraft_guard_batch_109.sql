@@ -25,7 +25,13 @@ begin
   return new;
  end if;
  if old.state='released' then
-  raise exception 'BILLING_CREDIT_RELEASE_IMMUTABLE' using errcode='55000';
+  if new.state is distinct from old.state
+     or new.actual_credits is distinct from old.actual_credits
+     or new.evidence is distinct from old.evidence
+     or new.settled_at is distinct from old.settled_at then
+   raise exception 'BILLING_CREDIT_RELEASE_IMMUTABLE' using errcode='55000';
+  end if;
+  return new;
  end if;
  if new.state='settled' and (
     new.actual_credits is null or new.actual_credits<old.reserved_credits
