@@ -32,6 +32,15 @@ begin
  ) then
   raise exception 'BILLING_CREDIT_REFUND_REQUIRES_VERIFIED_RECONCILIATION' using errcode='55000';
  end if;
+ if new.state='settled' and (
+    new.settled_at is null or jsonb_typeof(new.evidence)<>'object'
+    or coalesce(new.evidence->>'provider','')=''
+    or coalesce(new.evidence->>'evidenceType','') not in
+      ('provider_task_receipt','provider_invoice','provider_usage_reconciliation','verified_no_charge_cancellation')
+    or coalesce(new.evidence->>'evidenceId','')=''
+ ) then
+  raise exception 'BILLING_CREDIT_SETTLEMENT_EVIDENCE_INVALID';
+ end if;
  if new.state='reserved' and new.actual_credits is not null then
   raise exception 'BILLING_CREDIT_SETTLEMENT_STATE_INVALID' using errcode='55000';
  end if;
@@ -52,6 +61,10 @@ drop trigger if exists ev_project_credit_pool_reservations_settlement_guard
 create trigger ev_project_credit_pool_reservations_settlement_guard
 before insert or update on executive_visuals.project_credit_pool_reservations
 for each row execute function executive_visuals.guard_generation_credit_reservation_settlement();
+
+-- Reservation state/actual-credit writes must go through the guarded security-definer RPCs.
+revoke update on executive_visuals.billing_credit_reservations from service_role;
+revoke update on executive_visuals.project_credit_pool_reservations from service_role;
 
 create or replace function executive_visuals.guard_generation_credit_ledger_insert()
 returns trigger
