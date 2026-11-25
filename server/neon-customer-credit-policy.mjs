@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { priceWorkloadCostUnits } from "./ai-workload-economics.mjs";
 
 function parseInteger(value, name, { min, max }) {
@@ -93,8 +94,34 @@ export function createNeonCustomerCreditQuotePolicy({ env = process.env } = {}) 
     }
     return Number(minimumPriceMicros);
   };
+  const policyFingerprint = createHash("sha256").update(JSON.stringify({
+    policyVersion: "customer-credit-pricing-v1",
+    creditsPerUsd: Number(rate),
+    targetMarginBps: Number(targetMarginBps),
+    paymentFeeBps: Number(paymentFeeBps),
+    supportReserveBps: Number(supportReserveBps),
+    fixedPaymentFeeMicros: Number(fixedPaymentFeeMicros)
+  })).digest("hex");
+  const quoteCustomerPriceEvidence = ({ currency, amountMicros, evidenceReference } = {}) => {
+    if (typeof evidenceReference !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,179}$/.test(evidenceReference)) {
+      const error = new Error("A server-generated customer price quote reference is required.");
+      error.code = "VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID";
+      throw error;
+    }
+    const customerPriceMicros = quoteCustomerPrice({ currency, amountMicros });
+    const payload = { currency, amountMicros, customerPriceMicros, evidenceReference, policyFingerprint };
+    const evidenceSha256 = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    return Object.freeze({
+      status: "verified_quote", currency, customerPriceMicros, evidenceReference,
+      policyFingerprint, evidenceSha256
+    });
+  };
   Object.defineProperty(quoteCustomerCredits, "quoteCustomerPrice", {
     value: quoteCustomerPrice,
+    enumerable: true
+  });
+  Object.defineProperty(quoteCustomerCredits, "quoteCustomerPriceEvidence", {
+    value: quoteCustomerPriceEvidence,
     enumerable: true
   });
   Object.defineProperty(quoteCustomerCredits, "assumptions", {
