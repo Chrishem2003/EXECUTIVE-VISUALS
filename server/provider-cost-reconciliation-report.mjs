@@ -123,7 +123,8 @@ export function buildProviderCostReconciliationReport(input={}){
   const evidenceEstimate=integer(e.estimated_cost_micros,"evidence estimated_cost_micros");
   const billableSeconds=integer(e.billable_seconds,"evidence billable_seconds",{max:604800});
   const inputReferenceCount=integer(e.input_reference_count,"evidence input_reference_count",{max:1000});
-  if(typeof e.audio_enabled!=="boolean"||!HASH.test(evidenceDigest)||!["succeeded","failed","cancelled"].includes(finalState)||
+  const audioEnabled=e.audio_enabled;
+  if(typeof audioEnabled!=="boolean"||!HASH.test(evidenceDigest)||!["succeeded","failed","cancelled"].includes(finalState)||
      !["charged","no_charge","unknown"].includes(outcome)){
    counts.invalidEvidence++;
    items.push({...base,evidenceStatus:"invalid_evidence",outcome,actualCostMicros:null,varianceMicros:null,
