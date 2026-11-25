@@ -1,0 +1,60 @@
+# Batch 108 — platform-owner gross-margin floor
+
+## Commercial control
+
+This batch adds a platform-level, versioned gross-margin policy for paid cloud video
+dispatch. There is deliberately no guessed default percentage: until the platform
+owner configures and enables a floor, new cloud-generation approvals remain blocked.
+
+The policy stores:
+- Minimum gross margin in basis points (1–9,500).
+- Maximum age of a customer quote (60–3,600 seconds).
+- Maximum age of the source-linked provider rate card (1 hour–45 days).
+- Enabled state, monotonically increasing version, actor and update time.
+
+Configuration is through a service-role-only RPC. The admin API that calls it must
+authenticate and authorize the platform owner; customer clients cannot read or write
+the policy tables. Each change is captured in an append-only, versioned history with
+idempotent configuration keys and a database serialization lock.
+
+## Margin calculation
+
+The evaluator uses integer currency micro-units:
+
+`grossMarginBps = floor((recognizedRevenueMicros - providerCostMicros) * 10000 / recognizedRevenueMicros)`
+
+It requires:
+- A current provider estimate with a live, source-linked rate card.
+- A fresh quote timestamp.
+- Same-currency verified recognized-revenue allocation from subscription or top-up
+  accounting, with an evidence reference and SHA-256 digest.
+- A configured, enabled platform policy.
+
+Credit units are not money and are never used as recognized revenue. Each shot must
+clear the floor independently; a profitable shot cannot subsidize a loss-making shot.
+The production evaluator also checks the aggregate same-currency result.
+
+## Dispatch enforcement
+
+The cloud video dispatcher now invokes the trusted `platformMarginPolicyReady`
+server callback before the customer-credit settlement gate and before cloud approval
+registration/enqueue. The callback should load the current policy and trusted revenue
+allocations, evaluate every shot with `evaluatePlatformMarginFloorForShots`, and
+return the result. Missing policy, stale data, insufficient margin or policy-store
+outage blocks dispatch. Consumed approvals remain idempotent replays and are not
+re-priced under a later policy version.
+
+The enqueue audit event records the policy version and margin values for traceability.
+
+## Limits and remaining work
+
+This is an enforcement contract and policy foundation, not an activation of paid
+generation. The host callback must be wired to the authoritative subscription/top-up
+revenue-allocation source before dispatch can pass. No customer-credit conversion is
+inferred, and no provider is called.
+
+Batch 107 provider actual-cost evidence remains separate from this pre-dispatch
+forecast check. Later settlement work must compare actual provider cost with this
+forecast and apply an approved customer-credit/overage policy across personal,
+billing/workflow and agency project wallets. Do not bypass the Batch 105 release
+guards.
