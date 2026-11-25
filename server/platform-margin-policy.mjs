@@ -22,7 +22,7 @@ function timestamp(value,label){
  * accounting, in the same currency as the provider estimate.
  */
 export function evaluatePlatformMarginFloor({
- policy,providerEstimate,customerRevenueEvidence,quoteObservedAt,now=Date.now()
+ policy,providerEstimate,customerRevenueEvidence,additionalCostEvidence,quoteObservedAt,now=Date.now()
 }={}){
  const blocked=(code,reason)=>Object.freeze({readyForDispatch:false,code,reason});
  if(!policy||policy.enabled!==true)return blocked("PLATFORM_MARGIN_POLICY_DISABLED","The platform owner has not enabled a minimum-margin policy.");
@@ -45,7 +45,7 @@ export function evaluatePlatformMarginFloor({
  if(!Number.isSafeInteger(providerCostMicros)||providerCostMicros<1||
     Math.abs(amount*1_000_000-providerCostMicros)>0.00001)
   return blocked("PLATFORM_MARGIN_PROVIDER_COST_INVALID","Provider cost cannot be represented safely in currency micro-units.");
- const variableCosts=arguments[0]?.additionalCostEvidence;
+ const variableCosts=additionalCostEvidence;
  if(!variableCosts||variableCosts.status!=="verified"||variableCosts.currency!==currency||
     !Number.isSafeInteger(variableCosts.additionalCostMicros)||variableCosts.additionalCostMicros<0||
     !HASH.test(String(variableCosts.evidenceSha256||"").toLowerCase())||
@@ -139,10 +139,13 @@ export function evaluatePlatformMarginFloorForShots({policy,shots,now=Date.now()
   shots:Object.freeze(results)
  });
  const providerCostMicros=results.reduce((sum,result)=>sum+result.providerCostMicros,0);
+ const additionalVariableCostMicros=results.reduce((sum,result)=>sum+result.additionalVariableCostMicros,0);
+ const totalVariableCostMicros=providerCostMicros+additionalVariableCostMicros;
  const revenueMicros=results.reduce((sum,result)=>sum+result.revenueMicros,0);
- if(!Number.isSafeInteger(providerCostMicros)||!Number.isSafeInteger(revenueMicros))
+ if(!Number.isSafeInteger(providerCostMicros)||!Number.isSafeInteger(additionalVariableCostMicros)||
+    !Number.isSafeInteger(totalVariableCostMicros)||!Number.isSafeInteger(revenueMicros))
   return Object.freeze({readyForDispatch:false,code:"PLATFORM_MARGIN_TOTAL_OVERFLOW",reason:"Production margin totals exceed safe integer precision."});
- const grossProfitMicros=revenueMicros-providerCostMicros;
+ const grossProfitMicros=revenueMicros-totalVariableCostMicros;
  const grossMarginBps=Number((BigInt(grossProfitMicros)*10_000n)/BigInt(revenueMicros));
  return Object.freeze({
   readyForDispatch:true,code:"PLATFORM_GROSS_MARGIN_APPROVED",
