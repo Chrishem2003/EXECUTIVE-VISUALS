@@ -109,8 +109,8 @@ begin
  insert into executive_visuals.project_credit_pool_ledger(project_id,owner_id,actor_id,amount,event_type,idempotency_key,description)
  values(v_project,v_owner,v_owner,200,'top_up','batch109-project-fund-'||v_project::text,'Batch 109 test funding');
  insert into executive_visuals.project_credit_pool_reservations(
-  id,project_id,owner_id,job_id,idempotency_key,reserved_credits
- ) values(v_reservation,v_project,v_owner,v_job,'batch109-project-reservation-'||v_job::text,100);
+  id,project_id,owner_id,actor_id,job_id,idempotency_key,reserved_credits
+ ) values(v_reservation,v_project,v_owner,v_owner,v_job,'batch109-project-reservation-'||v_job::text,100);
  insert into executive_visuals.billing_credit_accounts(owner_id) values(v_owner) on conflict(owner_id) do nothing;
  insert into executive_visuals.billing_credit_reservations(id,owner_id,job_id,idempotency_key,reserved_credits)
  values(v_reservation,v_owner,v_job,'batch109-project-reservation-'||v_job::text,100);
