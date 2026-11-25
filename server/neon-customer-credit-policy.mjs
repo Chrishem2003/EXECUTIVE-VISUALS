@@ -71,6 +71,32 @@ export function createNeonCustomerCreditQuotePolicy({ env = process.env } = {}) 
 
     return Number(credits);
   };
+  const quoteCustomerPrice = ({ currency, amountMicros } = {}) => {
+    if (currency !== "USD" || !Number.isSafeInteger(amountMicros) || amountMicros < 1) {
+      const error = new Error("Customer price quoting requires a verified positive USD cost.");
+      error.code = "VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID";
+      throw error;
+    }
+    let minimumPriceMicros;
+    try {
+      minimumPriceMicros = BigInt(priceWorkloadCostUnits(amountMicros, pricing).minimumPriceUnits);
+    } catch (cause) {
+      const error = new Error("The shared workload pricing policy could not produce a safe customer price.");
+      error.code = "VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID";
+      error.cause = cause;
+      throw error;
+    }
+    if (minimumPriceMicros < 1n || minimumPriceMicros > BigInt(Number.MAX_SAFE_INTEGER)) {
+      const error = new Error("The customer price exceeds safe currency micro-unit bounds.");
+      error.code = "VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID";
+      throw error;
+    }
+    return Number(minimumPriceMicros);
+  };
+  Object.defineProperty(quoteCustomerCredits, "quoteCustomerPrice", {
+    value: quoteCustomerPrice,
+    enumerable: true
+  });
   Object.defineProperty(quoteCustomerCredits, "assumptions", {
     value: Object.freeze({
       creditsPerUsd: Number(rate),
