@@ -118,13 +118,13 @@ test("does not combine different currencies or invent foreign exchange",()=>{
  const l2="cccccccc-cccc-4ccc-8ccc-cccccccccccc",r2="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
  const c2="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",a2="ffffffff-ffff-4fff-8fff-ffffffffffff";
  const secondUsage={...base.usageEvents[0],id:u2,currency:"EUR",cost_minor:100,invoice_line_reference:"line-002"};
- const secondImport={...base.invoiceImports[0],id:i2,currency:"EUR",total_minor:100,
+ const secondImport={...base.invoiceImports[0],id:i2,invoice_reference:"inv-002",currency:"EUR",total_minor:100,
   source_fingerprint:"b".repeat(64)};
  const secondLine={...base.invoiceLines[0],id:l2,import_id:i2,provider_line_reference:"line-002",
   currency:"EUR",amount_minor:100};
  const secondRecon={...base.reconciliationEvents[0],id:r2,invoice_import_id:i2,invoice_line_id:l2,
   usage_event_id:u2,currency:"EUR",expected_amount_minor:100,observed_amount_minor:100};
- const secondCost={...base.serviceCostEvents[0],id:c2,currency:"EUR",amount_minor:100};
+ const secondCost={...base.serviceCostEvents[0],id:c2,currency:"EUR",amount_minor:100,source_reference:"runway:inv-002:line-002"};
  const secondLink={...base.attributionLinks[0],id:a2,usage_event_id:u2,invoice_import_id:i2,
   invoice_line_id:l2,reconciliation_event_id:r2,service_cost_event_id:c2,currency:"EUR",amount_minor:100};
  const result=buildJobCostSourceEvidenceReadiness({...base,
