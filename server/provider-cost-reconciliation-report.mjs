@@ -52,7 +52,7 @@ export function buildProviderCostReconciliationReport(input={}){
   const approvalId=id(a.id,"approval id");
   if(approvalById.has(approvalId))fail("PROVIDER_COST_REPORT_DUPLICATE_APPROVAL","Approval IDs must be unique.");
   approvalById.set(approvalId,{
-   id:approvalId,ownerId:id(a.owner_id,"approval owner"),projectId:id(a.project_id,"approval project"),
+   id:approvalId,ownerId:id(a.owner_id,"approval owner"),projectId:a.project_id==null?null:id(a.project_id,"approval project"),
    currency:curr(a.currency,"approval currency"),createdAt:iso(a.created_at,"approval created_at")
   });
  }
