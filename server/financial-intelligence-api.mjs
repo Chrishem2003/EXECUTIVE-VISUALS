@@ -25,6 +25,7 @@ import { exportFinancialAuditBundle } from "./financial-audit-export.mjs";
 import { calculateFinancialScenarioIntelligence } from "./financial-scenario-intelligence.mjs";
 import { buildPublicSubscriptionCatalogue } from "./subscription-plan-catalogue.mjs";
 import { buildProviderCostReconciliationReport } from "./provider-cost-reconciliation-report.mjs";
+import { buildJobCostSourceEvidenceReadiness } from "./job-cost-source-evidence-readiness.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -1343,6 +1344,39 @@ export function createFinancialIntelligenceApi({
           p_trace_id:event.traceId,p_idempotency_key:idempotencyKey
         });
         return response(200,{usage:result});
+      }
+      if(path==="/api/admin/finance/job-cost-evidence-readiness"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const jobId=String(query.jobId||"").trim();
+        if(!UUID.test(jobId))return error(400,"JOB_COST_EVIDENCE_JOB_ID_INVALID","Provide the UUID of a persisted generation job.");
+        const [usageResult,linkResult]=await Promise.all([
+          dbRequest("ai_usage_cost_events?select=id,job_id,owner_id,project_id,provider,requested_model,response_model,operation,status,currency,cost_minor,cost_basis,invoice_line_reference,period_month,occurred_at&job_id=eq."+jobId+"&limit=5000"),
+          dbRequest("financial_cost_attribution_links?select=id,reconciliation_event_id,usage_event_id,service_cost_event_id,owner_id,project_id,job_id,provider,model,operation,currency,amount_minor,invoice_import_id,invoice_line_id&job_id=eq."+jobId+"&limit=5000")
+        ]);
+        const usages=Array.isArray(usageResult.data)?usageResult.data:[];
+        const links=Array.isArray(linkResult.data)?linkResult.data:[];
+        const importIds=[...new Set(links.map(row=>String(row.invoice_import_id||"")).filter(value=>UUID.test(value)))];
+        const serviceIds=[...new Set(links.map(row=>String(row.service_cost_event_id||"")).filter(value=>UUID.test(value)))];
+        let imports=[],lines=[],reconciliations=[],serviceCosts=[];
+        if(importIds.length){
+          const inIds="in.("+importIds.join(",")+")";
+          const serviceIn="in.("+serviceIds.join(",")+")";
+          const [importResult,lineResult,reconResult,costResult]=await Promise.all([
+            dbRequest("ai_provider_invoice_imports?select=id,provider,invoice_reference,currency,total_minor,imported_line_count,matched_line_count,reconciliation_status,source_fingerprint,imported_at&id="+inIds+"&limit=5000"),
+            dbRequest("ai_provider_invoice_lines?select=id,import_id,provider_line_reference,provider,model,operation,currency,amount_minor,matched_usage_event_id,match_status&import_id="+inIds+"&limit=5000"),
+            dbRequest("ai_provider_invoice_reconciliation_events?select=id,invoice_import_id,invoice_line_id,usage_event_id,match_status,candidate_count,expected_amount_minor,observed_amount_minor,currency&invoice_import_id="+inIds+"&limit=5000"),
+            serviceIds.length?dbRequest("financial_service_cost_events?select=id,period_month,owner_id,cost_category,source_type,currency,amount_minor,entry_type,source_reference,created_at&id="+serviceIn+"&limit=5000"):{data:[]}
+          ]);
+          imports=Array.isArray(importResult.data)?importResult.data:[];
+          lines=Array.isArray(lineResult.data)?lineResult.data:[];
+          reconciliations=Array.isArray(reconResult.data)?reconResult.data:[];
+          serviceCosts=Array.isArray(costResult.data)?costResult.data:[];
+        }
+        const readiness=buildJobCostSourceEvidenceReadiness({
+          jobId,usageEvents:usages,attributionLinks:links,invoiceImports:imports,
+          invoiceLines:lines,reconciliationEvents:reconciliations,serviceCostEvents:serviceCosts
+        });
+        return response(200,{readiness});
       }
       if(path==="/api/admin/finance/job-cost-coverage"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
