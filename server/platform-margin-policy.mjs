@@ -18,8 +18,8 @@ function timestamp(value,label){
 /**
  * Fail-closed owner policy evaluation for a proposed paid generation.
  * Customer credit units are never treated as money: the revenue side must be a
- * separately verified recognized-revenue allocation from subscription/top-up
- * accounting, in the same currency as the provider estimate.
+ * separately verified customer sale-price quote from the server pricing
+ * policy, in the same currency as the provider estimate.
  */
 export function evaluatePlatformMarginFloor({
  policy,providerEstimate,customerPriceEvidence,additionalCostEvidence,quoteObservedAt,now=Date.now()
@@ -46,7 +46,7 @@ export function evaluatePlatformMarginFloor({
     Math.abs(amount*1_000_000-providerCostMicros)>0.00001)
   return blocked("PLATFORM_MARGIN_PROVIDER_COST_INVALID","Provider cost cannot be represented safely in currency micro-units.");
  const variableCosts=additionalCostEvidence;
- if(!variableCosts||variableCosts.status!=="verified_quote"||variableCosts.currency!==currency||
+ if(!variableCosts||variableCosts.status!=="verified"||variableCosts.currency!==currency||
     !Number.isSafeInteger(variableCosts.additionalCostMicros)||variableCosts.additionalCostMicros<0||
     !HASH.test(String(variableCosts.evidenceSha256||"").toLowerCase())||
     typeof variableCosts.evidenceReference!=="string"||!variableCosts.evidenceReference.trim()||
@@ -71,13 +71,13 @@ export function evaluatePlatformMarginFloor({
   return blocked("PLATFORM_MARGIN_QUOTE_STALE","The customer quote is stale or future-dated; re-quote before dispatch.");
  if(rateObservedMs>now+30_000||now-rateObservedMs>rateCardMaxAgeSeconds*1000||rateExpiresMs<=now)
   return blocked("PLATFORM_MARGIN_RATE_CARD_STALE","The provider rate card is stale or expired; refresh its source before dispatch.");
- const revenue=customerPriceEvidence;
- if(!revenue||revenue.status!=="verified"||revenue.currency!==currency||
+ const customerPrice=customerPriceEvidence;
+ if(!customerPrice||customerPrice.status!=="verified_quote"||customerPrice.currency!==currency||
     !Number.isSafeInteger(customerPrice.customerPriceMicros)||customerPrice.customerPriceMicros<1||
     !HASH.test(String(customerPrice.evidenceSha256||"").toLowerCase())||
-    typeof customerPrice.evidenceReference!=="string"||!revenue.evidenceReference.trim()||revenue.evidenceReference.length>240)
+    typeof customerPrice.evidenceReference!=="string"||!customerPrice.evidenceReference.trim()||customerPrice.evidenceReference.length>240)
   return blocked("PLATFORM_MARGIN_CUSTOMER_PRICE_UNVERIFIED","A verified same-currency customer sale-price quote from the server pricing policy is required; customer credit units are not money.");
- const customerPriceMicros=revenue.customerPriceMicros;
+ const customerPriceMicros=customerPrice.customerPriceMicros;
  const grossProfitMicros=customerPriceMicros-totalVariableCostMicros;
  const grossMarginBps=Number((BigInt(grossProfitMicros)*10_000n)/BigInt(customerPriceMicros));
  if(grossProfitMicros<=0||grossMarginBps<minimumGrossMarginBps)
@@ -91,8 +91,8 @@ export function evaluatePlatformMarginFloor({
   readyForDispatch:true,code:"PLATFORM_GROSS_MARGIN_APPROVED",
   currency,providerCostMicros,additionalVariableCostMicros,totalVariableCostMicros,customerPriceMicros,grossProfitMicros,grossMarginBps,
   minimumGrossMarginBps,policyVersion:version,
-  customerPriceEvidenceReference:revenue.evidenceReference,
-  customerPriceEvidenceSha256:String(revenue.evidenceSha256).toLowerCase(),
+  customerPriceEvidenceReference:customerPrice.evidenceReference,
+  customerPriceEvidenceSha256:String(customerPrice.evidenceSha256).toLowerCase(),
   providerPricingSource:pricing.sourceUrl,
   quoteObservedAt:new Date(quoteMs).toISOString(),
   rateCardObservedAt:new Date(rateObservedMs).toISOString(),
@@ -115,7 +115,7 @@ export function evaluatePlatformMarginFloorForShots({policy,shots,now=Date.now()
   if(!shotId||shotId.length>180||seenShotIds.has(shotId))
    return Object.freeze({readyForDispatch:false,code:"PLATFORM_MARGIN_SHOT_SET_INVALID",reason:"Every production shot must have a unique valid ID."});
   if(typeof evidenceReference!=="string"||!evidenceReference.trim()||seenPriceEvidence.has(evidenceReference))
-   return Object.freeze({readyForDispatch:false,code:"PLATFORM_MARGIN_REVENUE_EVIDENCE_REUSED",reason:"Each shot requires a distinct customer-price quote reference."});
+   return Object.freeze({readyForDispatch:false,code:"PLATFORM_MARGIN_PRICE_EVIDENCE_REUSED",reason:"Each shot requires a distinct customer-price quote reference."});
   seenShotIds.add(shotId);seenPriceEvidence.add(evidenceReference);
  }
  const results=shots.map((shot,index)=>Object.freeze({
