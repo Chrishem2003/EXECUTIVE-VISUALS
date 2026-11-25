@@ -211,6 +211,7 @@ declare
  current_balance bigint;
  delta bigint;
  extra_credits bigint;
+ pool_owner uuid;
 begin
  if p_reservation_id is null or p_actual_credits is null or p_actual_credits<0
     or p_actual_credits>1000000000 or p_evidence is null
@@ -225,9 +226,11 @@ begin
  select * into reservation from executive_visuals.project_credit_pool_reservations
   where id=p_reservation_id;
  if not found then raise exception 'BILLING_CREDIT_RESERVATION_NOT_FOUND'; end if;
- perform 1 from executive_visuals.project_credit_pools
+ select owner_id into pool_owner from executive_visuals.project_credit_pools
   where project_id=reservation.project_id for update;
- if not found then raise exception 'PROJECT_CREDIT_POOL_NOT_ACTIVE'; end if;
+ if not found or pool_owner is distinct from reservation.owner_id then
+  raise exception 'PROJECT_CREDIT_POOL_NOT_ACTIVE';
+ end if;
  select * into reservation from executive_visuals.project_credit_pool_reservations
   where id=p_reservation_id for update;
 
@@ -257,7 +260,7 @@ begin
   insert into executive_visuals.project_credit_pool_ledger(
    project_id,owner_id,actor_id,amount,event_type,reference_id,idempotency_key,description,evidence
   ) values(
-   reservation.project_id,reservation.owner_id,reservation.owner_id,delta,
+   reservation.project_id,reservation.owner_id,reservation.actor_id,delta,
    'generation_settlement',reservation.job_id,
    'project-credit-settlement:'||reservation.id::text,
    'Conservative project generation credit settlement',p_evidence
