@@ -97,8 +97,8 @@ export function verifyProviderOutcomeEvidence({envelope,secret,expected,maxAgeMs
   audioEnabled,sourceReference,observedAt,signatureAlgorithm:"HMAC-SHA256",
   evidenceDigest:digest,
   idempotencyKey:"provider-outcome:"+provider+":"+providerTaskId+":"+evidenceId,
-  releaseEligible:outcome==="no_charge",
-  settlementEligible:outcome==="charged",
+  verifiedNoCharge:outcome==="no_charge",
+  chargeConfirmed:outcome==="charged",
   reconciliationRequired:outcome==="unknown"
  });
 }
