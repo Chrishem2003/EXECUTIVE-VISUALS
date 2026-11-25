@@ -79,3 +79,25 @@ test("supports personal approvals with no project and task rows scoped only thro
  assert.equal(report.items[0].ownerId,"owner-01");
  assert.equal(report.items[0].projectId,null);
 });
+
+test("accepts unknown outcomes with null usage metrics and excludes them from actual-cost totals",()=>{
+ const unknown={...evidence,outcome:"unknown",actual_cost_micros:null,variance_micros:null,
+  billable_seconds:null,input_reference_count:null,audio_enabled:null};
+ const report=buildProviderCostReconciliationReport({approvals:[approval],tasks:[task],evidence:[unknown]});
+ assert.equal(report.status,"incomplete");
+ assert.equal(report.summary.unknownOutcome,1);
+ assert.equal(report.summary.verified,0);
+ assert.deepEqual(report.summary.totals.actualCostMicrosByCurrency,{});
+ assert.equal(report.items[0].evidenceStatus,"unknown");
+ assert.equal(report.items[0].evidence.billableSeconds,null);
+ assert.equal(report.items[0].evidence.inputReferenceCount,null);
+ assert.equal(report.items[0].evidence.audioEnabled,null);
+});
+
+test("does not accept null usage metrics for charged or no-charge outcomes",()=>{
+ for(const outcome of ["charged","no_charge"]){
+  const invalid={...evidence,outcome,billable_seconds:null,input_reference_count:null,audio_enabled:null};
+  assert.throws(()=>buildProviderCostReconciliationReport({approvals:[approval],tasks:[task],evidence:[invalid]}),
+   {code:"PROVIDER_COST_REPORT_INPUT_INVALID"});
+ }
+});

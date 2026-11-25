@@ -121,10 +121,18 @@ export function buildProviderCostReconciliationReport(input={}){
   const sourceReference=id(e.source_reference,"evidence source reference");
   const evidenceDigest=String(e.evidence_digest||"").toLowerCase();
   const evidenceEstimate=integer(e.estimated_cost_micros,"evidence estimated_cost_micros");
-  const billableSeconds=integer(e.billable_seconds,"evidence billable_seconds",{max:604800});
-  const inputReferenceCount=integer(e.input_reference_count,"evidence input_reference_count",{max:1000});
+  const unknownOutcome=outcome==="unknown";
+  const billableSeconds=unknownOutcome&&e.billable_seconds===null
+   ?null:integer(e.billable_seconds,"evidence billable_seconds",{max:604800});
+  const inputReferenceCount=unknownOutcome&&e.input_reference_count===null
+   ?null:integer(e.input_reference_count,"evidence input_reference_count",{max:1000});
   const audioEnabled=e.audio_enabled;
-  if(typeof audioEnabled!=="boolean"||!HASH.test(evidenceDigest)||!["succeeded","failed","cancelled"].includes(finalState)||
+  const metricsValid=unknownOutcome
+   ?(billableSeconds===null||Number.isSafeInteger(billableSeconds))&&
+    (inputReferenceCount===null||Number.isSafeInteger(inputReferenceCount))&&
+    (audioEnabled===null||typeof audioEnabled==="boolean")
+   :billableSeconds!==null&&inputReferenceCount!==null&&typeof audioEnabled==="boolean";
+  if(!metricsValid||!HASH.test(evidenceDigest)||!["succeeded","failed","cancelled"].includes(finalState)||
      !["charged","no_charge","unknown"].includes(outcome)){
    counts.invalidEvidence++;
    items.push({...base,evidenceStatus:"invalid_evidence",outcome,actualCostMicros:null,varianceMicros:null,
@@ -145,7 +153,7 @@ export function buildProviderCostReconciliationReport(input={}){
    }else{
     counts.unknownOutcome++;
     items.push({...base,evidenceStatus:"unknown",outcome,actualCostMicros:null,varianceMicros:null,
-     evidence:{evidenceId,sourceReference,observedAt,evidenceDigest,finalState}});
+     evidence:{evidenceId,sourceReference,observedAt,evidenceDigest,finalState,billableSeconds,inputReferenceCount,audioEnabled}});
    }
    continue;
   }
