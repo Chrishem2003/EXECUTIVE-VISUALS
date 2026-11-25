@@ -76,6 +76,7 @@ import { getLatestCreativeGraphSnapshot, saveCreativeGraphSnapshot } from "./cre
 import { saveCreativeProjectArtifact, listCreativeProjectArtifacts, getCreativeProjectArtifact, appendCreativeProjectArtifactRevision, listCreativeProjectArtifactsForMigration } from "./creative-project-artifacts.mjs";
 import { createCloudCreativeProjectArtifactRepository } from "./creative-project-artifacts-postgres.mjs";
 import { startEmbeddedCloudWorker } from "./embedded-cloud-worker-runtime.mjs";
+import { createProviderOutcomeIngestion } from "./provider-outcome-ingestion.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -116,6 +117,16 @@ const EXTENSIONS = {
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.audio-master","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.video-ai-upscale","timeline.render"]);
 const RETRYABLE_MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.audio-master","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"]);
 const SUPABASE_SERVER_KEY=resolveSupabaseServerKey(process.env);
+const providerOutcomeIngestionConfigured=Boolean(
+ process.env.PROVIDER_OUTCOME_INGEST_TOKEN&&process.env.PROVIDER_OUTCOME_EVIDENCE_HMAC_SECRET&&
+ process.env.PROVIDER_OUTCOME_PROVIDER_ACCOUNT_IDS_JSON&&process.env.PROVIDER_OUTCOME_PROVIDER_ROUTES_JSON&&
+ process.env.PROVIDER_OUTCOME_ADAPTER_ID&&process.env.PROVIDER_OUTCOME_ADAPTER_VERSION&&
+ process.env.SUPABASE_URL&&SUPABASE_SERVER_KEY
+);
+const providerOutcomeIngestion=providerOutcomeIngestionConfigured?createProviderOutcomeIngestion({
+ supabaseUrl:process.env.SUPABASE_URL,serviceRoleKey:SUPABASE_SERVER_KEY
+}):null;
+
 const db = openDatabase(DB_FILE);
 const supabaseSessionStore = process.env.SUPABASE_SESSION_ENCRYPTION_KEY ? createSupabaseSessionStore({ db, encryptionKey: process.env.SUPABASE_SESSION_ENCRYPTION_KEY }) : null;
 const supabaseSessionRefresh = supabaseSessionStore ? createSupabaseSessionRefreshCoordinator({store:supabaseSessionStore,refreshSession:refreshSupabaseSession,getUser:getSupabaseUser}) : null;
@@ -716,7 +727,7 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    if(AUTH_MODE==="supabase"&&!["GET","HEAD","OPTIONS"].includes(req.method)&&path!=="/api/webhooks/flutterwave"&&path!=="/api/webhooks/paddle"){
+    if(AUTH_MODE==="supabase"&&!["GET","HEAD","OPTIONS"].includes(req.method)&&path!=="/api/webhooks/flutterwave"&&path!=="/api/webhooks/paddle"&&path!=="/api/internal/provider-outcomes"){
       const forwardedProto=String(req.headers["x-forwarded-proto"]||"").split(",")[0].trim();
       const scheme=forwardedProto==="https"||req.socket.encrypted?"https":"http";
       try{
@@ -724,9 +735,16 @@ export function createAppServer() {
         assertSameOriginMutation({origin:req.headers.origin,expectedOrigin,secFetchSite:req.headers["sec-fetch-site"]});
       }catch(error){fail(res,error.status||403,error.code||"CSRF_ORIGIN_DENIED",error.message);return;}
     }
-    const ratePath=path==="/api/cloud/publication-audit"?"/publication-audit":path==="/api/creative/director"&&req.method==="POST"?"/creative-director":path==="/api/creative/storyboard"&&req.method==="POST"?"/creative-storyboard":path==="/api/auth/recover"?"/auth-recover":path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":path.startsWith("/api/integrations/google-gemini/")?"/google-gemini-files":path.startsWith("/api/integrations/google-gcs/")?"/google-gcs-mirror":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth-recover"?3:ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/google-drive-oauth"?20:ratePath==="/google-gemini-files"||ratePath==="/google-gcs-mirror"?5:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/publication-audit"?60:ratePath==="/creative-director"?5:ratePath==="/creative-storyboard"?5:30;const rateWindow=ratePath==="/auth-recover"?3600000:60000;if(!rateAllowed(key,limit,rateWindow)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path==="/api/internal/provider-outcomes"?"/provider-outcomes":path==="/api/cloud/publication-audit"?"/publication-audit":path==="/api/creative/director"&&req.method==="POST"?"/creative-director":path==="/api/creative/storyboard"&&req.method==="POST"?"/creative-storyboard":path==="/api/auth/recover"?"/auth-recover":path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":path.startsWith("/api/integrations/google-gemini/")?"/google-gemini-files":path.startsWith("/api/integrations/google-gcs/")?"/google-gcs-mirror":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth-recover"?3:ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/google-drive-oauth"?20:ratePath==="/google-gemini-files"||ratePath==="/google-gcs-mirror"?5:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/provider-outcomes"?60:ratePath==="/publication-audit"?60:ratePath==="/creative-director"?5:ratePath==="/creative-storyboard"?5:30;const rateWindow=ratePath==="/auth-recover"?3600000:60000;if(!rateAllowed(key,limit,rateWindow)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
+      if(path==="/api/internal/provider-outcomes"){
+        if(req.method!=="POST"){fail(res,405,"METHOD_NOT_ALLOWED","Provider outcome ingestion accepts POST only.");return;}
+        if(!providerOutcomeIngestion){fail(res,503,"PROVIDER_OUTCOME_INGESTION_NOT_CONFIGURED","Provider outcome ingestion is disabled until its server-only credentials and adapter identity are configured.");return;}
+        const body=await readJson(req,32*1024);
+        const result=await providerOutcomeIngestion.ingest({authorization:req.headers.authorization,envelope:body.envelope});
+        send(res,202,result,cors);return;
+      }
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
         let file=resolve(WEB_ROOT,"."+decoded);
