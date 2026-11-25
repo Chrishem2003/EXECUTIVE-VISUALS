@@ -17,6 +17,9 @@ It does not introduce an automatic refund path.
 - Direct service-role updates to billing/project reservation rows are revoked;
   changes must go through the guarded security-definer settlement RPCs.
 - Exact settlement replay remains idempotent. Funded overages remain chargeable.
+- Agency pool settlements preserve the initiating member's `actor_id`, so the
+  existing member-level spend attribution and future monthly-limit calculations
+  continue to use actual settled credits.
 
 ## Customer fairness and refund boundary
 
