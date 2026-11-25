@@ -48,8 +48,8 @@ end
 $privileges$;
 
 create or replace function executive_visuals.test_fail_retention_checkpoint()
-returns trigger language plpgsql as $
-begin raise exception 'INJECTED_CHECKPOINT_FAILURE'; end; $;
+returns trigger language plpgsql as $checkpoint_fail$
+begin raise exception 'INJECTED_CHECKPOINT_FAILURE'; end; $checkpoint_fail$;
 create trigger test_fail_retention_checkpoint before update
 on executive_visuals.asset_storage_retention_checkpoints
 for each row execute function executive_visuals.test_fail_retention_checkpoint();
