@@ -7,7 +7,7 @@ const policy={enabled:true,minimumGrossMarginBps:3500,quoteMaxAgeSeconds:900,rat
 const providerEstimate={available:true,estimated:true,currency:"USD",amount:3.4,
  pricing:{sourceUrl:"https://provider.example/pricing",observedAt:"2026-11-25T15:30:00.000Z",expiresAt:"2026-11-26T00:00:00.000Z"}};
 const priceEvidence={status:"verified_quote",currency:"USD",customerPriceMicros:6_000_000,
- evidenceReference:"subscription-allocation:job-01",evidenceSha256:"a".repeat(64)};
+ evidenceReference:"customer-price-quote:job-01",evidenceSha256:"a".repeat(64)};
 const additionalCostEvidence={status:"verified",currency:"USD",additionalCostMicros:200_000,
  evidenceReference:"variable-cost-model:job-01",evidenceSha256:"b".repeat(64),
  coveredCategories:["compute","storage","egress","payment_processing","moderation","retry_allowance","tax","refund_reserve","support"]};
@@ -71,7 +71,7 @@ test("rejects estimates that cannot be represented safely in currency micro-unit
 test("production margin gate requires every shot to clear the floor independently",()=>{
  const shots=[
   {shotId:"shot-1",providerEstimate,customerPriceEvidence:priceEvidence,additionalCostEvidence,quoteObservedAt:input.quoteObservedAt},
-  {shotId:"shot-2",providerEstimate:{...providerEstimate,amount:2},customerPriceEvidence:{...priceEvidence,customerPriceMicros:4_000_000,evidenceReference:"subscription-allocation:job-02"},additionalCostEvidence:{...additionalCostEvidence,additionalCostMicros:100_000,evidenceReference:"variable-cost-model:job-02"},quoteObservedAt:input.quoteObservedAt}
+  {shotId:"shot-2",providerEstimate:{...providerEstimate,amount:2},customerPriceEvidence:{...priceEvidence,customerPriceMicros:4_000_000,evidenceReference:"customer-price-quote:job-02"},additionalCostEvidence:{...additionalCostEvidence,additionalCostMicros:100_000,evidenceReference:"variable-cost-model:job-02"},quoteObservedAt:input.quoteObservedAt}
  ];
  const approved=evaluatePlatformMarginFloorForShots({policy,shots,now});
  assert.equal(approved.readyForDispatch,true);
@@ -81,7 +81,7 @@ test("production margin gate requires every shot to clear the floor independentl
  assert.equal(approved.totalVariableCostMicros,5_700_000);
  assert.equal(approved.customerPriceMicros,10_000_000);
  assert.equal(approved.grossMarginBps,4300);
- const blocked=evaluatePlatformMarginFloorForShots({policy,shots:[shots[0],{...shots[1],customerPriceEvidence:{...priceEvidence,customerPriceMicros:2_200_000,evidenceReference:"subscription-allocation:job-02"}}],now});
+ const blocked=evaluatePlatformMarginFloorForShots({policy,shots:[shots[0],{...shots[1],customerPriceEvidence:{...priceEvidence,customerPriceMicros:2_200_000,evidenceReference:"customer-price-quote:job-02"}}],now});
  assert.equal(blocked.readyForDispatch,false);
  assert.equal(blocked.blockedShotId,"shot-2");
  assert.equal(blocked.code,"PLATFORM_GROSS_MARGIN_BELOW_FLOOR");
