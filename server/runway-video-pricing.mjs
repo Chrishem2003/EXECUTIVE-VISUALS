@@ -239,7 +239,8 @@ export function estimateRunwayVideoCredits(options={}) {
         ? (duration+Math.max(billableInputVideo,duration))*inputRate
         : duration*outputRate;
       const promo=pricingDate<="2026-11-30"&&tier!=="4k";
-      const baseCharge=promo?baseListCharge*0.8:baseListCharge;
+      const roundedListCharge=Math.ceil(baseListCharge);
+      const baseCharge=promo?Math.ceil(roundedListCharge*0.8):roundedListCharge;
       const hdrRate=tier==="1080p"?4.7:tier==="4k"?7.8:0;
       const hdrCharge=hasHdr?duration*hdrRate:0;
       credits=Math.ceil(baseCharge+hdrCharge);
