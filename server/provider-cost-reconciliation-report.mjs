@@ -168,7 +168,8 @@ export function buildProviderCostReconciliationReport(input={}){
  return {
   reportVersion:"1.0",reportType:"provider_cost_reconciliation",
   sourceType:"adapter_verified_provider_outcome_not_invoice_reconciled",
-  status:counts.tasks===0?"no_data":incomplete?"incomplete":"complete_provider_outcomes",
+  status:counts.tasks===0&&counts.orphanTasks===0&&orphanEvidence===0
+   ?"no_data":incomplete?"incomplete":"complete_provider_outcomes",
   automaticPosting:false,generatedAt:input.generatedAt||new Date().toISOString(),
   summary:{...counts,orphanEvidence,evidenceCoveragePct:counts.tasks?Math.round(counts.verified/counts.tasks*10000)/100:0,
    totals},
