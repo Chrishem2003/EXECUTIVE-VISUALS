@@ -228,7 +228,7 @@ begin
  if not found then raise exception 'BILLING_CREDIT_RESERVATION_NOT_FOUND'; end if;
  select owner_id into pool_owner from executive_visuals.project_credit_pools
   where project_id=reservation.project_id for update;
- if not found or pool_owner is distinct from reservation.owner_id then
+ if not found then
   raise exception 'PROJECT_CREDIT_POOL_NOT_ACTIVE';
  end if;
  select * into reservation from executive_visuals.project_credit_pool_reservations
@@ -260,7 +260,7 @@ begin
   insert into executive_visuals.project_credit_pool_ledger(
    project_id,owner_id,actor_id,amount,event_type,reference_id,idempotency_key,description,evidence
   ) values(
-   reservation.project_id,reservation.owner_id,reservation.actor_id,delta,
+   reservation.project_id,pool_owner,reservation.actor_id,delta,
    'generation_settlement',reservation.job_id,
    'project-credit-settlement:'||reservation.id::text,
    'Conservative project generation credit settlement',p_evidence
