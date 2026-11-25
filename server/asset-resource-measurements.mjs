@@ -25,7 +25,7 @@ export function buildAssetStorageRetentionMeasurement({asset,intervalStart,inter
   const quantity=(bytes/GB)*(elapsedSeconds/86400);
   if(!Number.isFinite(quantity)||quantity<=0)
     return {ready:false,code:"ASSET_STORAGE_QUANTITY_INVALID"};
-  const intervalKey=clean(measurementId)||stableId([id,intervalStart,intervalEnd].join("|"));
+  const suppliedKey=clean(measurementId);\n  if(suppliedKey&&(suppliedKey.length<8||suppliedKey.length>160))return {ready:false,code:"ASSET_STORAGE_MEASUREMENT_ID_INVALID"};\n  const intervalKey=suppliedKey||stableId([id,intervalStart,intervalEnd].join("|"));
   return Object.freeze({ready:true,measurement:Object.freeze({
     measurementId:"asset-storage:"+intervalKey,
     measuredAt:new Date(Date.parse(intervalEnd)).toISOString(),
@@ -40,12 +40,12 @@ export function buildAssetStorageRetentionMeasurement({asset,intervalStart,inter
 export function buildAssetEgressMeasurement({asset,transferredBytes,transferId,measuredAt}={}) {
   const id=clean(asset?.id),ownerId=clean(asset?.owner_id||asset?.ownerId);
   const projectId=asset?.project_id||asset?.projectId||null;
-  const bytes=Number(transferredBytes),key=clean(transferId),at=measuredAt||new Date().toISOString();
+  const bytes=Number(transferredBytes),assetBytes=Number(asset?.byte_size??asset?.size),key=clean(transferId),at=measuredAt||new Date().toISOString();
   if(!UUID.test(id)||!UUID.test(ownerId)||(projectId&&!UUID.test(String(projectId))))
     return {ready:false,code:"ASSET_RESOURCE_ATTRIBUTION_INVALID"};
-  if(!Number.isSafeInteger(bytes)||bytes<=0||bytes>Number(asset?.byte_size??asset?.size))
+  if(!Number.isSafeInteger(assetBytes)||assetBytes<=0||!Number.isSafeInteger(bytes)||bytes<=0||bytes>assetBytes)
     return {ready:false,code:"ASSET_EGRESS_BYTES_INVALID"};
-  if(key.length<8||key.length>180||!validTime(at))
+  if(key.length<8||key.length>160||!validTime(at))
     return {ready:false,code:"ASSET_EGRESS_IDENTITY_INVALID"};
   return Object.freeze({ready:true,measurement:Object.freeze({
     measurementId:"asset-egress:"+key,measuredAt:new Date(Date.parse(at)).toISOString(),
