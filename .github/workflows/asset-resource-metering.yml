@@ -1,0 +1,66 @@
+name: Asset resource metering PostgreSQL integration
+
+on:
+  pull_request:
+    paths:
+      - "server/asset-resource-measurements.mjs"
+      - "server/asset-resource-event-recorder.mjs"
+      - "server/tests/asset-resource-*.test.mjs"
+      - "supabase/migrations/*asset_resource_event_ledger*"
+      - "scripts/asset-resource-event-postgres-*.sql"
+      - ".github/workflows/asset-resource-metering.yml"
+  push:
+    branches:
+      - feat/asset-resource-event-ledger-batch-123-2026-11-25
+    paths:
+      - "server/asset-resource-measurements.mjs"
+      - "server/asset-resource-event-recorder.mjs"
+      - "server/tests/asset-resource-*.test.mjs"
+      - "supabase/migrations/*asset_resource_event_ledger*"
+      - "scripts/asset-resource-event-postgres-*.sql"
+      - ".github/workflows/asset-resource-metering.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: asset-resource-metering-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  asset-resource-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: asset_resource_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d asset_resource_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      ASSET_RESOURCE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/asset_resource_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Bootstrap disposable Supabase-compatible asset schema
+        run: psql "$ASSET_RESOURCE_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
+      - name: Prepare finance authorization and immutable evidence primitives
+        run: psql "$ASSET_RESOURCE_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-resource-event-postgres-bootstrap.sql
+      - name: Apply Batch 123 asset resource event migration
+        run: psql "$ASSET_RESOURCE_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261125123000_asset_resource_event_ledger_batch_123.sql
+      - name: Verify atomic asset events, replay, conflict, rollback and access controls
+        run: psql "$ASSET_RESOURCE_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-resource-event-postgres-integration.sql
+      - name: Run asset measurement and recorder unit tests
+        run: node --test server/tests/asset-resource-measurements.test.mjs server/tests/asset-resource-event-recorder.test.mjs
