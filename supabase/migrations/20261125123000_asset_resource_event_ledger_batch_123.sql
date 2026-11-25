@@ -27,9 +27,18 @@ create table if not exists executive_visuals.asset_resource_measurement_events (
       and interval_start is null and interval_end is null and transferred_bytes between 1 and 2147483648)
   )
 );
+create or replace function executive_visuals.reject_asset_resource_measurement_mutation()
+returns trigger language plpgsql set search_path = pg_catalog, executive_visuals
+as $
+begin
+  raise exception 'ASSET_RESOURCE_MEASUREMENTS_IMMUTABLE';
+end;
+$;
+revoke all on function executive_visuals.reject_asset_resource_measurement_mutation() from public, anon, authenticated, service_role;
+
 create trigger asset_resource_measurements_immutable
 before update or delete on executive_visuals.asset_resource_measurement_events
-for each row execute function executive_visuals.reject_revenue_intelligence_mutation();
+for each row execute function executive_visuals.reject_asset_resource_measurement_mutation();
 
 create index if not exists asset_resource_measurements_owner_time_idx
   on executive_visuals.asset_resource_measurement_events(owner_id, measured_at desc);
