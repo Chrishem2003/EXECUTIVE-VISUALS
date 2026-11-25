@@ -69,6 +69,7 @@ begin
  if auth.role() is distinct from 'service_role' then
   raise exception 'PLATFORM_FINANCIAL_POLICY_SERVICE_ROLE_REQUIRED' using errcode='42501';
  end if;
+ perform pg_advisory_xact_lock(hashtextextended('platform-financial-policy:video_generation',0));
  if p_actor_id is null or p_enabled is null
     or p_minimum_gross_margin_bps is null or p_minimum_gross_margin_bps not between 1 and 9500
     or p_quote_max_age_seconds is null or p_quote_max_age_seconds not between 60 and 3600
