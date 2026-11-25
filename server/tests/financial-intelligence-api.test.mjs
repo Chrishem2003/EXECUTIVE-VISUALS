@@ -1881,3 +1881,106 @@ test("customer credit statement rejects unbounded or malformed limits",async()=>
  }
  assert.equal(calls,0);
 });
+
+test("platform margin policy GET is restricted to owner roles and exposes no invented default",async()=>{
+ const ownerService=api(async url=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.includes("/platform_financial_policies?"))return json([]);
+  if(target.includes("/platform_financial_policy_history?"))return json([]);
+  throw new Error("Unexpected request: "+target);
+ });
+ const deniedService=api(async url=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  throw new Error("Billing admin must not read platform owner policy.");
+ });
+ const denied=await deniedService.handle({method:"GET",path:"/api/admin/finance/platform-video-margin-policy",ownerId:owner});
+ assert.equal(denied.status,403);
+ assert.equal(denied.body.error.code,"PLATFORM_OWNER_REQUIRED");
+ const result=await ownerService.handle({method:"GET",path:"/api/admin/finance/platform-video-margin-policy",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.configured,false);
+ assert.equal(result.body.policy,null);
+ assert.equal(result.body.history.length,0);
+ assert.equal(result.body.dispatchReadiness,"blocked_margin_policy_not_enabled");
+});
+
+test("platform margin policy GET returns the owner-configured policy and immutable history",async()=>{
+ const policy={policy_key:"video_generation",enabled:true,minimum_gross_margin_bps:4200,quote_max_age_seconds:900,rate_card_max_age_seconds:86400,version:3,updated_by:owner};
+ const history=[{version:3,enabled:true,minimum_gross_margin_bps:4200,idempotency_key:"margin-policy-v3-0001"}];
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"platform_admin"}]);
+  if(target.includes("/platform_financial_policies?"))return json([policy]);
+  if(target.includes("/platform_financial_policy_history?"))return json(history);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/platform-video-margin-policy",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.policy.minimum_gross_margin_bps,4200);
+ assert.equal(result.body.history[0].version,3);
+ assert.equal(result.body.dispatchReadiness,"blocked_until_fully_loaded_cost_model_adapter");
+});
+
+test("platform margin policy POST is owner-only, idempotent and never unlocks dispatch by itself",async()=>{
+ let rpcBody=null;
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/configure_platform_video_margin_policy")){
+   rpcBody=JSON.parse(options.body);
+   return json([{policy_version:4,replayed:false}]);
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({
+  method:"POST",path:"/api/admin/finance/platform-video-margin-policy",ownerId:owner,
+  idempotencyKey:"platform-margin-policy-v4",
+  body:{enabled:true,minimumGrossMarginBps:4200,quoteMaxAgeSeconds:900,rateCardMaxAgeSeconds:86400}
+ });
+ assert.equal(result.status,200);
+ assert.equal(result.body.policyVersion,4);
+ assert.equal(result.body.replayed,false);
+ assert.equal(result.body.dispatchReadiness,"blocked_until_fully_loaded_cost_model_adapter");
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_enabled,true);
+ assert.equal(rpcBody.p_minimum_gross_margin_bps,4200);
+ assert.equal(rpcBody.p_quote_max_age_seconds,900);
+ assert.equal(rpcBody.p_rate_card_max_age_seconds,86400);
+ assert.equal(rpcBody.p_idempotency_key,"platform-margin-policy-v4");
+});
+
+test("platform margin policy POST rejects billing administrators and malformed configuration",async()=>{
+ let rpcCalled=false;
+ const denied=api(async url=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  throw new Error("Billing admin must not reach policy RPC.");
+ });
+ const deniedResult=await denied.handle({
+  method:"POST",path:"/api/admin/finance/platform-video-margin-policy",ownerId:owner,
+  idempotencyKey:"platform-margin-policy-denied",
+  body:{enabled:true,minimumGrossMarginBps:4200,quoteMaxAgeSeconds:900,rateCardMaxAgeSeconds:86400}
+ });
+ assert.equal(deniedResult.status,403);
+
+ const invalid=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/configure_platform_video_margin_policy")){rpcCalled=true;return json([{policy_version:1,replayed:false}]);}
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalidResult=await invalid.handle({
+  method:"POST",path:"/api/admin/finance/platform-video-margin-policy",ownerId:owner,
+  idempotencyKey:"platform-margin-policy-invalid",
+  body:{enabled:true,minimumGrossMarginBps:0,quoteMaxAgeSeconds:900,rateCardMaxAgeSeconds:86400}
+ });
+ assert.equal(invalidResult.status,400);
+ assert.equal(invalidResult.body.error.code,"PLATFORM_MARGIN_POLICY_INPUT_INVALID");
+ assert.equal(rpcCalled,false);
+ const unknownField=await invalid.handle({
+  method:"POST",path:"/api/admin/finance/platform-video-margin-policy",ownerId:owner,
+  idempotencyKey:"platform-margin-policy-invalid-2",
+  body:{enabled:true,minimumGrossMarginBps:4200,quoteMaxAgeSeconds:900,rateCardMaxAgeSeconds:86400,ownerId:owner}
+ });
+ assert.equal(unknownField.status,400);
+});
