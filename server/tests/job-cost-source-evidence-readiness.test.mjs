@@ -16,10 +16,10 @@ function fixture(overrides={}){
   requested_model:"seedance-2.5",response_model:"seedance-2.5",operation:"video",
   status:"failed",cost_basis:"provider_reported",currency:"USD",cost_minor:340,
   invoice_line_reference:"line-001",period_month:"2026-11-01"};
- const invoice={id:invoiceId,provider:"runway",invoice_reference:"inv-001",currency:"USD",
+ const invoice={id:invoiceId,provider:"runway",invoice_reference:"inv-001",currency:"USD",period_start:"2026-11-01",period_end:"2026-11-30",
   total_minor:340,imported_line_count:1,matched_line_count:0,reconciliation_status:"pending",
   source_fingerprint:"a".repeat(64),imported_at:"2026-11-24T12:00:00.000Z"};
- const line={id:lineId,import_id:invoiceId,provider_line_reference:"line-001",
+ const line={id:lineId,import_id:invoiceId,provider_line_reference:"line-001",usage_period:"2026-11-20",
   provider:"runway",model:"seedance-2.5",operation:"video",currency:"USD",amount_minor:340,
   matched_usage_event_id:null,match_status:"unmatched"};
  const recon={id:reconId,invoice_import_id:invoiceId,invoice_line_id:lineId,
