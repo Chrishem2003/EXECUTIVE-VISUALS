@@ -959,8 +959,12 @@ export function createFinancialIntelligenceApi({
         const row=Array.isArray(configured)?configured[0]||{}:configured||{};
         return response(200,{
           policyVersion:Number(row.policy_version)||null,replayed:row.replayed===true,
-          dispatchReadiness:"blocked_until_fully_loaded_cost_model_adapter",
-          note:"The owner policy is saved. Billable generation remains fail-closed until trusted provider, customer-price and fully-loaded variable-cost evidence is wired into preflight."
+          dispatchReadiness:body.enabled===true
+            ?"blocked_until_fully_loaded_cost_model_adapter"
+            :"blocked_margin_policy_not_enabled",
+          note:body.enabled===true
+            ?"The owner policy is saved. Billable generation remains fail-closed until trusted provider, customer-price and fully-loaded variable-cost evidence is wired into preflight."
+            :"The platform margin policy is disabled. Billable generation remains blocked."
         });
       }
       if(path==="/api/admin/finance/ai-cost-intelligence"&&method==="GET"){
