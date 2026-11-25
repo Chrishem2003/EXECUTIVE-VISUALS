@@ -943,13 +943,19 @@ export function createFinancialIntelligenceApi({
           !Number.isSafeInteger(body.rateCardMaxAgeSeconds)||body.rateCardMaxAgeSeconds<3600||body.rateCardMaxAgeSeconds>3888000||
           key.length<8||key.length>180)
           return error(400,"PLATFORM_MARGIN_POLICY_INPUT_INVALID","Provide an explicit enabled flag, margin floor (1–9500 bps), quote age (60–3600 seconds), rate-card age (3600–3888000 seconds) and an idempotency key of 8–180 characters.");
-        const configured=await rpc("configure_platform_video_margin_policy",{
-          p_actor_id:ownerId,p_enabled:body.enabled,
-          p_minimum_gross_margin_bps:body.minimumGrossMarginBps,
-          p_quote_max_age_seconds:body.quoteMaxAgeSeconds,
-          p_rate_card_max_age_seconds:body.rateCardMaxAgeSeconds,
-          p_idempotency_key:key
-        });
+        let configured;
+        try{
+          configured=await rpc("configure_platform_video_margin_policy",{
+            p_actor_id:ownerId,p_enabled:body.enabled,
+            p_minimum_gross_margin_bps:body.minimumGrossMarginBps,
+            p_quote_max_age_seconds:body.quoteMaxAgeSeconds,
+            p_rate_card_max_age_seconds:body.rateCardMaxAgeSeconds,
+            p_idempotency_key:key
+          });
+        }catch(err){
+          if(err.status===409)return error(409,"PLATFORM_FINANCIAL_POLICY_IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different platform margin policy update.");
+          throw err;
+        }
         const row=Array.isArray(configured)?configured[0]||{}:configured||{};
         return response(200,{
           policyVersion:Number(row.policy_version)||null,replayed:row.replayed===true,
