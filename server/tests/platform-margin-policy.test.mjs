@@ -91,7 +91,7 @@ test("production margin gate rejects mixed currencies and invalid shot sets",()=
  assert.equal(evaluatePlatformMarginFloorForShots({policy,shots:[],now}).code,"PLATFORM_MARGIN_SHOT_SET_INVALID");
  const mixed=evaluatePlatformMarginFloorForShots({policy,shots:[
   {shotId:"one",providerEstimate,customerPriceEvidence:priceEvidence,additionalCostEvidence,quoteObservedAt:input.quoteObservedAt},
-  {shotId:"two",providerEstimate:{...providerEstimate,currency:"EUR"},customerPriceEvidence:{...priceEvidence,currency:"EUR",customerPriceMicros:6_000_000},additionalCostEvidence:{...additionalCostEvidence,currency:"EUR"},quoteObservedAt:input.quoteObservedAt}
+  {shotId:"two",providerEstimate:{...providerEstimate,currency:"EUR"},customerPriceEvidence:{...priceEvidence,currency:"EUR",customerPriceMicros:6_000_000,evidenceReference:"customer-price-quote:job-02"},additionalCostEvidence:{...additionalCostEvidence,currency:"EUR"},quoteObservedAt:input.quoteObservedAt}
  ],now});
  assert.equal(mixed.readyForDispatch,false);
  assert.equal(mixed.code,"PLATFORM_MARGIN_CURRENCY_MISMATCH");
