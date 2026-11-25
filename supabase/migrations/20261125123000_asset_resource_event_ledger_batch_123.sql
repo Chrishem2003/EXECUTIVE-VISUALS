@@ -29,11 +29,11 @@ create table if not exists executive_visuals.asset_resource_measurement_events (
 );
 create or replace function executive_visuals.reject_asset_resource_measurement_mutation()
 returns trigger language plpgsql set search_path = pg_catalog, executive_visuals
-as $
+as $asset_resource_guard$
 begin
   raise exception 'ASSET_RESOURCE_MEASUREMENTS_IMMUTABLE';
 end;
-$;
+$asset_resource_guard$;
 revoke all on function executive_visuals.reject_asset_resource_measurement_mutation() from public, anon, authenticated, service_role;
 
 create trigger asset_resource_measurements_immutable
@@ -83,7 +83,7 @@ language plpgsql
 security definer
 set search_path = pg_catalog, executive_visuals, auth
 set row_security = off
-as $$
+as $asset_resource_rpc$
 declare
   v_asset executive_visuals.assets%rowtype;
   v_checkpoint executive_visuals.asset_storage_retention_checkpoints%rowtype;
@@ -200,7 +200,7 @@ begin
     'eventKind',p_event_kind,'idempotentReplay',false,
     'checkpointAdvanced',p_event_kind = 'storage_retention');
 end;
-$$;
+$asset_resource_rpc$;
 
 revoke all on function executive_visuals.record_asset_resource_measurement(
   uuid,uuid,uuid,uuid,text,text,text,text,numeric,timestamptz,timestamptz,timestamptz,bigint,text
