@@ -40,3 +40,13 @@ test("egress rejects partial metadata errors, impossible byte counts and unstabl
  assert.equal(buildAssetEgressMeasurement({asset,transferredBytes:asset.byte_size+1,transferId:"download-request-123"}).ready,false);
  assert.equal(buildAssetEgressMeasurement({asset,transferredBytes:1,transferId:"x"}).ready,false);
 });
+
+test("equivalent timezone offsets produce one canonical storage interval identity",()=>{
+ const utc=buildAssetStorageRetentionMeasurement({asset,intervalStart:"2026-11-24T00:00:00Z",intervalEnd:"2026-11-25T12:00:00Z"});
+ const offset=buildAssetStorageRetentionMeasurement({asset,intervalStart:"2026-11-24T03:00:00+03:00",intervalEnd:"2026-11-25T15:00:00+03:00"});
+ assert.equal(utc.ready,true);
+ assert.equal(offset.ready,true);
+ assert.equal(utc.measurement.measurementId,offset.measurement.measurementId);
+ assert.equal(utc.measurement.dimensions.intervalStart,offset.measurement.dimensions.intervalStart);
+ assert.equal(utc.measurement.dimensions.intervalEnd,offset.measurement.dimensions.intervalEnd);
+});
