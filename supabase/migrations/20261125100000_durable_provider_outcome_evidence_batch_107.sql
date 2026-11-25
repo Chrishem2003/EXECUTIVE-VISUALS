@@ -46,7 +46,7 @@ create index if not exists ev_provider_outcome_provider_period
 
 alter table executive_visuals.provider_outcome_evidence enable row level security;
 revoke all on executive_visuals.provider_outcome_evidence from public,anon,authenticated,service_role;
-grant select on executive_visuals.provider_outcome_evidence to service_role;
+grant select,update,delete on executive_visuals.provider_outcome_evidence to service_role; -- trigger rejects mutation; direct insert remains revoked
 
 create or replace function executive_visuals.reject_provider_outcome_evidence_mutation()
 returns trigger
