@@ -21,7 +21,9 @@ idempotent configuration keys and a database serialization lock.
 
 The evaluator uses integer currency micro-units:
 
-`grossMarginBps = floor((recognizedRevenueMicros - providerCostMicros) * 10000 / recognizedRevenueMicros)`
+`grossMarginBps = floor((customerPriceMicros - totalVariableCostMicros) * 10000 / customerPriceMicros)`
+
+where `totalVariableCostMicros = providerCostMicros + additionalVariableCostMicros`.
 
 It requires:
 - A current provider estimate with a live, source-linked rate card.
@@ -35,19 +37,19 @@ It requires:
   is zero; missing cost categories block dispatch.
 - A configured, enabled platform policy.
 
-Credit units are not money and are never used as recognized revenue. Each shot must
+Credit units are not money and are never used as monetary sale price. Each shot must
 clear the floor independently; a profitable shot cannot subsidize a loss-making shot.
-The production evaluator also checks the aggregate same-currency result, requires a
-distinct recognized-revenue allocation for every shot, and prevents one shot's
-revenue evidence from being reused to inflate another shot's margin.
+The production evaluator also checks the aggregate same-currency result and requires
+a distinct customer-price quote reference for every shot, preventing one quote from
+being reused to inflate another shot's margin.
 
 ## Dispatch enforcement
 
 The cloud video dispatcher now invokes the trusted `platformMarginPolicyReady`
 server callback before the customer-credit settlement gate and before cloud approval
-registration/enqueue. The callback should load the current policy and trusted revenue
-allocations, evaluate every shot with `evaluatePlatformMarginFloorForShots`, and
-return the result. Missing policy, stale data, insufficient margin or policy-store
+registration/enqueue. The callback should load the current policy, provider estimates,
+fully-loaded variable-cost forecasts and server-generated customer-price evidence,
+evaluate every shot with `evaluatePlatformMarginFloorForShots`, and return the result. Missing policy, stale data, insufficient margin or policy-store
 outage blocks dispatch. Consumed approvals remain idempotent replays and are not
 re-priced under a later policy version.
 
@@ -56,9 +58,11 @@ The enqueue audit event records the policy version and margin values for traceab
 ## Limits and remaining work
 
 This is an enforcement contract and policy foundation, not an activation of paid
-generation. The host callback must be wired to the authoritative subscription/top-up
-revenue-allocation source before dispatch can pass. No customer-credit conversion is
-inferred, and no provider is called.
+generation. The host callback must be wired to the authoritative customer pricing policy and
+fully-loaded variable-cost model before dispatch can pass. The pricing engine now
+exposes monetary sale-price quote evidence separately from credit units. The API
+preflight intentionally supplies no margin approval until the trusted cost-model
+adapter is wired. No provider is called.
 
 Batch 107 provider actual-cost evidence remains separate from this pre-dispatch
 forecast check. Later settlement work must compare actual provider cost with this
