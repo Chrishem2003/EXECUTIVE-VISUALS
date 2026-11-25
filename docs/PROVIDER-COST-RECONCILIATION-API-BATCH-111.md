@@ -28,7 +28,9 @@ claiming complete coverage.
 - One matching evidence row with a valid task/provider/model/currency identity and
   consistent amount variance is reported as `verified_provider_reported`.
 - Missing, unknown, duplicate, invalid or mismatched evidence is excluded from actual
-  cost totals.
+  cost totals. For `unknown` outcomes, unavailable usage dimensions remain `null` in
+  the report; `null` is not silently converted to zero. Charged and no-charge records
+  still require complete usage dimensions.
 - Multiple evidence records for one task are not summed automatically; they are
   flagged for reconciliation to prevent duplicate charging.
 - Provider-reported actual cost is not the same as an independently matched provider
