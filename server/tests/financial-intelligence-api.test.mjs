@@ -1984,3 +1984,18 @@ test("platform margin policy POST rejects billing administrators and malformed c
  });
  assert.equal(unknownField.status,400);
 });
+
+test("platform owner margin policy control remains available while payment processing is disabled",async()=>{
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.includes("/platform_financial_policies?"))return json([]);
+  if(target.includes("/platform_financial_policy_history?"))return json([]);
+  throw new Error("Unexpected request: "+target);
+ },{billingEnabled:false});
+ const policy=await service.handle({method:"GET",path:"/api/admin/finance/platform-video-margin-policy",ownerId:owner});
+ assert.equal(policy.status,200);
+ const billing=await service.handle({method:"GET",path:"/api/billing/plans",ownerId:owner});
+ assert.equal(billing.status,503);
+ assert.equal(billing.body.error.code,"BILLING_DISABLED");
+});
