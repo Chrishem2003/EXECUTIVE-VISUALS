@@ -927,9 +927,11 @@ export function createFinancialIntelligenceApi({
           const history=Array.isArray(historyResult.data)?historyResult.data:[];
           return response(200,{
             configured:policy!==null,policy,history,
-            dispatchReadiness:policy?.enabled===true
-              ?"blocked_until_fully_loaded_cost_model_adapter"
-              :"blocked_margin_policy_not_enabled",
+            dispatchReadiness:policy===null
+              ?"blocked_margin_policy_not_configured"
+              :policy.enabled===true
+                ?"blocked_until_fully_loaded_cost_model_adapter"
+                :"blocked_margin_policy_not_enabled",
             note:"Configuring a margin threshold does not itself authorize billable generation. Trusted per-shot provider, customer-price and fully-loaded variable-cost evidence must also pass."
           });
         }
