@@ -75,6 +75,7 @@ export function evaluatePlatformMarginFloor({
  if(!customerPrice||customerPrice.status!=="verified_quote"||customerPrice.currency!==currency||
     !Number.isSafeInteger(customerPrice.customerPriceMicros)||customerPrice.customerPriceMicros<1||
     !HASH.test(String(customerPrice.evidenceSha256||"").toLowerCase())||
+    !HASH.test(String(customerPrice.policyFingerprint||"").toLowerCase())||
     typeof customerPrice.evidenceReference!=="string"||!customerPrice.evidenceReference.trim()||customerPrice.evidenceReference.length>240)
   return blocked("PLATFORM_MARGIN_CUSTOMER_PRICE_UNVERIFIED","A verified same-currency customer sale-price quote from the server pricing policy is required; customer credit units are not money.");
  const customerPriceMicros=customerPrice.customerPriceMicros;
