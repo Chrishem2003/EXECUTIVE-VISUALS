@@ -3,9 +3,10 @@ set -euo pipefail
 
 # Pinned FFmpeg build release and SHA-256 digest.
 # Verify upstream fix ancestry and published release checksum before changing these pins.
-release_tag="autobuild-2026-11-11-12-39"
-asset_name="ffmpeg-N-128790-g9bee1e603c-linux64-gpl.tar.xz"
-expected_sha256="f5752bf3597cbc9fc7a60fe5cea3522797a5ea2493d91cffb6f13e5b4c861233"
+release_tag="latest"
+asset_name="ffmpeg-master-latest-linux64-gpl.tar.xz"
+expected_sha256="231bf775a8800a6d148777b4be81a6f7e21b095d8f7e76b4fe02585806682cb6"
+expected_version="N-129267-g9ec5cf1aac"
 
 archive="$RUNNER_TEMP/$asset_name"
 extract_dir="$RUNNER_TEMP/ev-ffmpeg"
@@ -36,6 +37,6 @@ install -m 0755 "$ffmpeg_source" "$bin_dir/ffmpeg"
 install -m 0755 "$ffprobe_source" "$bin_dir/ffprobe"
 ffmpeg_version="$("$bin_dir/ffmpeg" -version)"
 ffprobe_version="$("$bin_dir/ffprobe" -version)"
-grep -Fq "N-128790-g9bee1e603c" <<< "$ffmpeg_version"
-grep -Fq "N-128790-g9bee1e603c" <<< "$ffprobe_version"
+grep -Fq "$expected_version" <<< "$ffmpeg_version"
+grep -Fq "$expected_version" <<< "$ffprobe_version"
 echo "$bin_dir" >> "$GITHUB_PATH"
