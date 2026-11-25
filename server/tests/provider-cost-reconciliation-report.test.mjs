@@ -70,3 +70,12 @@ test("returns no_data when no generation tasks exist",()=>{
  assert.equal(report.status,"no_data");
  assert.equal(report.summary.tasks,0);
 });
+
+test("supports personal approvals with no project and task rows scoped only through approval",()=>{
+ const personalApproval={...approval,project_id:null};
+ const personalTask={...task,owner_id:undefined,project_id:undefined};
+ const report=buildProviderCostReconciliationReport({approvals:[personalApproval],tasks:[personalTask],evidence:[evidence]});
+ assert.equal(report.status,"complete_provider_outcomes");
+ assert.equal(report.items[0].ownerId,"owner-01");
+ assert.equal(report.items[0].projectId,null);
+});
