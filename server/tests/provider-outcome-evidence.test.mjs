@@ -22,23 +22,23 @@ const options=(value,extra={})=>({envelope:value,secret,expected,now:Date.parse(
 
 test("accepts authenticated charged outcome bound to the server task identity",()=>{
  const result=verifyProviderOutcomeEvidence(options(envelope()));
- assert.equal(result.settlementEligible,true);
- assert.equal(result.releaseEligible,false);
+ assert.equal(result.chargeConfirmed,true);
+ assert.equal(result.verifiedNoCharge,false);
  assert.equal(result.amountMinor,340);
  assert.equal(result.idempotencyKey,"provider-outcome:runway:task-01:evt-01");
 });
 
 test("accepts authenticated no-charge evidence only when amount and billable usage are zero",()=>{
  const result=verifyProviderOutcomeEvidence(options(envelope({outcome:"no_charge",amountMinor:0,billableSeconds:0,finalState:"cancelled"})));
- assert.equal(result.releaseEligible,true);
- assert.equal(result.settlementEligible,false);
+ assert.equal(result.verifiedNoCharge,true);
+ assert.equal(result.chargeConfirmed,false);
 });
 
 test("unknown provider outcome remains reconciliation-only",()=>{
  const result=verifyProviderOutcomeEvidence(options(envelope({outcome:"unknown",amountMinor:null,billableSeconds:0,finalState:"failed"})));
  assert.equal(result.reconciliationRequired,true);
- assert.equal(result.releaseEligible,false);
- assert.equal(result.settlementEligible,false);
+ assert.equal(result.verifiedNoCharge,false);
+ assert.equal(result.chargeConfirmed,false);
 });
 
 test("rejects tampered evidence",()=>{
@@ -61,4 +61,11 @@ test("rejects stale or future-dated evidence",()=>{
 
 test("rejects short verifier secrets",()=>{
  assert.throws(()=>verifyProviderOutcomeEvidence({...options(envelope()),secret:"short"}),{code:"PROVIDER_OUTCOME_VERIFIER_NOT_CONFIGURED"});
+});
+
+test("successful no-charge provider outcome is not a customer-credit release instruction",()=>{
+ const result=verifyProviderOutcomeEvidence(options(envelope({outcome:"no_charge",amountMinor:0,billableSeconds:0,finalState:"succeeded"})));
+ assert.equal(result.verifiedNoCharge,true);
+ assert.equal(Object.hasOwn(result,"releaseEligible"),false);
+ assert.equal(Object.hasOwn(result,"settlementEligible"),false);
 });
