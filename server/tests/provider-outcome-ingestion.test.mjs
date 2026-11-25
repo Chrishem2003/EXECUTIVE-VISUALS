@@ -73,6 +73,12 @@ test("rejects a provider account or route not in server configuration",async()=>
  await assert.rejects(()=>service.ingest({authorization:"Bearer "+token,envelope:signed()}),{code:"PROVIDER_OUTCOME_IDENTITY_MISMATCH"});
 });
 
+test("rejects a signed terminal state that differs from the durable task state",async()=>{
+ const mock=makeFetch(),service=create(mock.fetchImpl);
+ await assert.rejects(()=>service.ingest({authorization:"Bearer "+token,envelope:signed({finalState:"failed"})}),{code:"PROVIDER_OUTCOME_IDENTITY_MISMATCH"});
+ assert.equal(mock.calls.length,1);
+});
+
 test("rejects unsupported currency rather than guessing minor-unit conversion",async()=>{
  const mock=makeFetch({task:{...expectedTask,currency:"JPY"}}),service=create(mock.fetchImpl);
  await assert.rejects(()=>service.ingest({authorization:"Bearer "+token,envelope:signed({currency:"JPY"})}),{code:"PROVIDER_OUTCOME_CURRENCY_UNSUPPORTED"});
@@ -86,7 +92,7 @@ test("rejects task not found and incomplete submitted identity",async()=>{
 });
 
 test("persists authenticated no-charge evidence as zero provider cost without releasing credits",async()=>{
- const mock=makeFetch({rpcRows:[{evidence_row_id:"evidence-no-charge",replayed:false,actual_cost_micros:0,estimated_cost_micros:3400000,variance_micros:-3400000}]});
+ const mock=makeFetch({task:{...expectedTask,state:"cancelled"},rpcRows:[{evidence_row_id:"evidence-no-charge",replayed:false,actual_cost_micros:0,estimated_cost_micros:3400000,variance_micros:-3400000}]});
  const envelope=signed({evidenceId:"evt-no-charge",outcome:"no_charge",finalState:"cancelled",amountMinor:0,billableSeconds:0});
  const result=await create(mock.fetchImpl).ingest({authorization:"Bearer "+token,envelope});
  const rpc=JSON.parse(mock.calls[1].options.body);
@@ -96,7 +102,7 @@ test("persists authenticated no-charge evidence as zero provider cost without re
 });
 
 test("persists unknown outcome without fabricating actual cost",async()=>{
- const mock=makeFetch({rpcRows:[{evidence_row_id:"evidence-unknown",replayed:false,actual_cost_micros:null,estimated_cost_micros:3400000,variance_micros:null}]});
+ const mock=makeFetch({task:{...expectedTask,state:"failed"},rpcRows:[{evidence_row_id:"evidence-unknown",replayed:false,actual_cost_micros:null,estimated_cost_micros:3400000,variance_micros:null}]});
  const envelope=signed({evidenceId:"evt-unknown",outcome:"unknown",finalState:"failed",amountMinor:null,billableSeconds:0});
  const result=await create(mock.fetchImpl).ingest({authorization:"Bearer "+token,envelope});
  const rpc=JSON.parse(mock.calls[1].options.body);
