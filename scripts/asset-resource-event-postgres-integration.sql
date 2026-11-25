@@ -79,18 +79,12 @@ begin
  if v_first->>'idempotentReplay' <> 'false' or v_first->>'checkpointAdvanced' <> 'true' then
   raise exception 'first storage interval was not recorded and checkpointed: %',v_first;
  end if;
- select cursor_at into v_cursor from executive_visuals.asset_storage_retention_checkpoints where asset_id=v_asset;
- if v_cursor <> '2026-11-25T00:00:00Z' then raise exception 'storage checkpoint did not advance'; end if;
-
  v_replay := executive_visuals.record_asset_resource_measurement(
   v_actor,v_asset,v_owner,v_project,'asset-storage:interval-000001','storage_retention',
   'storage_gb_day','gb_day',1.0,'2026-11-25T00:00:00Z','2026-11-24T00:00:00Z',
   '2026-11-25T00:00:00Z',null,'asset-resource:storage-000001'
  );
  if v_replay->>'idempotentReplay' <> 'true' then raise exception 'storage replay was not idempotent: %',v_replay; end if;
- select version into v_count from executive_visuals.asset_storage_retention_checkpoints where asset_id=v_asset;
- if v_count <> 1 then raise exception 'storage replay advanced checkpoint more than once'; end if;
-
  begin
   perform executive_visuals.record_asset_resource_measurement(
    v_actor,v_asset,v_owner,v_project,'asset-storage:interval-000001','storage_retention',
@@ -145,19 +139,30 @@ begin
   if sqlerrm='injected checkpoint failure was not triggered' then raise; end if;
   if sqlerrm<>'INJECTED_CHECKPOINT_FAILURE' then raise; end if;
  end;
- select count(*) into v_count from executive_visuals.asset_resource_measurement_events
-  where measurement_id='asset-storage:interval-rollback';
- if v_count<>0 then raise exception 'failed checkpoint transaction left an orphan measurement event'; end if;
- select cursor_at into v_cursor from executive_visuals.asset_storage_retention_checkpoints where asset_id=v_asset;
- if v_cursor <> '2026-11-25T00:00:00Z' then raise exception 'failed checkpoint transaction advanced cursor'; end if;
-
- select count(*) into v_count from executive_visuals.asset_resource_measurement_events where asset_id=v_asset;
- if v_count<>2 then raise exception 'expected exactly one storage and one egress event, found %',v_count; end if;
 end
 $behavior$;
 reset role;
 drop trigger test_fail_retention_checkpoint on executive_visuals.asset_storage_retention_checkpoints;
 drop function executive_visuals.test_fail_retention_checkpoint();
+
+do $evidence$
+declare
+ v_asset uuid := '33333333-3333-4333-8333-333333333333';
+ v_count integer; v_cursor timestamptz; v_version bigint;
+begin
+ select cursor_at,version into v_cursor,v_version
+  from executive_visuals.asset_storage_retention_checkpoints where asset_id=v_asset;
+ if v_cursor <> '2026-11-25T00:00:00Z' or v_version <> 1 then
+  raise exception 'storage checkpoint advanced incorrectly after replay or injected rollback';
+ end if;
+ select count(*) into v_count from executive_visuals.asset_resource_measurement_events
+  where asset_id=v_asset;
+ if v_count<>2 then raise exception 'expected exactly one storage and one egress event, found %',v_count; end if;
+ select count(*) into v_count from executive_visuals.asset_resource_measurement_events
+  where measurement_id='asset-storage:interval-rollback';
+ if v_count<>0 then raise exception 'failed checkpoint transaction left an orphan measurement event'; end if;
+end
+$evidence$;
 
 do $immutability$
 begin
