@@ -21,7 +21,7 @@ function fixture(overrides={}){
   source_fingerprint:"a".repeat(64),imported_at:"2026-11-24T12:00:00.000Z"};
  const line={id:lineId,import_id:invoiceId,provider_line_reference:"line-001",
   provider:"runway",model:"seedance-2.5",operation:"video",currency:"USD",amount_minor:340,
-  matched_usage_event_id:null,match_status:"matched"};
+  matched_usage_event_id:null,match_status:"unmatched"};
  const recon={id:reconId,invoice_import_id:invoiceId,invoice_line_id:lineId,
   usage_event_id:usageId,match_status:"matched",candidate_count:1,
   expected_amount_minor:340,observed_amount_minor:340,currency:"USD"};
@@ -114,11 +114,23 @@ test("rejects duplicate attribution of one source event",()=>{
 
 test("does not combine different currencies or invent foreign exchange",()=>{
  const base=fixture();
- const second={...base.attributionLinks[0],id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-  usage_event_id:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",invoice_import_id:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-  invoice_line_id:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",reconciliation_event_id:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-  service_cost_event_id:"ffffffff-ffff-4fff-8fff-ffffffffffff",currency:"EUR",amount_minor:100};
- const result=buildJobCostSourceEvidenceReadiness({...base,attributionLinks:[base.attributionLinks[0],second]});
+ const u2="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",i2="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+ const l2="cccccccc-cccc-4ccc-8ccc-cccccccccccc",r2="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+ const c2="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",a2="ffffffff-ffff-4fff-8fff-ffffffffffff";
+ const secondUsage={...base.usageEvents[0],id:u2,currency:"EUR",cost_minor:100,invoice_line_reference:"line-002"};
+ const secondImport={...base.invoiceImports[0],id:i2,currency:"EUR",total_minor:100,
+  source_fingerprint:"b".repeat(64)};
+ const secondLine={...base.invoiceLines[0],id:l2,import_id:i2,provider_line_reference:"line-002",
+  currency:"EUR",amount_minor:100};
+ const secondRecon={...base.reconciliationEvents[0],id:r2,invoice_import_id:i2,invoice_line_id:l2,
+  usage_event_id:u2,currency:"EUR",expected_amount_minor:100,observed_amount_minor:100};
+ const secondCost={...base.serviceCostEvents[0],id:c2,currency:"EUR",amount_minor:100};
+ const secondLink={...base.attributionLinks[0],id:a2,usage_event_id:u2,invoice_import_id:i2,
+  invoice_line_id:l2,reconciliation_event_id:r2,service_cost_event_id:c2,currency:"EUR",amount_minor:100};
+ const result=buildJobCostSourceEvidenceReadiness({...base,
+  usageEvents:[...base.usageEvents,secondUsage],attributionLinks:[...base.attributionLinks,secondLink],
+  invoiceImports:[...base.invoiceImports,secondImport],invoiceLines:[...base.invoiceLines,secondLine],
+  reconciliationEvents:[...base.reconciliationEvents,secondRecon],serviceCostEvents:[...base.serviceCostEvents,secondCost]});
  assert.notEqual(result.providerCompute.status,"verified_historical_actual");
  assert.ok(result.sourceExceptions.some(x=>x.includes("multiple currencies")));
 });
