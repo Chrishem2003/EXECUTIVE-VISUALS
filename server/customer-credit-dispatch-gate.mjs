@@ -6,7 +6,7 @@
  * Neon staging application runtime. Production cloud dispatch remains closed
  * until its own atomic reservation and usage-settlement readiness is supplied.
  */
-export function applyCustomerCreditDispatchGate(preflight,{stagingDispatchReady=false}={}) {
+export function applyCustomerCreditDispatchGate(preflight,{stagingDispatchReady=false,platformMarginPolicyResult=null}={}) {
  if(!preflight||typeof preflight!=="object"||Array.isArray(preflight)) {
   throw new Error("A video production preflight result is required.");
  }
@@ -30,9 +30,21 @@ export function applyCustomerCreditDispatchGate(preflight,{stagingDispatchReady=
    reason:"Verified provider pricing and a complete customer-credit estimate for every shot are required. No approval, reservation or generation was submitted."
   };
  }
+ const margin=platformMarginPolicyResult;
+ if(!margin||margin.readyForDispatch!==true){
+  const belowFloor=margin?.code==="PLATFORM_GROSS_MARGIN_BELOW_FLOOR";
+  return {
+   ...preflight,status:belowFloor?"margin_below_floor":"platform_margin_pending",
+   readyForApproval:false,platformMargin:margin||{readyForDispatch:false,code:"PLATFORM_MARGIN_POLICY_NOT_CONFIGURED"},
+   customerCreditDispatch:{available:false,backend:"neon-staging",reservation:"not_reserved",requestsSubmitted:false},
+   reason:belowFloor
+    ?"At least one shot is below the platform owner's minimum gross-margin floor. No approval, reservation or generation was submitted."
+    :"A verified platform margin policy, current provider quote and fully-loaded variable-cost evidence are required. No approval, reservation or generation was submitted."
+  };
+ }
  if(stagingDispatchReady===true) {
   return {
-   ...preflight,status:"ready_for_approval",readyForApproval:true,
+   ...preflight,status:"ready_for_approval",readyForApproval:true,platformMargin:margin,
    customerCreditDispatch:{available:true,backend:"neon-staging",reservation:"atomic_at_submission",settlement:"authoritative_provider_usage",requestsSubmitted:false},
    reason:"Provider pricing and customer credits are verified. You may record the production budget approval; credits will be reserved atomically when the approved production is submitted to the verified staging queue. No credits have been reserved and no provider request has been submitted."
   };

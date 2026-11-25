@@ -102,3 +102,23 @@ test("rejects conversion results outside the supported customer-credit bounds", 
     code: "VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID"
   });
 });
+
+test("exposes monetary customer price and tamper-evident quote evidence separately from credit units",()=>{
+ const quote=createNeonCustomerCreditQuotePolicy({env});
+ const customerPriceMicros=quote.quoteCustomerPrice({currency:"USD",amountMicros:1_000_000});
+ const evidence=quote.quoteCustomerPriceEvidence({
+  currency:"USD",amountMicros:1_000_000,evidenceReference:"price-quote:job-01:shot-01"
+ });
+ assert.equal(evidence.status,"verified_quote");
+ assert.equal(evidence.customerPriceMicros,customerPriceMicros);
+ assert.equal(evidence.evidenceReference,"price-quote:job-01:shot-01");
+ assert.match(evidence.policyFingerprint,/^[a-f0-9]{64}$/);
+ assert.match(evidence.evidenceSha256,/^[a-f0-9]{64}$/);
+ assert.notEqual(
+  quote.quoteCustomerPriceEvidence({currency:"USD",amountMicros:900_000,evidenceReference:"price-quote:job-01:shot-02"}).evidenceSha256,
+  evidence.evidenceSha256
+ );
+ assert.throws(()=>quote.quoteCustomerPriceEvidence({
+  currency:"USD",amountMicros:1_000_000,evidenceReference:"bad"
+ }),{code:"VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID"});
+});
