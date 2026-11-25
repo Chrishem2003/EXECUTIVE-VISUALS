@@ -7,6 +7,7 @@ import { createFlutterwaveAccessTokenProvider } from "./flutterwave-auth.mjs";
 import { normalizeGenAiUsage, parseProviderInvoiceCsv } from "./ai-cost-metering.mjs";
 import { normalizeWorkloadTelemetry } from "./ai-workload-telemetry.mjs";
 import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRoutingRequest } from "./ai-resource-economics.mjs";
+import { buildJobResourceCostEvidence } from "./job-resource-cost-evidence.mjs";
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
 import { estimateProviderVideoCost } from "./provider-video-cost-estimator.mjs";
 import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
@@ -1344,6 +1345,21 @@ export function createFinancialIntelligenceApi({
           p_trace_id:event.traceId,p_idempotency_key:idempotencyKey
         });
         return response(200,{usage:result});
+      }
+      if(path==="/api/admin/finance/job-resource-cost-evidence"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const jobId=String(query.jobId||"").trim();
+        if(!UUID.test(jobId))return error(400,"JOB_RESOURCE_EVIDENCE_JOB_ID_INVALID","Provide the UUID of a persisted generation job.");
+        const usageResult=await dbRequest("ai_resource_usage_events?select=id,job_id,owner_id,project_id,provider,model,resource_type,quantity,unit,currency,occurred_at,evidence&job_id=eq."+jobId+"&owner_id=eq."+ownerId+"&limit=5000");
+        const usageEvents=Array.isArray(usageResult.data)?usageResult.data:[];
+        const providers=[...new Set(usageEvents.map(row=>String(row.provider||"").trim()).filter(Boolean))];
+        let rateCards=[];
+        for(const provider of providers){
+          const rateResult=await dbRequest("ai_resource_rate_cards?select=id,provider,resource_type,unit,currency,rate_minor_per_unit,effective_from,effective_to,source_type,source_reference&provider=eq."+encodeURIComponent(provider)+"&limit=2000");
+          if(Array.isArray(rateResult.data))rateCards.push(...rateResult.data);
+        }
+        const evidence=buildJobResourceCostEvidence({jobId,usageEvents,rateCards});
+        return response(200,{resourceCostEvidence:evidence});
       }
       if(path==="/api/admin/finance/job-cost-evidence-readiness"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
