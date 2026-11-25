@@ -45,6 +45,7 @@ import { createNeonStagingApprovalDispatch } from "./neon-staging-application-ru
 import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.mjs";
 import { buildCustomerGenerationCreditQuote } from "./customer-generation-credit-quote.mjs";
 import { applyCustomerCreditDispatchGate } from "./customer-credit-dispatch-gate.mjs";
+import { evaluatePlatformMarginPreflight } from "./platform-margin-preflight.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
@@ -1387,12 +1388,23 @@ export function createAppServer() {
                   unit:"customer_credits",totalCredits,perShot:perShotCredits.map(({shotId,credits})=>({shotId,credits})),pricingBasis:"server-side cost, margin and fee policy"
                 }
               }};
+              let platformMarginPolicyResult;
+              try{
+                const activePolicy=financialApi?.getPlatformVideoMarginPolicy
+                  ?await financialApi.getPlatformVideoMarginPolicy():null;
+                platformMarginPolicyResult=evaluatePlatformMarginPreflight({
+                  policy:activePolicy,pricedShots,
+                  customerPriceEvidencePerShot:perShotCredits.map(item=>({shotId:item.shotId,...item.customerPriceEvidence})),
+                  quoteObservedAt:new Date().toISOString()
+                });
+              }catch{
+                platformMarginPolicyResult={readyForDispatch:false,code:"PLATFORM_MARGIN_POLICY_READ_FAILED",
+                  reason:"The active platform margin policy could not be verified. No approval or generation was submitted."};
+              }
               Object.assign(result,applyCustomerCreditDispatchGate(result,{
                 stagingDispatchReady:neonStagingApprovalRuntime.enabled===true&&
                   neonStagingApprovalRuntime.readiness?.applicationDispatchReady===true,
-                // Fail closed until the platform policy, full variable-cost model and
-                // per-shot customer-price evidence are composed from trusted server data.
-                platformMarginPolicyResult:null
+                platformMarginPolicyResult
               }));
             }catch{
               result.status="pricing_unverified";result.readyForApproval=false;

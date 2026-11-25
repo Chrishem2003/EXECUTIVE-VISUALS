@@ -23,5 +23,5 @@ test("saving a policy uses a fresh idempotency key and does not claim to enable 
   assert.match(app, /"idempotency-key":uid\(\)/);
   assert.match(app, /does not enable provider dispatch/);
   assert.match(app, /fully-loaded variable-cost model/);
-  assert.match(app, /does not enable provider execution/);
+  assert.match(app, /blocked_until_fully_loaded_cost_model_adapter/);
 });

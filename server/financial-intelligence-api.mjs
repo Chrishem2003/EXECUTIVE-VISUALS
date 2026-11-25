@@ -2243,5 +2243,12 @@ export function createFinancialIntelligenceApi({
     return {recorded:true,result};
   }
 
-  return {handle,handleWebhook,verifyAndFinalizeRefund,verifyAndFinalizePayment,reconcilePendingRefunds,recordWorkerResourceUsage,recordWorkerWorkloadTelemetry,expireDueSubscriptions:()=>rpc("expire_due_subscriptions",{p_limit:100})};
+  // Internal server-only read used by the generation preflight. This method is
+  // not exposed as an HTTP route; browser access remains platform-owner gated.
+  async function getPlatformVideoMarginPolicy(){
+    const result=await dbRequest("platform_financial_policies?select=policy_key,enabled,minimum_gross_margin_bps,quote_max_age_seconds,rate_card_max_age_seconds,version,updated_at&policy_key=eq.video_generation&limit=1");
+    return Array.isArray(result.data)?result.data[0]||null:null;
+  }
+
+  return {handle,handleWebhook,verifyAndFinalizeRefund,verifyAndFinalizePayment,reconcilePendingRefunds,recordWorkerResourceUsage,recordWorkerWorkloadTelemetry,getPlatformVideoMarginPolicy,expireDueSubscriptions:()=>rpc("expire_due_subscriptions",{p_limit:100})};
 }
