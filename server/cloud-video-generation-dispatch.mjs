@@ -83,7 +83,7 @@ export function createCloudVideoGenerationDispatch({db,repositories,queue=null,a
      const requestedCode=String(marginPolicyResult?.code||"PLATFORM_MARGIN_POLICY_NOT_CONFIGURED");
      const allowedCodes=["PLATFORM_GROSS_MARGIN_BELOW_FLOOR","PLATFORM_MARGIN_POLICY_UNAVAILABLE","PLATFORM_MARGIN_QUOTE_STALE","PLATFORM_MARGIN_RATE_CARD_STALE","PLATFORM_MARGIN_CUSTOMER_PRICE_UNVERIFIED"];
      const code=allowedCodes.includes(requestedCode)?requestedCode:"PLATFORM_MARGIN_POLICY_NOT_CONFIGURED";
-     const message=String(marginPolicyResult?.reason||"A current platform-owner margin policy and verified same-currency revenue allocation are required before billable generation.").slice(0,300);
+     const message=String(marginPolicyResult?.reason||"A current platform-owner margin policy, verified customer sale-price quote and fully-loaded variable-cost evidence are required before billable generation.").slice(0,300);
      const status=code==="PLATFORM_GROSS_MARGIN_BELOW_FLOOR"?422:
       code==="PLATFORM_MARGIN_QUOTE_STALE"||code==="PLATFORM_MARGIN_RATE_CARD_STALE"?409:503;
      return {status,body:{error:{code,message},providerRequestsSubmitted:false}};
