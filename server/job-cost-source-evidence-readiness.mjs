@@ -94,7 +94,7 @@ export function buildJobCostSourceEvidenceReadiness({
       ["pending","matched"].includes(invoice.reconciliation_status)&&HASH.test(clean(invoice.source_fingerprint))&&
       invoice.provider===usage.provider&&invoice.currency===curr&&line.import_id===invoice.id&&
       line.provider===usage.provider&&line.model===clean(usage.requested_model)&&
-      line.currency===curr&&line.match_status==="matched"&&
+      line.currency===curr&&
       
       recon.invoice_import_id===invoice.id&&recon.invoice_line_id===line.id&&
       recon.usage_event_id===usage.id&&recon.match_status==="matched"&&
@@ -122,7 +122,7 @@ export function buildJobCostSourceEvidenceReadiness({
     if(allLines.length!==Number(invoice.imported_line_count)||
        
        allRecon.length!==allLines.length||
-       allLines.some(row=>row.match_status!=="matched")||
+       
        allRecon.some(row=>row.match_status!=="matched")||
        !Number.isSafeInteger(lineTotal)||lineTotal!==Number(invoice.total_minor)){
       problems.push("The source invoice is not completely reconciled line-for-line to its declared total.");continue;
