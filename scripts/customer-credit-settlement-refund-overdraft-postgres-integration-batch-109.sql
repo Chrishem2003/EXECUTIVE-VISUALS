@@ -94,6 +94,7 @@ do $batch109_pool$
 declare
  v_owner uuid:=current_setting('batch109.pool_owner')::uuid;
  v_project uuid:=current_setting('batch109.project_id')::uuid;
+ v_member uuid:=gen_random_uuid();
  v_job uuid:=gen_random_uuid();
  v_reservation uuid:=gen_random_uuid();
  v_result record;
@@ -103,21 +104,21 @@ begin
  insert into executive_visuals.projects(id,owner_id,name)
  values(v_project,v_owner,'Batch 109 settlement guard project');
  insert into executive_visuals.jobs(id,owner_id,project_id,job_type,status,input,idempotency_key,max_attempts)
- values(v_job,v_owner,v_project,'video.generate','cancelled','{}'::jsonb,'batch109-project-job-'||v_job::text,2);
+ values(v_job,v_member,v_project,'video.generate','cancelled','{}'::jsonb,'batch109-project-job-'||v_job::text,2);
  insert into executive_visuals.project_credit_pools(project_id,owner_id,monthly_spend_limit_credits)
  values(v_project,v_owner,1000);
  insert into executive_visuals.project_credit_pool_ledger(project_id,owner_id,actor_id,amount,event_type,idempotency_key,description)
  values(v_project,v_owner,v_owner,200,'top_up','batch109-project-fund-'||v_project::text,'Batch 109 test funding');
  insert into executive_visuals.project_credit_pool_reservations(
   id,project_id,owner_id,actor_id,job_id,idempotency_key,reserved_credits
- ) values(v_reservation,v_project,v_owner,v_owner,v_job,'batch109-project-reservation-'||v_job::text,100);
- insert into executive_visuals.billing_credit_accounts(owner_id) values(v_owner) on conflict(owner_id) do nothing;
+ ) values(v_reservation,v_project,v_member,v_member,v_job,'batch109-project-reservation-'||v_job::text,100);
+ insert into executive_visuals.billing_credit_accounts(owner_id) values(v_member) on conflict(owner_id) do nothing;
  insert into executive_visuals.billing_credit_reservations(id,owner_id,job_id,idempotency_key,reserved_credits)
- values(v_reservation,v_owner,v_job,'batch109-project-reservation-'||v_job::text,100);
+ values(v_reservation,v_member,v_job,'batch109-project-reservation-'||v_job::text,100);
  insert into executive_visuals.project_credit_pool_ledger(
   project_id,owner_id,actor_id,amount,event_type,reference_id,idempotency_key,description
  ) values(
-  v_project,v_owner,v_owner,-100,'generation_reserve',v_job,
+  v_project,v_owner,v_member,-100,'generation_reserve',v_job,
   'batch109-project-reserve-'||v_job::text,'Batch 109 test reserve'
  );
 
@@ -152,6 +153,16 @@ begin
  select * into v_result from executive_visuals.settle_project_credit_pool_reservation(v_reservation,150,v_evidence);
  if v_result.replayed or v_result.balance<>50 or v_result.adjustment<>-50 then
   raise exception 'BATCH109_PROJECT_FUNDED_OVERAGE_SETTLEMENT_INVALID';
+ end if;
+ if (select owner_id from executive_visuals.project_credit_pool_ledger
+     where idempotency_key='project-credit-settlement:'||v_reservation::text)<>v_owner
+    or (select actor_id from executive_visuals.project_credit_pool_ledger
+     where idempotency_key='project-credit-settlement:'||v_reservation::text)<>v_member then
+  raise exception 'BATCH109_PROJECT_SETTLEMENT_ACTOR_ATTRIBUTION_INVALID';
+ end if;
+ if (select used_this_month from executive_visuals.list_project_credit_pool_member_usage(v_owner,v_project)
+     where member_id=v_member)<>150 then
+  raise exception 'BATCH109_PROJECT_MEMBER_ACTUAL_USAGE_NOT_ATTRIBUTED';
  end if;
  select * into v_result from executive_visuals.settle_project_credit_pool_reservation(v_reservation,150,v_evidence);
  if not v_result.replayed or v_result.balance<>50 then
