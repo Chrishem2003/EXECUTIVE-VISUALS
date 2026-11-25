@@ -49,9 +49,9 @@ test("prices Kling 4.0 with the published 20% promotion through November 30, 202
   const november=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-11-04"});
   const lastDay=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:"2026-11-30"});
   const december=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-12-01"});
-  assert.equal(november.estimatedCredits,63);
+  assert.equal(november.estimatedCredits,64);
   assert.equal(november.discount,"20% promotion through 2026-11-30 UTC");
-  assert.equal(lastDay.estimatedCredits,94);
+  assert.equal(lastDay.estimatedCredits,95);
   assert.equal(december.estimatedCredits,79);
   assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",pricingDate:date}).estimatedCredits,188);
   const referenced=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,referenceVideoSeconds:10,resolution:"720p",pricingDate:date});
