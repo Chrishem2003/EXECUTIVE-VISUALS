@@ -9,14 +9,16 @@ begin
 end;
 $batch111_setup$;
 
-set role service_role;
-select set_config('request.jwt.claim.role','service_role',true);
-
-select * from executive_visuals.grant_generation_credits(
- current_setting('batch111.owner_id')::uuid,100,
+reset role;
+insert into executive_visuals.credit_ledger(owner_id,entry_type,credit_delta,idempotency_key,reason,metadata)
+values(
+ current_setting('batch111.owner_id')::uuid,'purchase_grant',100,
  'batch111-personal-credit-grant','Batch 111 disposable test grant',
  '{"source":"batch111_ci_fixture"}'::jsonb
 );
+
+set role service_role;
+select set_config('request.jwt.claim.role','service_role',true);
 
 do $batch111_reserve$
 declare
