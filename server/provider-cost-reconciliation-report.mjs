@@ -72,7 +72,7 @@ export function buildProviderCostReconciliationReport(input={}){
   taskIds.add(taskId);
   const approval=approvalById.get(id(t.approval_id,"task approval_id"));
   if(!approval){counts.orphanTasks++;continue;}
-  if(t.owner_id!==approval.ownerId||t.project_id!==approval.projectId)
+  if((t.owner_id!=null&&String(t.owner_id)!==approval.ownerId)||(t.project_id!=null&&String(t.project_id)!==approval.projectId))
    fail("PROVIDER_COST_REPORT_APPROVAL_SCOPE_MISMATCH","Task owner/project scope differs from its approval.");
   const currency=curr(t.currency,"task currency");
   if(currency!==approval.currency)fail("PROVIDER_COST_REPORT_CURRENCY_MISMATCH","Task currency differs from its approval currency.");
