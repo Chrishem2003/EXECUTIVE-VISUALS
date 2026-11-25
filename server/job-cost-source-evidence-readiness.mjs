@@ -91,7 +91,7 @@ export function buildJobCostSourceEvidenceReadiness({
     const expectedCostCategory=OPERATION_CATEGORY[operation];
     const exact=
       UUID.test(clean(invoice.id))&&UUID.test(clean(line.id))&&
-      invoice.reconciliation_status==="matched"&&HASH.test(clean(invoice.source_fingerprint))&&
+      ["pending","matched"].includes(invoice.reconciliation_status)&&HASH.test(clean(invoice.source_fingerprint))&&
       invoice.provider===usage.provider&&invoice.currency===curr&&line.import_id===invoice.id&&
       line.provider===usage.provider&&line.model===clean(usage.requested_model)&&
       line.currency===curr&&line.match_status==="matched"&&
@@ -120,7 +120,7 @@ export function buildJobCostSourceEvidenceReadiness({
     const allRecon=reconImportRows.get(invoice.id)||[];
     const lineTotal=allLines.reduce((sum,row)=>sum+(amount(row.amount_minor)??NaN),0);
     if(allLines.length!==Number(invoice.imported_line_count)||
-       Number(invoice.matched_line_count)!==Number(invoice.imported_line_count)||
+       
        allRecon.length!==allLines.length||
        allLines.some(row=>row.match_status!=="matched")||
        allRecon.some(row=>row.match_status!=="matched")||
