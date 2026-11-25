@@ -136,7 +136,7 @@ test("cloud generation fails closed when platform margin policy is absent",async
 test("cloud generation is blocked when verified revenue falls below the platform margin floor",async()=>{
  const f=fixture({platformMarginPolicyReady:async()=>({readyForDispatch:false,code:"PLATFORM_GROSS_MARGIN_BELOW_FLOOR",reason:"Margin is below the owner floor."})});
  const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
- assert.equal(result.status,503);
+ assert.equal(result.status,422);
  assert.equal(result.body.error.code,"PLATFORM_GROSS_MARGIN_BELOW_FLOOR");
  assert.equal(f.calls.some(x=>x[0]==="register"||x[0]==="enqueue"),false);
 });
