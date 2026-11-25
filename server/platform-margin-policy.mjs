@@ -24,10 +24,10 @@ export function evaluatePlatformMarginFloor({
  if(!policy||policy.enabled!==true)return blocked("PLATFORM_MARGIN_POLICY_DISABLED","The platform owner has not enabled a minimum-margin policy.");
  let minimumGrossMarginBps,quoteMaxAgeSeconds,rateCardMaxAgeSeconds,version;
  try{
-  minimumGrossMarginBps=integer(policy.minimumGrossMarginBps,"minimumGrossMarginBps",1,9500);
-  quoteMaxAgeSeconds=integer(policy.quoteMaxAgeSeconds,"quoteMaxAgeSeconds",60,3600);
-  rateCardMaxAgeSeconds=integer(policy.rateCardMaxAgeSeconds,"rateCardMaxAgeSeconds",3600,3888000);
-  version=integer(policy.version,"policy.version",1,Number.MAX_SAFE_INTEGER);
+  minimumGrossMarginBps=integer(policy.minimumGrossMarginBps??policy.minimum_gross_margin_bps,"minimumGrossMarginBps",1,9500);
+  quoteMaxAgeSeconds=integer(policy.quoteMaxAgeSeconds??policy.quote_max_age_seconds,"quoteMaxAgeSeconds",60,3600);
+  rateCardMaxAgeSeconds=integer(policy.rateCardMaxAgeSeconds??policy.rate_card_max_age_seconds,"rateCardMaxAgeSeconds",3600,3888000);
+  version=integer(Number(policy.version),"policy.version",1,Number.MAX_SAFE_INTEGER);
  }catch(error){return blocked(error.code||"PLATFORM_MARGIN_POLICY_INVALID",error.message);}
  if(!Number.isSafeInteger(now)||now<0)return blocked("PLATFORM_MARGIN_POLICY_CLOCK_INVALID","A valid server clock is required.");
  if(!providerEstimate||providerEstimate.available!==true||providerEstimate.estimated!==true)
