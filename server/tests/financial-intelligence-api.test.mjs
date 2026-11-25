@@ -1999,3 +1999,20 @@ test("platform owner margin policy control remains available while payment proce
  assert.equal(billing.status,503);
  assert.equal(billing.body.error.code,"BILLING_DISABLED");
 });
+
+test("platform margin policy API reports conflicting idempotency keys without changing policy",async()=>{
+ const service=api(async(url)=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/configure_platform_video_margin_policy"))
+   return json({message:"PLATFORM_FINANCIAL_POLICY_IDEMPOTENCY_CONFLICT"},409);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({
+  method:"POST",path:"/api/admin/finance/platform-video-margin-policy",ownerId:owner,
+  idempotencyKey:"platform-margin-policy-conflict",
+  body:{enabled:true,minimumGrossMarginBps:4200,quoteMaxAgeSeconds:900,rateCardMaxAgeSeconds:86400}
+ });
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"PLATFORM_FINANCIAL_POLICY_IDEMPOTENCY_CONFLICT");
+});
