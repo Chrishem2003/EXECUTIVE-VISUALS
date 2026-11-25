@@ -95,7 +95,7 @@ export function buildJobCostSourceEvidenceReadiness({
       invoice.provider===usage.provider&&invoice.currency===curr&&line.import_id===invoice.id&&
       line.provider===usage.provider&&line.model===clean(usage.requested_model)&&
       line.currency===curr&&line.match_status==="matched"&&
-      line.matched_usage_event_id===usage.id&&
+      
       recon.invoice_import_id===invoice.id&&recon.invoice_line_id===line.id&&
       recon.usage_event_id===usage.id&&recon.match_status==="matched"&&
       Number(recon.candidate_count)===1&&Number(recon.expected_amount_minor)===value&&
