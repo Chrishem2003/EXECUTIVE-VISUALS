@@ -102,6 +102,11 @@ export function buildJobCostSourceEvidenceReadiness({
       ["pending","matched"].includes(invoice.reconciliation_status)&&
       HASH.test(clean(invoice.source_fingerprint))&&
       invoice.provider===usage.provider&&invoice.currency===curr&&line.import_id===invoice.id&&
+      clean(invoice.period_start).length===10&&clean(invoice.period_end).length===10&&
+      clean(line.usage_period).length===10&&
+      Number.isFinite(Date.parse(line.usage_period+"T00:00:00.000Z"))&&
+      line.usage_period.slice(0,7)+"-01"===usage.period_month&&
+      line.usage_period>=invoice.period_start&&line.usage_period<=invoice.period_end&&
       line.provider===usage.provider&&line.model===clean(usage.requested_model)&&line.operation===operation&&
       line.currency===curr&&
       recon.invoice_import_id===invoice.id&&recon.invoice_line_id===line.id&&
