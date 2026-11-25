@@ -5,11 +5,17 @@ do $batch109_users$
 declare
  v_billing_owner uuid:=gen_random_uuid();
  v_pool_owner uuid:=gen_random_uuid();
+ v_member uuid:=gen_random_uuid();
  v_project uuid:=gen_random_uuid();
 begin
- insert into auth.users(id) values(v_billing_owner),(v_pool_owner);
+ insert into auth.users(id) values(v_billing_owner),(v_pool_owner),(v_member);
+ insert into executive_visuals.projects(id,owner_id,name)
+ values(v_project,v_pool_owner,'Batch 109 settlement guard project');
+ insert into executive_visuals.project_members(project_id,member_id,role,invited_by)
+ values(v_project,v_member,'editor',v_pool_owner);
  perform set_config('batch109.billing_owner',v_billing_owner::text,true);
  perform set_config('batch109.pool_owner',v_pool_owner::text,true);
+ perform set_config('batch109.member_id',v_member::text,true);
  perform set_config('batch109.project_id',v_project::text,true);
 end;
 $batch109_users$;
@@ -94,7 +100,7 @@ do $batch109_pool$
 declare
  v_owner uuid:=current_setting('batch109.pool_owner')::uuid;
  v_project uuid:=current_setting('batch109.project_id')::uuid;
- v_member uuid:=gen_random_uuid();
+ v_member uuid:=current_setting('batch109.member_id')::uuid;
  v_job uuid:=gen_random_uuid();
  v_reservation uuid:=gen_random_uuid();
  v_result record;
@@ -102,10 +108,6 @@ declare
  v_balance bigint;
 begin
  insert into auth.users(id) values(v_member);
- insert into executive_visuals.projects(id,owner_id,name)
- values(v_project,v_owner,'Batch 109 settlement guard project');
- insert into executive_visuals.project_members(project_id,member_id,role,invited_by)
- values(v_project,v_member,'editor',v_owner);
  insert into executive_visuals.project_credit_pool_member_policies(
   project_id,owner_id,member_id,status,monthly_limit_credits
  ) values(v_project,v_owner,v_member,'active',500);
