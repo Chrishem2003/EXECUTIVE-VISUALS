@@ -149,7 +149,8 @@
     "verify:mixed-subscription-workload-economics": "node --test server/tests/mixed-subscription-workload-economics.test.mjs",
     "verify:credit-pack-overage-economics": "node --test server/tests/credit-pack-overage-economics.test.mjs server/tests/approved-fx-rate-conversion.test.mjs server/tests/approved-fx-rate-migration.test.mjs",
     "verify:approved-fx-evidence": "node --test server/tests/approved-fx-rate-conversion.test.mjs server/tests/approved-fx-rate-migration.test.mjs server/tests/financial-intelligence-api.test.mjs",
-    "verify:fully-loaded-cost-evidence": "node --test server/tests/fully-loaded-cost-evidence.test.mjs"
+    "verify:fully-loaded-cost-evidence": "node --test server/tests/fully-loaded-cost-evidence.test.mjs",
+    "verify:job-cost-source-evidence": "node --test server/tests/job-cost-source-evidence-readiness.test.mjs server/tests/job-cost-source-evidence-api.test.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
