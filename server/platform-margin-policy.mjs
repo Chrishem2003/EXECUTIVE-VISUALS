@@ -82,3 +82,45 @@ export function evaluatePlatformMarginFloor({
   rateCardExpiresAt:new Date(rateExpiresMs).toISOString()
  });
 }
+
+/**
+ * Evaluates every shot independently before a production can enter the queue.
+ * This prevents a high-margin shot from concealing a loss-making shot.
+ */
+export function evaluatePlatformMarginFloorForShots({policy,shots,now=Date.now()}={}){
+ if(!Array.isArray(shots)||shots.length<1||shots.length>100)
+  return Object.freeze({readyForDispatch:false,code:"PLATFORM_MARGIN_SHOT_SET_INVALID",reason:"A production must contain between 1 and 100 priced shots."});
+ const results=shots.map((shot,index)=>Object.freeze({
+  shotId:typeof shot?.shotId==="string"?shot.shotId:String(index),
+  ...evaluatePlatformMarginFloor({
+   policy,providerEstimate:shot?.providerEstimate,
+   customerRevenueEvidence:shot?.customerRevenueEvidence,
+   quoteObservedAt:shot?.quoteObservedAt,now
+  })
+ }));
+ const blocked=results.find(result=>result.readyForDispatch!==true);
+ if(blocked)return Object.freeze({
+  readyForDispatch:false,code:blocked.code,reason:blocked.reason||"At least one shot failed the platform margin floor.",
+  blockedShotId:blocked.shotId,shots:Object.freeze(results)
+ });
+ const currencies=new Set(results.map(result=>result.currency));
+ if(currencies.size!==1)return Object.freeze({
+  readyForDispatch:false,code:"PLATFORM_MARGIN_CURRENCY_MISMATCH",
+  reason:"All production shots must use the same currency before margin can be aggregated.",
+  shots:Object.freeze(results)
+ });
+ const providerCostMicros=results.reduce((sum,result)=>sum+result.providerCostMicros,0);
+ const revenueMicros=results.reduce((sum,result)=>sum+result.revenueMicros,0);
+ if(!Number.isSafeInteger(providerCostMicros)||!Number.isSafeInteger(revenueMicros))
+  return Object.freeze({readyForDispatch:false,code:"PLATFORM_MARGIN_TOTAL_OVERFLOW",reason:"Production margin totals exceed safe integer precision."});
+ const grossProfitMicros=revenueMicros-providerCostMicros;
+ const grossMarginBps=Number((BigInt(grossProfitMicros)*10_000n)/BigInt(revenueMicros));
+ return Object.freeze({
+  readyForDispatch:true,code:"PLATFORM_GROSS_MARGIN_APPROVED",
+  currency:results[0].currency,shotCount:results.length,providerCostMicros,
+  revenueMicros,grossProfitMicros,grossMarginBps,
+  minimumGrossMarginBps:results[0].minimumGrossMarginBps,
+  policyVersion:results[0].policyVersion,
+  shots:Object.freeze(results)
+ });
+}
