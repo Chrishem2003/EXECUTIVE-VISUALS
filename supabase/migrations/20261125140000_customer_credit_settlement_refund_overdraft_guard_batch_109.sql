@@ -178,7 +178,7 @@ begin
   ) values(
    reservation.owner_id,delta,'generation_settlement',reservation.job_id,
    'credit-settlement:'||reservation.id::text,
-   'Provider-verified generation credit settlement',p_evidence
+   'Conservative generation credit settlement',p_evidence
   );
  end if;
  update executive_visuals.billing_credit_reservations
@@ -254,7 +254,7 @@ begin
    reservation.project_id,reservation.owner_id,reservation.owner_id,delta,
    'generation_settlement',reservation.job_id,
    'project-credit-settlement:'||reservation.id::text,
-   'Provider-verified project generation credit settlement',p_evidence
+   'Conservative project generation credit settlement',p_evidence
   );
  end if;
  update executive_visuals.project_credit_pool_reservations
@@ -270,6 +270,6 @@ end;
 $settle_project_credit_pool_reservation_batch_109$;
 
 comment on function executive_visuals.settle_generation_credit_reservation(uuid,bigint,jsonb) is
- 'Fail-closed settlement: no automatic refunds below reserved credits; additional charges require funded balance.';
+ 'Conservative settlement: no automatic refunds below reserved credits; additional charges require funded balance.';
 comment on function executive_visuals.settle_project_credit_pool_reservation(uuid,bigint,jsonb) is
- 'Fail-closed project settlement: no automatic refunds below reserved credits; additional charges require funded pool balance.';
+ 'Conservative project settlement: no automatic refunds below reserved credits; additional charges require funded pool balance.';
