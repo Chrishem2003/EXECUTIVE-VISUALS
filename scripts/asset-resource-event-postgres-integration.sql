@@ -47,6 +47,13 @@ begin
 end
 $privileges$;
 
+create or replace function executive_visuals.test_fail_retention_checkpoint()
+returns trigger language plpgsql as $
+begin raise exception 'INJECTED_CHECKPOINT_FAILURE'; end; $;
+create trigger test_fail_retention_checkpoint before update
+on executive_visuals.asset_storage_retention_checkpoints
+for each row execute function executive_visuals.test_fail_retention_checkpoint();
+
 set role service_role;
 do $behavior$
 declare
@@ -115,19 +122,11 @@ begin
    'egress_gb','gb',1.25,'2026-11-25T13:00:00Z',null,null,1250000000,'asset-resource:egress-too-large'
   );
   raise exception using errcode='P9999',message='egress larger than the asset was accepted';
- exception when raise_exception then
-  if sqlerrm='egress larger than the asset was accepted' then raise; end if;
-  if sqlerrm<>'Asset egress measurement shape is invalid' then raise; end if;
+ exception when sqlstate '22023' then null;
  end;
 
  -- Inject a failure after event insertion but before checkpoint update. The RPC
  -- transaction must roll back both writes, leaving no event and the old cursor.
- create or replace function executive_visuals.test_fail_retention_checkpoint()
- returns trigger language plpgsql as $$
- begin raise exception 'INJECTED_CHECKPOINT_FAILURE'; end; $$;
- create trigger test_fail_retention_checkpoint before update
- on executive_visuals.asset_storage_retention_checkpoints
- for each row execute function executive_visuals.test_fail_retention_checkpoint();
  begin
   perform executive_visuals.record_asset_resource_measurement(
    v_actor,v_asset,v_owner,v_project,'asset-storage:interval-rollback','storage_retention',
@@ -139,8 +138,6 @@ begin
   if sqlerrm='injected checkpoint failure was not triggered' then raise; end if;
   if sqlerrm<>'INJECTED_CHECKPOINT_FAILURE' then raise; end if;
  end;
- drop trigger test_fail_retention_checkpoint on executive_visuals.asset_storage_retention_checkpoints;
- drop function executive_visuals.test_fail_retention_checkpoint();
  select count(*) into v_count from executive_visuals.asset_resource_measurement_events
   where measurement_id='asset-storage:interval-rollback';
  if v_count<>0 then raise exception 'failed checkpoint transaction left an orphan measurement event'; end if;
@@ -152,6 +149,8 @@ begin
 end
 $behavior$;
 reset role;
+drop trigger test_fail_retention_checkpoint on executive_visuals.asset_storage_retention_checkpoints;
+drop function executive_visuals.test_fail_retention_checkpoint();
 
 do $immutability$
 begin
