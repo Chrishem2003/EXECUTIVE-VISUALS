@@ -45,6 +45,14 @@ begin
  if (select state from executive_visuals.billing_credit_reservations where id=v_reservation)<>'reserved' then
   raise exception 'BATCH109_BILLING_REFUND_ATTEMPT_CHANGED_RESERVATION';
  end if;
+ begin
+  update executive_visuals.billing_credit_reservations
+   set actual_credits=50,state='settled',evidence=v_evidence,settled_at=clock_timestamp()
+   where id=v_reservation;
+  raise exception 'BATCH109_DIRECT_BILLING_RESERVATION_UPDATE_ACCEPTED';
+ exception when sqlstate '42501' then
+  null;
+ end;
  select coalesce(sum(amount),0) into v_balance from executive_visuals.billing_credit_ledger where owner_id=v_owner;
  if v_balance<>100 then raise exception 'BATCH109_BILLING_BALANCE_CHANGED_AFTER_REFUND_BLOCK'; end if;
 
@@ -123,6 +131,14 @@ begin
     or (select state from executive_visuals.billing_credit_reservations where id=v_reservation)<>'reserved' then
   raise exception 'BATCH109_PROJECT_REFUND_ATTEMPT_CHANGED_RESERVATIONS';
  end if;
+ begin
+  update executive_visuals.project_credit_pool_reservations
+   set actual_credits=50,state='settled',evidence=v_evidence,settled_at=clock_timestamp()
+   where id=v_reservation;
+  raise exception 'BATCH109_DIRECT_PROJECT_RESERVATION_UPDATE_ACCEPTED';
+ exception when sqlstate '42501' then
+  null;
+ end;
  select coalesce(sum(amount),0) into v_balance from executive_visuals.project_credit_pool_ledger where project_id=v_project;
  if v_balance<>100 then raise exception 'BATCH109_PROJECT_BALANCE_CHANGED_AFTER_REFUND_BLOCK'; end if;
 
