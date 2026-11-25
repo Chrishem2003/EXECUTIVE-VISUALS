@@ -1,5 +1,9 @@
 const CURRENCY=/^[A-Z]{3}$/;
 const HASH=/^[a-f0-9]{64}$/;
+const REQUIRED_VARIABLE_COST_CATEGORIES=Object.freeze([
+ "compute","storage","egress","payment_processing","moderation",
+ "retry_allowance","tax","refund_reserve","support"
+]);
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 const integer=(value,label,min,max)=>{
  if(!Number.isSafeInteger(value)||value<min||value>max)fail("PLATFORM_MARGIN_POLICY_INPUT_INVALID",label+" is outside its permitted integer range.");
@@ -41,6 +45,19 @@ export function evaluatePlatformMarginFloor({
  if(!Number.isSafeInteger(providerCostMicros)||providerCostMicros<1||
     Math.abs(amount*1_000_000-providerCostMicros)>0.00001)
   return blocked("PLATFORM_MARGIN_PROVIDER_COST_INVALID","Provider cost cannot be represented safely in currency micro-units.");
+ const variableCosts=arguments[0]?.additionalCostEvidence;
+ if(!variableCosts||variableCosts.status!=="verified"||variableCosts.currency!==currency||
+    !Number.isSafeInteger(variableCosts.additionalCostMicros)||variableCosts.additionalCostMicros<0||
+    !HASH.test(String(variableCosts.evidenceSha256||"").toLowerCase())||
+    typeof variableCosts.evidenceReference!=="string"||!variableCosts.evidenceReference.trim()||
+    variableCosts.evidenceReference.length>240||
+    !Array.isArray(variableCosts.coveredCategories)||
+    REQUIRED_VARIABLE_COST_CATEGORIES.some(category=>!variableCosts.coveredCategories.includes(category)))
+  return blocked("PLATFORM_MARGIN_VARIABLE_COSTS_UNVERIFIED","A verified same-currency cost model covering compute, storage, egress, payment fees, moderation, retries, tax, refund reserve and support is required.");
+ const additionalVariableCostMicros=variableCosts.additionalCostMicros;
+ const totalVariableCostMicros=providerCostMicros+additionalVariableCostMicros;
+ if(!Number.isSafeInteger(totalVariableCostMicros))
+  return blocked("PLATFORM_MARGIN_COST_OVERFLOW","Total variable cost exceeds safe integer precision.");
  const pricing=providerEstimate.pricing;
  if(!pricing||typeof pricing.sourceUrl!=="string"||!pricing.sourceUrl.startsWith("https://"))
   return blocked("PLATFORM_MARGIN_RATE_CARD_UNVERIFIED","A source-linked provider rate card is required.");
@@ -61,18 +78,18 @@ export function evaluatePlatformMarginFloor({
     typeof revenue.evidenceReference!=="string"||!revenue.evidenceReference.trim()||revenue.evidenceReference.length>240)
   return blocked("PLATFORM_MARGIN_REVENUE_UNVERIFIED","Verified same-currency recognized revenue evidence is required; customer credits are not money.");
  const revenueMicros=revenue.recognizedRevenueMicros;
- const grossProfitMicros=revenueMicros-providerCostMicros;
+ const grossProfitMicros=revenueMicros-totalVariableCostMicros;
  const grossMarginBps=Number((BigInt(grossProfitMicros)*10_000n)/BigInt(revenueMicros));
  if(grossProfitMicros<=0||grossMarginBps<minimumGrossMarginBps)
   return Object.freeze({
    readyForDispatch:false,code:"PLATFORM_GROSS_MARGIN_BELOW_FLOOR",
    reason:"This generation quote does not meet the platform owner's minimum gross-margin floor.",
-   currency,providerCostMicros,revenueMicros,grossProfitMicros,grossMarginBps,
+   currency,providerCostMicros,additionalVariableCostMicros,totalVariableCostMicros,revenueMicros,grossProfitMicros,grossMarginBps,
    minimumGrossMarginBps,policyVersion:version
   });
  return Object.freeze({
   readyForDispatch:true,code:"PLATFORM_GROSS_MARGIN_APPROVED",
-  currency,providerCostMicros,revenueMicros,grossProfitMicros,grossMarginBps,
+  currency,providerCostMicros,additionalVariableCostMicros,totalVariableCostMicros,revenueMicros,grossProfitMicros,grossMarginBps,
   minimumGrossMarginBps,policyVersion:version,
   revenueEvidenceReference:revenue.evidenceReference,
   revenueEvidenceSha256:String(revenue.evidenceSha256).toLowerCase(),
@@ -90,11 +107,23 @@ export function evaluatePlatformMarginFloor({
 export function evaluatePlatformMarginFloorForShots({policy,shots,now=Date.now()}={}){
  if(!Array.isArray(shots)||shots.length<1||shots.length>100)
   return Object.freeze({readyForDispatch:false,code:"PLATFORM_MARGIN_SHOT_SET_INVALID",reason:"A production must contain between 1 and 100 priced shots."});
+ const seenShotIds=new Set(),seenRevenueEvidence=new Set();
+ for(let index=0;index<shots.length;index++){
+  const shot=shots[index];
+  const shotId=typeof shot?.shotId==="string"?shot.shotId.trim():"";
+  const evidenceReference=shot?.customerRevenueEvidence?.evidenceReference;
+  if(!shotId||shotId.length>180||seenShotIds.has(shotId))
+   return Object.freeze({readyForDispatch:false,code:"PLATFORM_MARGIN_SHOT_SET_INVALID",reason:"Every production shot must have a unique valid ID."});
+  if(typeof evidenceReference!=="string"||!evidenceReference.trim()||seenRevenueEvidence.has(evidenceReference))
+   return Object.freeze({readyForDispatch:false,code:"PLATFORM_MARGIN_REVENUE_EVIDENCE_REUSED",reason:"Each shot requires a distinct recognized-revenue allocation reference."});
+  seenShotIds.add(shotId);seenRevenueEvidence.add(evidenceReference);
+ }
  const results=shots.map((shot,index)=>Object.freeze({
-  shotId:typeof shot?.shotId==="string"?shot.shotId:String(index),
+  shotId:shot.shotId.trim(),
   ...evaluatePlatformMarginFloor({
    policy,providerEstimate:shot?.providerEstimate,
    customerRevenueEvidence:shot?.customerRevenueEvidence,
+   additionalCostEvidence:shot?.additionalCostEvidence,
    quoteObservedAt:shot?.quoteObservedAt,now
   })
  }));
@@ -118,7 +147,7 @@ export function evaluatePlatformMarginFloorForShots({policy,shots,now=Date.now()
  return Object.freeze({
   readyForDispatch:true,code:"PLATFORM_GROSS_MARGIN_APPROVED",
   currency:results[0].currency,shotCount:results.length,providerCostMicros,
-  revenueMicros,grossProfitMicros,grossMarginBps,
+  additionalVariableCostMicros,totalVariableCostMicros,revenueMicros,grossProfitMicros,grossMarginBps,
   minimumGrossMarginBps:results[0].minimumGrossMarginBps,
   policyVersion:results[0].policyVersion,
   shots:Object.freeze(results)
