@@ -325,9 +325,16 @@ export function createFinancialIntelligenceApi({
     return ["owner","platform_admin","billing_admin"].includes(role);
   }
 
+  async function requirePlatformOwner(ownerId){
+    const result=await dbRequest("platform_admins?select=role&user_id=eq."+encodeURIComponent(ownerId)+"&limit=1");
+    const role=Array.isArray(result.data)?result.data[0]?.role:null;
+    return ["owner","platform_admin"].includes(role);
+  }
+
   async function handle({method,path,ownerId,body={},query={},idempotencyKey=""}={}){
     const customerSuccessRoute=String(path||"").startsWith("/api/customer-success/")||String(path||"").startsWith("/api/admin/customer-success/");
-    if(!billingEnabled&&!customerSuccessRoute)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
+    const platformMarginPolicyControlRoute=path==="/api/admin/finance/platform-video-margin-policy";
+    if(!billingEnabled&&!customerSuccessRoute&&!platformMarginPolicyControlRoute)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
     if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified Supabase account is required.");
     try{
       if(path==="/api/customer-success/me"&&method==="GET"){
@@ -907,6 +914,60 @@ export function createFinancialIntelligenceApi({
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const result=await rpc("financial_revenue_retention_overview",{p_actor_id:ownerId});
         return response(200,{intelligence:result||{retention:[],acquisition:[],forecastAccuracy:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/platform-video-margin-policy"&&(method==="GET"||method==="POST")){
+        if(!await requirePlatformOwner(ownerId))
+          return error(403,"PLATFORM_OWNER_REQUIRED","Only the platform owner or platform administrator can change the platform margin policy.");
+        if(method==="GET"){
+          const [policyResult,historyResult]=await Promise.all([
+            dbRequest("platform_financial_policies?select=policy_key,enabled,minimum_gross_margin_bps,quote_max_age_seconds,rate_card_max_age_seconds,version,updated_by,updated_at&policy_key=eq.video_generation&limit=1"),
+            dbRequest("platform_financial_policy_history?select=id,version,enabled,minimum_gross_margin_bps,quote_max_age_seconds,rate_card_max_age_seconds,idempotency_key,updated_by,created_at&policy_key=eq.video_generation&order=version.desc&limit=100")
+          ]);
+          const policy=Array.isArray(policyResult.data)?policyResult.data[0]||null:null;
+          const history=Array.isArray(historyResult.data)?historyResult.data:[];
+          return response(200,{
+            configured:policy!==null,policy,history,
+            dispatchReadiness:policy===null
+              ?"blocked_margin_policy_not_configured"
+              :policy.enabled===true
+                ?"blocked_until_fully_loaded_cost_model_adapter"
+                :"blocked_margin_policy_not_enabled",
+            note:"Configuring a margin threshold does not itself authorize billable generation. Trusted per-shot provider, customer-price and fully-loaded variable-cost evidence must also pass."
+          });
+        }
+        const allowedFields=new Set(["enabled","minimumGrossMarginBps","quoteMaxAgeSeconds","rateCardMaxAgeSeconds"]);
+        if(!body||typeof body!=="object"||Array.isArray(body)||Object.keys(body).some(key=>!allowedFields.has(key)))
+          return error(400,"PLATFORM_MARGIN_POLICY_INPUT_INVALID","Only enabled, minimumGrossMarginBps, quoteMaxAgeSeconds and rateCardMaxAgeSeconds are accepted.");
+        const key=String(idempotencyKey||"").trim();
+        if(typeof body.enabled!=="boolean"||
+          !Number.isSafeInteger(body.minimumGrossMarginBps)||body.minimumGrossMarginBps<1||body.minimumGrossMarginBps>9500||
+          !Number.isSafeInteger(body.quoteMaxAgeSeconds)||body.quoteMaxAgeSeconds<60||body.quoteMaxAgeSeconds>3600||
+          !Number.isSafeInteger(body.rateCardMaxAgeSeconds)||body.rateCardMaxAgeSeconds<3600||body.rateCardMaxAgeSeconds>3888000||
+          key.length<8||key.length>180)
+          return error(400,"PLATFORM_MARGIN_POLICY_INPUT_INVALID","Provide an explicit enabled flag, margin floor (1–9500 bps), quote age (60–3600 seconds), rate-card age (3600–3888000 seconds) and an idempotency key of 8–180 characters.");
+        let configured;
+        try{
+          configured=await rpc("configure_platform_video_margin_policy",{
+            p_actor_id:ownerId,p_enabled:body.enabled,
+            p_minimum_gross_margin_bps:body.minimumGrossMarginBps,
+            p_quote_max_age_seconds:body.quoteMaxAgeSeconds,
+            p_rate_card_max_age_seconds:body.rateCardMaxAgeSeconds,
+            p_idempotency_key:key
+          });
+        }catch(err){
+          if(err.status===409)return error(409,"PLATFORM_FINANCIAL_POLICY_IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different platform margin policy update.");
+          throw err;
+        }
+        const row=Array.isArray(configured)?configured[0]||{}:configured||{};
+        return response(200,{
+          policyVersion:Number(row.policy_version)||null,replayed:row.replayed===true,
+          dispatchReadiness:body.enabled===true
+            ?"blocked_until_fully_loaded_cost_model_adapter"
+            :"blocked_margin_policy_not_enabled",
+          note:body.enabled===true
+            ?"The owner policy is saved. Billable generation remains fail-closed until trusted provider, customer-price and fully-loaded variable-cost evidence is wired into preflight."
+            :"The platform margin policy is disabled. Billable generation remains blocked."
+        });
       }
       if(path==="/api/admin/finance/ai-cost-intelligence"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
