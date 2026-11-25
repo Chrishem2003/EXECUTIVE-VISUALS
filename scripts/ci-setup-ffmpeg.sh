@@ -3,16 +3,19 @@ set -euo pipefail
 
 # Pinned FFmpeg build release and SHA-256 digest.
 # Verify upstream fix ancestry and published release checksum before changing these pins.
-release_tag="latest"
-asset_name="ffmpeg-master-latest-linux64-gpl.tar.xz"
-expected_sha256="231bf775a8800a6d148777b4be81a6f7e21b095d8f7e76b4fe02585806682cb6"
+release_tag="autobuild-2026-11-24-12-41"
+asset_name="ffmpeg-N-129267-g9ec5cf1aac-linux64-gpl.tar.xz"
+checksums_name="checksums.sha256"
 expected_version="N-129267-g9ec5cf1aac"
 
 archive="$RUNNER_TEMP/$asset_name"
+checksums="$RUNNER_TEMP/$checksums_name"
 extract_dir="$RUNNER_TEMP/ev-ffmpeg"
 bin_dir="$RUNNER_TEMP/ev-ffmpeg-bin"
-url="https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/$release_tag/$asset_name"
-trap 'rm -f "$archive"' EXIT
+base_url="https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/$release_tag"
+checksums_url="$base_url/$checksums_name"
+url="$base_url/$asset_name"
+trap 'rm -f "$archive" "$checksums"' EXIT
 
 mkdir -p "$extract_dir" "$bin_dir"
 curl --fail --location --show-error \
