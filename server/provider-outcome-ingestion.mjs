@@ -113,6 +113,8 @@ export function createProviderOutcomeIngestion({
   if(!expectedAccount||!expectedRoute)fail("PROVIDER_OUTCOME_ADAPTER_NOT_CONFIGURED","The expected provider account and route are not configured for this provider.",503);
   const expected={provider,providerAccountId:expectedAccount,providerTaskId:task.provider_task_id,jobId:task.job_id,model:task.model,route:expectedRoute};
   const verified=verifyProviderOutcomeEvidence({envelope,secret:hmacSecret,expected,maxAgeMs,now:now()});
+  if(verified.finalState!==task.state)
+   fail("PROVIDER_OUTCOME_IDENTITY_MISMATCH","Provider terminal state does not match the durable task state.",409);
   if(verified.currency!==String(task.currency||"").toUpperCase())
    fail("PROVIDER_OUTCOME_CURRENCY_MISMATCH","Provider evidence currency does not match the approved task currency.",409);
   const actualCostMicros=minorToMicros(verified.amountMinor,verified.currency);
