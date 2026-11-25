@@ -974,7 +974,7 @@ export function createFinancialIntelligenceApi({
         if(!await requirePlatformOwner(ownerId))
           return error(403,"PLATFORM_OWNER_REQUIRED","Only the platform owner or platform administrator can view provider cost reconciliation.");
         const approvalsResult=await dbRequest("video_generation_approvals?select=id,owner_id,project_id,currency,created_at&order=created_at.desc&limit=500");
-        const tasksResult=await dbRequest("video_generation_tasks?select=id,approval_id,owner_id,project_id,shot_index,provider,model,state,provider_task_id,currency,estimated_cost_micros,created_at&order=created_at.desc&limit=500");
+        const tasksResult=await dbRequest("video_generation_tasks?select=id,approval_id,shot_index,provider,model,state,provider_task_id,currency,estimated_cost_micros,created_at&order=created_at.desc&limit=500");
         const approvals=Array.isArray(approvalsResult.data)?approvalsResult.data:[];
         const tasks=Array.isArray(tasksResult.data)?tasksResult.data:[];
         let evidence=[];
