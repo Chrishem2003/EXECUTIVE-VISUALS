@@ -62,7 +62,10 @@ generation. The host callback must be wired to the authoritative customer pricin
 fully-loaded variable-cost model before dispatch can pass. The pricing engine now
 exposes monetary sale-price quote evidence separately from credit units. The API
 preflight intentionally supplies no margin approval until the trusted cost-model
-adapter is wired. No provider is called.
+adapter is wired. The quote SHA-256 is a tamper-evident digest, not a signature or
+proof of caller identity; the server must regenerate the price evidence from its
+own pricing policy and persisted approval snapshot rather than trust client-returned
+evidence. No provider is called.
 
 Batch 107 provider actual-cost evidence remains separate from this pre-dispatch
 forecast check. Later settlement work must compare actual provider cost with this
