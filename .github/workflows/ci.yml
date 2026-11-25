@@ -325,6 +325,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261125140000_customer_credit_settlement_refund_overdraft_guard_batch_109.sql
       - name: Verify billing and project credit settlement guards
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/customer-credit-settlement-refund-overdraft-postgres-integration-batch-109.sql
+      - name: Apply legacy personal credit ledger integrity guards
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261125160000_legacy_personal_credit_ledger_integrity_batch_111.sql
+      - name: Verify legacy personal credit ledger integrity
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/legacy-personal-credit-ledger-integrity-postgres-integration-batch-111.sql
 
   product-verification:
     name: Product verification ${{ matrix.batch }}
