@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {buildCustomerGenerationCreditQuote} from "../customer-generation-credit-quote.mjs";
+import {createCustomerCreditQuotePolicy} from "../neon-customer-credit-policy.mjs";
 
 const providerEstimate={
  available:true,estimated:true,provider:"fal",model:"fal-ai/example-video",
@@ -42,4 +43,20 @@ test("does not permit provider estimates outside safe integer micro precision",(
   quoteCustomerCredits:()=>100
  });
  assert.equal(result.available,false);
+});
+
+test("attaches a server-generated monetary customer-price quote separately from customer credits",()=>{
+ const quoteCustomerCredits=createCustomerCreditQuotePolicy({env:{
+  NEON_CUSTOMER_CREDITS_PER_USD:"100",
+  NEON_CUSTOMER_TARGET_MARGIN_BPS:"3000",
+  NEON_CUSTOMER_PAYMENT_FEE_BPS:"300",
+  NEON_CUSTOMER_SUPPORT_RESERVE_BPS:"500"
+ }});
+ const result=buildCustomerGenerationCreditQuote({providerEstimate,quoteCustomerCredits});
+ assert.equal(result.available,true);
+ assert.equal(result.customerPriceEvidence.status,"verified_quote");
+ assert.equal(result.customerPriceEvidence.currency,"USD");
+ assert.ok(result.customerPriceEvidence.customerPriceMicros>1_370_000);
+ assert.match(result.customerPriceEvidence.evidenceReference,/^customer-price-quote:/);
+ assert.match(result.customerPriceEvidence.evidenceSha256,/^[a-f0-9]{64}$/);
 });

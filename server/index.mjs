@@ -1371,16 +1371,26 @@ export function createAppServer() {
                    Math.abs(Number(shot.amount)*1000000-amountMicros)>0.0001)throw new Error("Per-shot USD cost could not be normalized.");
                 const credits=quoteCustomerCredits({currency:"USD",amountMicros});
                 if(!Number.isSafeInteger(credits)||credits<1||credits>100000000)throw new Error("Per-shot customer credit quote is outside safe bounds.");
-                return{shotId:String(shot.shotId||body.shots[index]?.id||"shot-"+(index+1)),credits};
+                if(typeof quoteCustomerCredits.quoteCustomerPriceEvidence!=="function")throw new Error("Verified customer price evidence is unavailable.");
+                const customerPriceEvidence=quoteCustomerCredits.quoteCustomerPriceEvidence({
+                  currency:"USD",amountMicros,evidenceReference:"customer-price-quote:"+randomUUID()
+                });
+                return{shotId:String(shot.shotId||body.shots[index]?.id||"shot-"+(index+1)),credits,customerPriceEvidence};
               });
               const totalCredits=perShotCredits.reduce((sum,item)=>sum+item.credits,0);
               if(!Number.isSafeInteger(totalCredits)||totalCredits<1||totalCredits>100000000)throw new Error("Total customer credit quote is outside safe bounds.");
-              result.pricing={...result.pricing,quote:{...result.pricing.quote,customerCreditQuote:{
-                unit:"customer_credits",totalCredits,perShot:perShotCredits,pricingBasis:"server-side cost, margin and fee policy"
-              }}};
+              result.pricing={...result.pricing,quote:{...result.pricing.quote,
+                customerPriceEvidencePerShot:perShotCredits.map(item=>({shotId:item.shotId,...item.customerPriceEvidence})),
+                customerCreditQuote:{
+                  unit:"customer_credits",totalCredits,perShot:perShotCredits.map(({shotId,credits})=>({shotId,credits})),pricingBasis:"server-side cost, margin and fee policy"
+                }
+              }};
               Object.assign(result,applyCustomerCreditDispatchGate(result,{
                 stagingDispatchReady:neonStagingApprovalRuntime.enabled===true&&
-                  neonStagingApprovalRuntime.readiness?.applicationDispatchReady===true
+                  neonStagingApprovalRuntime.readiness?.applicationDispatchReady===true,
+                // Fail closed until the platform policy, full variable-cost model and
+                // per-shot customer-price evidence are composed from trusted server data.
+                platformMarginPolicyResult:null
               }));
             }catch{
               result.status="pricing_unverified";result.readyForApproval=false;

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {applyCustomerCreditDispatchGate} from "../customer-credit-dispatch-gate.mjs";
 
+const marginReady={readyForDispatch:true,code:"PLATFORM_GROSS_MARGIN_APPROVED",policyVersion:4,grossMarginBps:4000,minimumGrossMarginBps:3500};
 const ready={
  status:"ready_for_approval",readyForApproval:true,requestsSubmitted:false,
  shots:[{shotId:"shot-1"},{shotId:"shot-2"}],
@@ -10,7 +11,7 @@ const ready={
 };
 
 test("only verified staging dispatch unlocks storyboard budget approval",()=>{
- const result=applyCustomerCreditDispatchGate(ready,{stagingDispatchReady:true});
+ const result=applyCustomerCreditDispatchGate(ready,{stagingDispatchReady:true,platformMarginPolicyResult:marginReady});
  assert.equal(result.status,"ready_for_approval");
  assert.equal(result.readyForApproval,true);
  assert.deepEqual(result.customerCreditDispatch,{
@@ -23,7 +24,7 @@ test("only verified staging dispatch unlocks storyboard budget approval",()=>{
 });
 
 test("production without verified staging dispatch stays blocked and reserves nothing",()=>{
- const result=applyCustomerCreditDispatchGate(ready);
+ const result=applyCustomerCreditDispatchGate(ready,{platformMarginPolicyResult:marginReady});
  assert.equal(result.status,"customer_credit_settlement_pending");
  assert.equal(result.readyForApproval,false);
  assert.equal(result.customerCreditDispatch.available,false);
@@ -49,14 +50,37 @@ test("missing, malformed or inconsistent per-shot credit quotes fail closed",()=
 });
 
 test("a blocked provider preflight cannot be upgraded by a staging flag",()=>{
- const result=applyCustomerCreditDispatchGate({...ready,status:"blocked",readyForApproval:false},{stagingDispatchReady:true});
+ const result=applyCustomerCreditDispatchGate({...ready,status:"blocked",readyForApproval:false},{stagingDispatchReady:true,platformMarginPolicyResult:marginReady});
  assert.equal(result.status,"pricing_unverified");
  assert.equal(result.readyForApproval,false);
 });
 
 test("gate is immutable and does not mutate the original preflight snapshot",()=>{
  const before=JSON.stringify(ready);
- const result=applyCustomerCreditDispatchGate(ready,{stagingDispatchReady:true});
+ const result=applyCustomerCreditDispatchGate(ready,{stagingDispatchReady:true,platformMarginPolicyResult:marginReady});
  assert.equal(JSON.stringify(ready),before);
  assert.notEqual(result,ready);
+});
+
+test("missing platform margin policy blocks storyboard approval and reserves no credits",()=>{
+ const result=applyCustomerCreditDispatchGate(ready,{stagingDispatchReady:true});
+ assert.equal(result.status,"platform_margin_pending");
+ assert.equal(result.readyForApproval,false);
+ assert.equal(result.customerCreditDispatch.reservation,"not_reserved");
+ assert.equal(result.platformMargin.code,"PLATFORM_MARGIN_POLICY_NOT_CONFIGURED");
+});
+
+test("a below-floor shot cannot be approved even when staging dispatch is enabled",()=>{
+ const result=applyCustomerCreditDispatchGate(ready,{stagingDispatchReady:true,platformMarginPolicyResult:{
+  readyForDispatch:false,code:"PLATFORM_GROSS_MARGIN_BELOW_FLOOR"
+ }});
+ assert.equal(result.status,"margin_below_floor");
+ assert.equal(result.readyForApproval,false);
+ assert.equal(result.customerCreditDispatch.reservation,"not_reserved");
+});
+
+test("platform margin evidence is preserved on an approved staging preflight",()=>{
+ const result=applyCustomerCreditDispatchGate(ready,{stagingDispatchReady:true,platformMarginPolicyResult:marginReady});
+ assert.equal(result.platformMargin.policyVersion,4);
+ assert.equal(result.platformMargin.grossMarginBps,4000);
 });

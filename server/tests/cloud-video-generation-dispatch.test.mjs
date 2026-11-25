@@ -5,7 +5,7 @@ const owner="123e4567-e89b-42d3-a456-426614174000";
 const project="223e4567-e89b-42d3-a456-426614174000";
 const approval="323e4567-e89b-42d3-a456-426614174000";
 const jobs=[{jobId:"423e4567-e89b-42d3-a456-426614174000",shotIndex:0,status:"queued"},{jobId:"523e4567-e89b-42d3-a456-426614174000",shotIndex:1,status:"queued"}];
-function fixture({status="approved_pending_submission",projectId=project,canWrite=true,registerResult=null,enqueueResult=jobs,registerError=null,enqueueError=null,cancelResult="default",cancelError=null,authorizeSubscription=null,requireSubscription=false,customerCreditSettlementReady=async()=>true}={}){
+function fixture({status="approved_pending_submission",projectId=project,canWrite=true,registerResult=null,enqueueResult=jobs,registerError=null,enqueueError=null,cancelResult="default",cancelError=null,authorizeSubscription=null,requireSubscription=false,customerCreditSettlementReady=async()=>true,platformMarginPolicyReady=async()=>({readyForDispatch:true,policyVersion:4,grossMarginBps:4000,minimumGrossMarginBps:3500})}={}){
  const row={id:approval,owner_id:owner,project_id:projectId,idempotency_key:"approval-key-001",request_hash:"a".repeat(64),snapshot_json:JSON.stringify({shots:[{prompt:"Shot one",model:"seedance2_5",estimatedCostMicros:1000000},{prompt:"Shot two",model:"seedance2_5",estimatedCostMicros:1000000}]}),currency:"USD",quoted_amount_micros:2000000,budget_ceiling_micros:2500000,status};
  const calls=[],events=[];let localStatus=status;
  const db={prepare(sql){return{get(...args){calls.push(["get",sql,args]);return row;},run(...args){calls.push(["run",sql,args]);if(localStatus==="approved_pending_submission"){localStatus="consumed";return{changes:1};}return{changes:0};}}}};
@@ -14,7 +14,7 @@ function fixture({status="approved_pending_submission",projectId=project,canWrit
   async enqueue(id,ownerIdArg){calls.push(["enqueue",id,ownerIdArg]);if(enqueueError)throw enqueueError;return enqueueResult;}
  }};
  const queue={async cancel(jobId,ownerIdArg){calls.push(["cancel",jobId,ownerIdArg]);if(cancelError)throw cancelError;return cancelResult==="default"?{id:jobId,owner_id:owner,status:"cancelled",job_type:"video.generate.shot",project_id:project}:cancelResult;}};
- const dispatch=createCloudVideoGenerationDispatch({db,repositories,queue,canWriteProject:(id,pid)=>canWrite&&id===owner&&pid===project,audit:(...args)=>events.push(args),authorizeSubscription,requireSubscription,customerCreditSettlementReady});
+ const dispatch=createCloudVideoGenerationDispatch({db,repositories,queue,canWriteProject:(id,pid)=>canWrite&&id===owner&&pid===project,audit:(...args)=>events.push(args),authorizeSubscription,requireSubscription,customerCreditSettlementReady,platformMarginPolicyReady});
  return{dispatch,calls,events,get localStatus(){return localStatus;}};
 }
 test("dispatch mirrors approval and atomically enqueues each shot without provider execution",async()=>{
@@ -122,4 +122,57 @@ test("direct cloud shot queue fails closed without atomic customer credit settle
  assert.equal(result.body.providerRequestsSubmitted,false);
  assert.equal(calls.some(call=>call[0]==="register"),false);
  assert.equal(calls.some(call=>call[0]==="enqueue"),false);
+});
+
+test("cloud generation fails closed when platform margin policy is absent",async()=>{
+ const f=fixture({platformMarginPolicyReady:null});
+ const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,503);
+ assert.equal(result.body.error.code,"PLATFORM_MARGIN_POLICY_NOT_CONFIGURED");
+ assert.equal(result.body.providerRequestsSubmitted,false);
+ assert.equal(f.calls.some(x=>x[0]==="register"||x[0]==="enqueue"),false);
+});
+
+test("cloud generation is blocked when verified revenue falls below the platform margin floor",async()=>{
+ const f=fixture({platformMarginPolicyReady:async()=>({readyForDispatch:false,code:"PLATFORM_GROSS_MARGIN_BELOW_FLOOR",reason:"Margin is below the owner floor."})});
+ const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"PLATFORM_GROSS_MARGIN_BELOW_FLOOR");
+ assert.equal(f.calls.some(x=>x[0]==="register"||x[0]==="enqueue"),false);
+});
+
+test("margin policy infrastructure failure blocks dispatch before queueing",async()=>{
+ const f=fixture({platformMarginPolicyReady:async()=>{throw new Error("policy store unavailable");}});
+ const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,503);
+ assert.equal(result.body.error.code,"PLATFORM_MARGIN_POLICY_UNAVAILABLE");
+ assert.equal(f.calls.some(x=>x[0]==="register"||x[0]==="enqueue"),false);
+});
+
+test("margin policy is evaluated before the customer-credit settlement gate",async()=>{
+ const order=[];
+ const f=fixture({
+  platformMarginPolicyReady:async()=>{order.push("margin");return {readyForDispatch:true};},
+  customerCreditSettlementReady:async()=>{order.push("credit");return true;}
+ });
+ const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,202);
+ assert.deepEqual(order,["margin","credit"]);
+});
+
+test("consumed approval replay does not re-evaluate mutable margin policy",async()=>{
+ let checks=0;
+ const f=fixture({status:"consumed",platformMarginPolicyReady:async()=>{checks++;return false;}});
+ const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(checks,0);
+});
+
+test("dispatch preserves a missing fully-loaded cost model as a fail-closed reason",async()=>{
+ const f=fixture({platformMarginPolicyReady:async()=>({readyForDispatch:false,code:"PLATFORM_MARGIN_VARIABLE_COSTS_UNVERIFIED",reason:"Cost model incomplete."})});
+ const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,503);
+ assert.equal(result.body.error.code,"PLATFORM_MARGIN_VARIABLE_COSTS_UNVERIFIED");
+ assert.equal(result.body.providerRequestsSubmitted,false);
+ assert.equal(f.calls.some(x=>x[0]==="register"||x[0]==="enqueue"),false);
 });

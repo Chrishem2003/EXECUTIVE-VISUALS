@@ -11,14 +11,14 @@ function parseSnapshot(value){
 }
 function safeError(error){
  const code=String(error?.code||"CLOUD_VIDEO_DISPATCH_FAILED").slice(0,80);
- const known=new Set(["VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT","VIDEO_APPROVAL_PROJECT_SCOPE_INVALID","VIDEO_APPROVAL_INVALID","VIDEO_APPROVAL_SNAPSHOT_INVALID","VIDEO_APPROVAL_NOT_EXECUTABLE","VIDEO_JOB_IDEMPOTENCY_CONFLICT","VIDEO_REPOSITORY_TIMEOUT","SUBSCRIPTION_ENTITLEMENT_REQUIRED","SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE","SUBSCRIPTION_RECORD_AMBIGUOUS","VIDEO_CUSTOMER_CREDIT_SETTLEMENT_NOT_CONFIGURED"]);
+ const known=new Set(["VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT","VIDEO_APPROVAL_PROJECT_SCOPE_INVALID","VIDEO_APPROVAL_INVALID","VIDEO_APPROVAL_SNAPSHOT_INVALID","VIDEO_APPROVAL_NOT_EXECUTABLE","VIDEO_JOB_IDEMPOTENCY_CONFLICT","VIDEO_REPOSITORY_TIMEOUT","SUBSCRIPTION_ENTITLEMENT_REQUIRED","SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE","SUBSCRIPTION_RECORD_AMBIGUOUS","VIDEO_CUSTOMER_CREDIT_SETTLEMENT_NOT_CONFIGURED","PLATFORM_MARGIN_POLICY_NOT_CONFIGURED","PLATFORM_GROSS_MARGIN_BELOW_FLOOR","PLATFORM_MARGIN_POLICY_UNAVAILABLE","PLATFORM_MARGIN_QUOTE_STALE","PLATFORM_MARGIN_RATE_CARD_STALE","PLATFORM_MARGIN_CUSTOMER_PRICE_UNVERIFIED","PLATFORM_MARGIN_VARIABLE_COSTS_UNVERIFIED","PLATFORM_MARGIN_PROVIDER_ESTIMATE_UNAVAILABLE","PLATFORM_MARGIN_PROVIDER_COST_INVALID","PLATFORM_MARGIN_RATE_CARD_UNVERIFIED","PLATFORM_MARGIN_CURRENCY_INVALID","PLATFORM_MARGIN_CURRENCY_MISMATCH","PLATFORM_MARGIN_COST_OVERFLOW","PLATFORM_MARGIN_TOTAL_OVERFLOW","PLATFORM_MARGIN_SHOT_SET_INVALID","PLATFORM_MARGIN_PRICE_EVIDENCE_REUSED","PLATFORM_MARGIN_POLICY_INPUT_INVALID","PLATFORM_MARGIN_POLICY_CLOCK_INVALID","PLATFORM_MARGIN_POLICY_EVIDENCE_INVALID"]);
  return {code:known.has(code)?code:"CLOUD_VIDEO_DISPATCH_FAILED",message:known.has(code)?String(error?.message||"Cloud generation dispatch failed.").slice(0,300):"Cloud generation dispatch could not be confirmed. Retry the same approval safely."};
 }
 /**
  * Mirrors a locally budget-approved snapshot into the cloud ledger and queues
  * its shots. It never calls a model provider; the separately gated worker does.
  */
-export function createCloudVideoGenerationDispatch({db,repositories,queue=null,audit=()=>{},canWriteProject,authorizeSubscription=null,requireSubscription=false,customerCreditSettlementReady=null}={}){
+export function createCloudVideoGenerationDispatch({db,repositories,queue=null,audit=()=>{},canWriteProject,authorizeSubscription=null,requireSubscription=false,customerCreditSettlementReady=null,platformMarginPolicyReady=null}={}){
  if(typeof db?.prepare!=="function"||typeof repositories?.approvals?.register!=="function"||typeof repositories?.approvals?.enqueue!=="function"||typeof canWriteProject!=="function")
   throw new Error("Cloud video dispatch requires the local approval database, cloud repositories and project authorization.");
  if(requireSubscription&&typeof authorizeSubscription!=="function")throw new Error("Subscription enforcement requires a trusted server-side entitlement reader.");
@@ -63,14 +63,40 @@ export function createCloudVideoGenerationDispatch({db,repositories,queue=null,a
    try{snapshot=parseSnapshot(local.snapshot_json);}catch(error){return {status:409,body:{error:safeError(error)}};}
    if(typeof local.idempotency_key!=="string"||local.idempotency_key.length<8||! /^[a-f0-9]{64}$/i.test(String(local.request_hash||"")))
     return {status:409,body:{error:{code:"VIDEO_APPROVAL_SNAPSHOT_INVALID",message:"The saved approval is missing its durable idempotency or request hash."}}};
-   // The legacy shot queue has no atomic customer-credit reservation plus
-   // authoritative settlement path. Do not dispatch billable cloud shots until
-   // the host explicitly supplies that complete financial boundary.
-   let creditSettlementReady=false;
-   try{
-    creditSettlementReady=typeof customerCreditSettlementReady==="function"&&
-     await customerCreditSettlementReady({ownerId,projectId:local.project_id,approvalId,snapshot})===true;
-   }catch{}
+   // Margin policy is checked before customer-credit reservation readiness.
+   // Consumed approvals are idempotent replays, not new billable dispatches.
+   let marginPolicyResult=null;
+   if(!replay){
+    try{
+     marginPolicyResult=typeof platformMarginPolicyReady==="function"
+      ? await platformMarginPolicyReady({
+        ownerId,projectId:local.project_id,approvalId,snapshot,currency:local.currency,
+        quotedAmountMicros:Number(local.quoted_amount_micros),
+        budgetCeilingMicros:Number(local.budget_ceiling_micros)
+       })
+      : null;
+    }catch{
+     return {status:503,body:{error:{code:"PLATFORM_MARGIN_POLICY_UNAVAILABLE",message:"The platform margin policy could not be verified. Generation remains held."},providerRequestsSubmitted:false}};
+    }
+    const marginReady=marginPolicyResult===true||marginPolicyResult?.readyForDispatch===true;
+    if(!marginReady){
+     const requestedCode=String(marginPolicyResult?.code||"PLATFORM_MARGIN_POLICY_NOT_CONFIGURED");
+     const allowedCodes=["PLATFORM_GROSS_MARGIN_BELOW_FLOOR","PLATFORM_MARGIN_POLICY_UNAVAILABLE","PLATFORM_MARGIN_QUOTE_STALE","PLATFORM_MARGIN_RATE_CARD_STALE","PLATFORM_MARGIN_CUSTOMER_PRICE_UNVERIFIED","PLATFORM_MARGIN_VARIABLE_COSTS_UNVERIFIED","PLATFORM_MARGIN_PROVIDER_ESTIMATE_UNAVAILABLE","PLATFORM_MARGIN_PROVIDER_COST_INVALID","PLATFORM_MARGIN_RATE_CARD_UNVERIFIED","PLATFORM_MARGIN_CURRENCY_INVALID","PLATFORM_MARGIN_CURRENCY_MISMATCH","PLATFORM_MARGIN_COST_OVERFLOW","PLATFORM_MARGIN_TOTAL_OVERFLOW","PLATFORM_MARGIN_SHOT_SET_INVALID","PLATFORM_MARGIN_PRICE_EVIDENCE_REUSED","PLATFORM_MARGIN_POLICY_INPUT_INVALID","PLATFORM_MARGIN_POLICY_CLOCK_INVALID","PLATFORM_MARGIN_POLICY_EVIDENCE_INVALID"];
+     const code=allowedCodes.includes(requestedCode)?requestedCode:"PLATFORM_MARGIN_POLICY_NOT_CONFIGURED";
+     const message=String(marginPolicyResult?.reason||"A current platform-owner margin policy, verified customer sale-price quote and fully-loaded variable-cost evidence are required before billable generation.").slice(0,300);
+     const status=code==="PLATFORM_GROSS_MARGIN_BELOW_FLOOR"?422:
+      code==="PLATFORM_MARGIN_QUOTE_STALE"||code==="PLATFORM_MARGIN_RATE_CARD_STALE"?409:503;
+     return {status,body:{error:{code,message},providerRequestsSubmitted:false}};
+    }
+   }
+
+   let creditSettlementReady=replay;
+   if(!replay){
+    try{
+     creditSettlementReady=typeof customerCreditSettlementReady==="function"&&
+      await customerCreditSettlementReady({ownerId,projectId:local.project_id,approvalId,snapshot})===true;
+    }catch{}
+   }
    if(!creditSettlementReady){
     return {status:503,body:{error:{code:"VIDEO_CUSTOMER_CREDIT_SETTLEMENT_NOT_CONFIGURED",message:"Cloud shot execution is held until customer credits can be reserved atomically and reconciled against authoritative provider usage. Use the customer-credit-gated workflow route for paid cloud generation."},providerRequestsSubmitted:false}};
    }
@@ -91,7 +117,7 @@ export function createCloudVideoGenerationDispatch({db,repositories,queue=null,a
        jobs.some((job,index)=>!job||job.shotIndex!==index||!UUID.test(String(job.jobId||""))))
      throw fail("Cloud queue receipt did not confirm every approved shot.","VIDEO_QUEUE_RECEIPT_INVALID");
     const changed=db.prepare("UPDATE video_generation_approvals SET status='consumed',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND owner_id=? AND status='approved_pending_submission'").run(local.id,ownerId);
-    if(changed.changes===1)audit(ownerId,"video_generation.cloud_jobs_enqueued","video_generation_approval",local.id,{jobCount:jobs.length,jobIds:jobs.map(job=>job.jobId),requestHash:local.request_hash},local.project_id);
+    if(changed.changes===1)audit(ownerId,"video_generation.cloud_jobs_enqueued","video_generation_approval",local.id,{jobCount:jobs.length,jobIds:jobs.map(job=>job.jobId),requestHash:local.request_hash,marginPolicy:marginPolicyResult&&typeof marginPolicyResult==="object"?{policyVersion:marginPolicyResult.policyVersion,grossMarginBps:marginPolicyResult.grossMarginBps,minimumGrossMarginBps:marginPolicyResult.minimumGrossMarginBps}:null},local.project_id);
     return {status:replay?200:202,body:{approval:{id:local.id,status:"processing",requestHash:local.request_hash,shotCount:snapshot.shots.length},jobs,idempotentReplay:replay||changed.changes===0,providerRequestsSubmitted:false,message:"Approved shots are queued. Provider execution occurs only in the separately enabled cloud worker."}};
    }catch(error){
     const detail=safeError(error);

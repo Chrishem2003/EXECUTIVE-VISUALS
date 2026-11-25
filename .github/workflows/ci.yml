@@ -313,6 +313,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261125100000_durable_provider_outcome_evidence_batch_107.sql
       - name: Verify provider outcome evidence, cost variance, replay and immutable history
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/provider-outcome-evidence-postgres-integration-batch-107.sql
+      - name: Apply platform-owner gross-margin floor policy
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261125120000_platform_margin_floor_policy_batch_108.sql
+      - name: Verify platform margin policy versioning and audit history
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/platform-margin-floor-policy-postgres-integration-batch-108.sql
       - name: Apply project member spend attribution and hard limits
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122110000_project_member_spend_controls.sql
       - name: Verify member attribution, monthly limits, pause and role enforcement

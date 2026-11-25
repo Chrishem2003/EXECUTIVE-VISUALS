@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 /**
  * Converts a verified provider estimate into a customer-facing credit preview.
  * This is an estimate only: it never reserves credits or submits a provider job.
@@ -20,11 +21,17 @@ export function buildCustomerGenerationCreditQuote({providerEstimate,quoteCustom
   if(!Number.isSafeInteger(credits)||credits<1||credits>100_000_000) {
     throw Object.assign(new Error("Customer credit pricing returned an invalid credit amount."),{code:"VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID"});
   }
+  const customerPriceEvidence=typeof quoteCustomerCredits.quoteCustomerPriceEvidence==="function"
+    ? quoteCustomerCredits.quoteCustomerPriceEvidence({
+      currency:"USD",amountMicros,evidenceReference:"customer-price-quote:"+randomUUID()
+    })
+    : null;
   return Object.freeze({
     available:true,
     estimated:true,
     credits,
     unit:"customer_credits",
+    ...(customerPriceEvidence?{customerPriceEvidence}:{}),
     provider:providerEstimate.provider,
     model:providerEstimate.model,
     pricingSource:providerEstimate.pricing?.sourceUrl||providerEstimate.pricingSource||null,
