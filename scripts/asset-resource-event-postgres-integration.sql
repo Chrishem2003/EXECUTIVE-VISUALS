@@ -49,7 +49,14 @@ $privileges$;
 
 create or replace function executive_visuals.test_fail_retention_checkpoint()
 returns trigger language plpgsql as $checkpoint_fail$
-begin raise exception 'INJECTED_CHECKPOINT_FAILURE'; end; $checkpoint_fail$;
+begin
+ if old.cursor_at = '2026-11-25T00:00:00Z'::timestamptz
+   and new.cursor_at = '2026-11-26T00:00:00Z'::timestamptz then
+  raise exception 'INJECTED_CHECKPOINT_FAILURE';
+ end if;
+ return new;
+end;
+$checkpoint_fail$;
 create trigger test_fail_retention_checkpoint before update
 on executive_visuals.asset_storage_retention_checkpoints
 for each row execute function executive_visuals.test_fail_retention_checkpoint();
