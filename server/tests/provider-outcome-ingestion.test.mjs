@@ -85,6 +85,39 @@ test("rejects task not found and incomplete submitted identity",async()=>{
  await assert.rejects(()=>incompleteService.ingest({authorization:"Bearer "+token,envelope:signed()}),{code:"PROVIDER_OUTCOME_TASK_NOT_SUBMITTED"});
 });
 
+test("persists authenticated no-charge evidence as zero provider cost without releasing credits",async()=>{
+ const mock=makeFetch({rpcRows:[{evidence_row_id:"evidence-no-charge",replayed:false,actual_cost_micros:0,estimated_cost_micros:3400000,variance_micros:-3400000}]});
+ const envelope=signed({evidenceId:"evt-no-charge",outcome:"no_charge",finalState:"cancelled",amountMinor:0,billableSeconds:0});
+ const result=await create(mock.fetchImpl).ingest({authorization:"Bearer "+token,envelope});
+ const rpc=JSON.parse(mock.calls[1].options.body);
+ assert.equal(result.outcome,"no_charge");
+ assert.equal(rpc.p_actual_cost_micros,0);
+ assert.equal(result.customerCreditsChanged,false);
+});
+
+test("persists unknown outcome without fabricating actual cost",async()=>{
+ const mock=makeFetch({rpcRows:[{evidence_row_id:"evidence-unknown",replayed:false,actual_cost_micros:null,estimated_cost_micros:3400000,variance_micros:null}]});
+ const envelope=signed({evidenceId:"evt-unknown",outcome:"unknown",finalState:"failed",amountMinor:null,billableSeconds:0});
+ const result=await create(mock.fetchImpl).ingest({authorization:"Bearer "+token,envelope});
+ const rpc=JSON.parse(mock.calls[1].options.body);
+ assert.equal(result.outcome,"unknown");
+ assert.equal(rpc.p_actual_cost_micros,null);
+ assert.equal(result.customerCreditsChanged,false);
+});
+
+test("rejects a route that differs from the server-configured adapter route",async()=>{
+ const mock=makeFetch(),service=create(mock.fetchImpl);
+ await assert.rejects(()=>service.ingest({authorization:"Bearer "+token,envelope:signed({route:"unapproved-route"})}),{code:"PROVIDER_OUTCOME_IDENTITY_MISMATCH"});
+ assert.equal(mock.calls.length,1);
+});
+
+test("rejects invalid HMAC before attempting durable evidence persistence",async()=>{
+ const mock=makeFetch(),service=create(mock.fetchImpl);
+ const envelope=signed();envelope.amountMinor=1;
+ await assert.rejects(()=>service.ingest({authorization:"Bearer "+token,envelope}),{code:"PROVIDER_OUTCOME_SIGNATURE_INVALID"});
+ assert.equal(mock.calls.length,1);
+});
+
 test("returns exact idempotent replay result from durable RPC",async()=>{
  const mock=makeFetch({rpcRows:[{evidence_row_id:"evidence-01",replayed:true,actual_cost_micros:3400000,estimated_cost_micros:3400000,variance_micros:0}]});
  const result=await create(mock.fetchImpl).ingest({authorization:"Bearer "+token,envelope:signed()});
