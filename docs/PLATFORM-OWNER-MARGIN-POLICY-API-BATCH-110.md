@@ -1,5 +1,14 @@
 # Batch 110 — platform-owner margin policy control API
 
+## Enablement
+
+The control plane can be enabled independently of payment processing with
+`PLATFORM_MARGIN_POLICY_API_ENABLED=true`. It still requires Supabase authentication
+and server-only Supabase credentials. Leave `BILLING_API_ENABLED=false` if payment
+processing is not approved; the API health response continues to report billing as
+disabled. This environment variable is opt-in and this PR does not change any
+deployment environment.
+
 ## Endpoints
 
 Both endpoints require an authenticated Supabase account with `platform_admins.role`
