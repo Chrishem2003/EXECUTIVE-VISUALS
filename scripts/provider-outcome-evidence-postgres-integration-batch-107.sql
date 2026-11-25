@@ -19,12 +19,28 @@ declare
  v_approval uuid:=gen_random_uuid();
  v_task uuid:=gen_random_uuid();
  v_task_bad uuid:=gen_random_uuid();
+ v_job uuid:=gen_random_uuid();
+ v_credit_reservation uuid;
  v_evidence uuid;
  v_digest text:=repeat('a',64);
  v_result record;
 begin
  insert into executive_visuals.projects(id,owner_id,name)
  values(v_project,v_owner,'Batch 107 provider evidence test');
+ insert into executive_visuals.credit_ledger(owner_id,entry_type,credit_delta,idempotency_key,reason,metadata)
+ values(v_owner,'purchase_grant',500,'batch107-credit-grant-'||v_owner::text,
+  'Batch 107 test grant','{}'::jsonb);
+ insert into executive_visuals.jobs(
+  id,owner_id,project_id,job_type,status,input,idempotency_key,max_attempts
+ ) values(
+  v_job,v_owner,v_project,'video.generate.shot','cancelled',
+  jsonb_build_object('approvalId',v_approval,'shotIndex',1),
+  'batch107-job-'||v_job::text,2
+ );
+ v_credit_reservation:=(executive_visuals.reserve_credit_units(
+  v_owner,100,'batch107-credit-reserve-'||v_job::text,
+  'Batch 107 unresolved provider reservation',v_job,'{}'::jsonb
+ )->>'reservation_id')::uuid;
  insert into executive_visuals.video_generation_approvals(
   id,owner_id,project_id,idempotency_key,request_hash,snapshot_json,currency,
   quoted_amount_micros,budget_ceiling_micros
@@ -140,8 +156,13 @@ begin
     or v_result.variance_micros is not null then
   raise exception 'BATCH107_UNKNOWN_OUTCOME_NOT_HELD_FOR_RECONCILIATION';
  end if;
- if exists(select 1 from executive_visuals.credit_reservations where metadata->>'provider_outcome_evidence_id'=v_evidence::text)
-    then raise exception 'BATCH107_EVIDENCE_IMPROPERLY_MUTATED_CUSTOMER_CREDITS'; end if;
+ if (select status from executive_visuals.credit_reservations where id=v_credit_reservation)<>'reserved'
+    or exists(select 1 from executive_visuals.credit_ledger
+      where owner_id=v_owner and idempotency_key='credit-settlement:'||v_credit_reservation::text)
+    or exists(select 1 from executive_visuals.credit_reservations
+      where id=v_credit_reservation and metadata ? 'provider_outcome_evidence_id') then
+  raise exception 'BATCH107_PROVIDER_EVIDENCE_CHANGED_OR_RELEASED_CUSTOMER_CREDITS';
+ end if;
 end;
 $batch107_evidence$;
 
