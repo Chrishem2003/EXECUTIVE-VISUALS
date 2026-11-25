@@ -24,6 +24,7 @@ import { canonicalFinancialAuditJson, createFinancialAuditEvent, verifyFinancial
 import { exportFinancialAuditBundle } from "./financial-audit-export.mjs";
 import { calculateFinancialScenarioIntelligence } from "./financial-scenario-intelligence.mjs";
 import { buildPublicSubscriptionCatalogue } from "./subscription-plan-catalogue.mjs";
+import { buildProviderCostReconciliationReport } from "./provider-cost-reconciliation-report.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -333,8 +334,8 @@ export function createFinancialIntelligenceApi({
 
   async function handle({method,path,ownerId,body={},query={},idempotencyKey=""}={}){
     const customerSuccessRoute=String(path||"").startsWith("/api/customer-success/")||String(path||"").startsWith("/api/admin/customer-success/");
-    const platformMarginPolicyControlRoute=path==="/api/admin/finance/platform-video-margin-policy";
-    if(!billingEnabled&&!customerSuccessRoute&&!platformMarginPolicyControlRoute)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
+    const platformFinanceControlRoute=path==="/api/admin/finance/platform-video-margin-policy"||path==="/api/admin/finance/provider-cost-reconciliation";
+    if(!billingEnabled&&!customerSuccessRoute&&!platformFinanceControlRoute)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
     if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified Supabase account is required.");
     try{
       if(path==="/api/customer-success/me"&&method==="GET"){
@@ -968,6 +969,28 @@ export function createFinancialIntelligenceApi({
             ?"The owner policy is saved. Billable generation remains fail-closed until trusted provider, customer-price and fully-loaded variable-cost evidence is wired into preflight."
             :"The platform margin policy is disabled. Billable generation remains blocked."
         });
+      }
+      if(path==="/api/admin/finance/provider-cost-reconciliation"&&method==="GET"){
+        if(!await requirePlatformOwner(ownerId))
+          return error(403,"PLATFORM_OWNER_REQUIRED","Only the platform owner or platform administrator can view provider cost reconciliation.");
+        const approvalsResult=await dbRequest("video_generation_approvals?select=id,owner_id,project_id,currency,created_at&order=created_at.desc&limit=500");
+        const tasksResult=await dbRequest("video_generation_tasks?select=id,approval_id,owner_id,project_id,shot_index,provider,model,state,provider_task_id,currency,estimated_cost_micros,created_at&order=created_at.desc&limit=500");
+        const approvals=Array.isArray(approvalsResult.data)?approvalsResult.data:[];
+        const tasks=Array.isArray(tasksResult.data)?tasksResult.data:[];
+        let evidence=[];
+        if(tasks.length){
+          const taskIds=tasks.map(task=>task.id).filter(value=>typeof value==="string"&&/^[0-9a-f-]{36}$/i.test(value));
+          if(taskIds.length){
+            const evidenceResult=await dbRequest("provider_outcome_evidence?select=task_id,provider,provider_task_id,model,route,evidence_id,outcome,final_state,currency,actual_cost_micros,estimated_cost_micros,variance_micros,billable_seconds,input_reference_count,audio_enabled,source_reference,evidence_digest,observed_at&task_id=in.("+taskIds.join(",")+")&order=observed_at.desc&limit=1000");
+            evidence=Array.isArray(evidenceResult.data)?evidenceResult.data:[];
+          }
+        }
+        const report=buildProviderCostReconciliationReport({approvals,tasks,evidence});
+        const truncated=approvals.length===500||tasks.length===500||evidence.length===1000;
+        report.truncated=truncated;
+        report.summary.truncated=truncated;
+        if(truncated&&report.status==="complete_provider_outcomes")report.status="incomplete";
+        return response(200,report);
       }
       if(path==="/api/admin/finance/ai-cost-intelligence"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
