@@ -63,33 +63,37 @@ export function createCloudVideoGenerationDispatch({db,repositories,queue=null,a
    try{snapshot=parseSnapshot(local.snapshot_json);}catch(error){return {status:409,body:{error:safeError(error)}};}
    if(typeof local.idempotency_key!=="string"||local.idempotency_key.length<8||! /^[a-f0-9]{64}$/i.test(String(local.request_hash||"")))
     return {status:409,body:{error:{code:"VIDEO_APPROVAL_SNAPSHOT_INVALID",message:"The saved approval is missing its durable idempotency or request hash."}}};
-   // The legacy shot queue has no atomic customer-credit reservation plus
-   // authoritative settlement path. Do not dispatch billable cloud shots until
-   // the host explicitly supplies that complete financial boundary.
-   let creditSettlementReady=false;
-   try{
-    creditSettlementReady=typeof customerCreditSettlementReady==="function"&&
-     await customerCreditSettlementReady({ownerId,projectId:local.project_id,approvalId,snapshot})===true;
-   }catch{}
+   // Margin policy is checked before customer-credit reservation readiness.
+   // Consumed approvals are idempotent replays, not new billable dispatches.
    let marginPolicyResult=null;
-   try{
-    marginPolicyResult=typeof platformMarginPolicyReady==="function"
-     ? await platformMarginPolicyReady({
-       ownerId,projectId:local.project_id,approvalId,snapshot,currency:local.currency,
-       quotedAmountMicros:Number(local.quoted_amount_micros),
-       budgetCeilingMicros:Number(local.budget_ceiling_micros)
-      })
-     : null;
-   }catch{
-    return {status:503,body:{error:{code:"PLATFORM_MARGIN_POLICY_UNAVAILABLE",message:"The platform margin policy could not be verified. Generation remains held."},providerRequestsSubmitted:false}};
+   if(!replay){
+    try{
+     marginPolicyResult=typeof platformMarginPolicyReady==="function"
+      ? await platformMarginPolicyReady({
+        ownerId,projectId:local.project_id,approvalId,snapshot,currency:local.currency,
+        quotedAmountMicros:Number(local.quoted_amount_micros),
+        budgetCeilingMicros:Number(local.budget_ceiling_micros)
+       })
+      : null;
+    }catch{
+     return {status:503,body:{error:{code:"PLATFORM_MARGIN_POLICY_UNAVAILABLE",message:"The platform margin policy could not be verified. Generation remains held."},providerRequestsSubmitted:false}};
+    }
+    const marginReady=marginPolicyResult===true||marginPolicyResult?.readyForDispatch===true;
+    if(!marginReady){
+     const requestedCode=String(marginPolicyResult?.code||"PLATFORM_MARGIN_POLICY_NOT_CONFIGURED");
+     const code=["PLATFORM_GROSS_MARGIN_BELOW_FLOOR","PLATFORM_MARGIN_POLICY_UNAVAILABLE"].includes(requestedCode)
+      ? requestedCode : "PLATFORM_MARGIN_POLICY_NOT_CONFIGURED";
+     const message=String(marginPolicyResult?.reason||"A current platform-owner margin policy and verified same-currency revenue allocation are required before billable generation.").slice(0,300);
+     return {status:503,body:{error:{code,message},providerRequestsSubmitted:false}};
+    }
    }
-   const marginReady=marginPolicyResult===true||marginPolicyResult?.readyForDispatch===true;
-   if(!marginReady){
-    const requestedCode=String(marginPolicyResult?.code||"PLATFORM_MARGIN_POLICY_NOT_CONFIGURED");
-    const code=["PLATFORM_GROSS_MARGIN_BELOW_FLOOR","PLATFORM_MARGIN_POLICY_UNAVAILABLE"].includes(requestedCode)
-     ? requestedCode : "PLATFORM_MARGIN_POLICY_NOT_CONFIGURED";
-    const message=String(marginPolicyResult?.reason||"A current platform-owner margin policy and verified same-currency revenue allocation are required before billable generation.").slice(0,300);
-    return {status:503,body:{error:{code,message},providerRequestsSubmitted:false}};
+
+   let creditSettlementReady=replay;
+   if(!replay){
+    try{
+     creditSettlementReady=typeof customerCreditSettlementReady==="function"&&
+      await customerCreditSettlementReady({ownerId,projectId:local.project_id,approvalId,snapshot})===true;
+    }catch{}
    }
    if(!creditSettlementReady){
     return {status:503,body:{error:{code:"VIDEO_CUSTOMER_CREDIT_SETTLEMENT_NOT_CONFIGURED",message:"Cloud shot execution is held until customer credits can be reserved atomically and reconciled against authoritative provider usage. Use the customer-credit-gated workflow route for paid cloud generation."},providerRequestsSubmitted:false}};
