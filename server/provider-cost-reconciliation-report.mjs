@@ -11,8 +11,14 @@ function id(value,label){
  return value.trim();
 }
 function integer(value,label,{min=0,max=Number.MAX_SAFE_INTEGER}={}){
- if(!Number.isSafeInteger(value)||value<min||value>max)fail("PROVIDER_COST_REPORT_INPUT_INVALID",label+" must be a safe integer in range.");
- return value;
+ const n=typeof value==="number"?value:typeof value==="string"&&/^-?[0-9]+$/.test(value)?Number(value):NaN;
+ if(!Number.isSafeInteger(n)||n<min||n>max)fail("PROVIDER_COST_REPORT_INPUT_INVALID",label+" must be a safe integer in range.");
+ return n;
+}
+function signedInteger(value,label){
+ const n=typeof value==="number"?value:typeof value==="string"&&/^-?[0-9]+$/.test(value)?Number(value):NaN;
+ if(!Number.isSafeInteger(n))fail("PROVIDER_COST_REPORT_INPUT_INVALID",label+" must be a safe integer.");
+ return n;
 }
 function curr(value,label){
  const v=String(value||"").toUpperCase();
@@ -27,8 +33,9 @@ function add(map,currency,amount){
 function iso(value,label){
  const v=String(value||"");
  const ms=Date.parse(v);
- if(!Number.isFinite(ms)||new Date(ms).toISOString()!==v)fail("PROVIDER_COST_REPORT_TIMESTAMP_INVALID",label+" must be canonical ISO-8601 UTC.");
- return v;
+ if(!Number.isFinite(ms)||!/(?:Z|[+-][0-9]{2}:[0-9]{2})$/.test(v))
+  fail("PROVIDER_COST_REPORT_TIMESTAMP_INVALID",label+" must be an ISO-8601 timestamp with an explicit timezone.");
+ return new Date(ms).toISOString();
 }
 
 /**
@@ -57,14 +64,14 @@ export function buildProviderCostReconciliationReport(input={}){
   evidenceByTask.get(taskId).push(e);
  }
  const totals={estimatedCostMicrosByCurrency:{},actualCostMicrosByCurrency:{},varianceMicrosByCurrency:{}};
- const counts={tasks:0,verified:0,missingEvidence:0,unknownOutcome:0,multipleEvidence:0,identityMismatch:0,invalidEvidence:0};
+ const counts={tasks:0,verified:0,pendingTasks:0,missingEvidence:0,unknownOutcome:0,multipleEvidence:0,identityMismatch:0,invalidEvidence:0,orphanTasks:0};
  const items=[];
  for(const t of tasks){
   const taskId=id(t.id,"task id");
   if(taskIds.has(taskId))fail("PROVIDER_COST_REPORT_DUPLICATE_TASK","Task IDs must be unique.");
   taskIds.add(taskId);
   const approval=approvalById.get(id(t.approval_id,"task approval_id"));
-  if(!approval)continue;
+  if(!approval){counts.orphanTasks++;continue;}
   if(t.owner_id!==approval.ownerId||t.project_id!==approval.projectId)
    fail("PROVIDER_COST_REPORT_APPROVAL_SCOPE_MISMATCH","Task owner/project scope differs from its approval.");
   const currency=curr(t.currency,"task currency");
@@ -76,13 +83,23 @@ export function buildProviderCostReconciliationReport(input={}){
   const base={
    taskId,approvalId:approval.id,ownerId:approval.ownerId,projectId:approval.projectId,
    shotIndex:integer(t.shot_index,"task shot_index",{max:99}),
-   provider:id(t.provider,"task provider"),model:id(t.model,"task model"),
+   provider:id(t.provider,"task provider"),model:t.model==null?null:id(t.model,"task model"),
    taskState:id(t.state,"task state"),currency,estimatedCostMicros,
    createdAt:iso(t.created_at,"task created_at")
   };
   if(matches.length===0){
-   counts.missingEvidence++;
-   items.push({...base,evidenceStatus:"missing",outcome:null,actualCostMicros:null,varianceMicros:null,evidence:null});
+   if(!["succeeded","failed"].includes(base.taskState)){
+    counts.pendingTasks++;
+    items.push({...base,evidenceStatus:"pending",outcome:null,actualCostMicros:null,varianceMicros:null,evidence:null});
+   }else{
+    counts.missingEvidence++;
+    items.push({...base,evidenceStatus:"missing",outcome:null,actualCostMicros:null,varianceMicros:null,evidence:null});
+   }
+   continue;
+  }
+  if(!["succeeded","failed"].includes(base.taskState)){
+   counts.pendingTasks++;
+   items.push({...base,evidenceStatus:"task_not_terminal",outcome:null,actualCostMicros:null,varianceMicros:null,evidence:null});
    continue;
   }
   if(matches.length!==1){
@@ -113,7 +130,7 @@ export function buildProviderCostReconciliationReport(input={}){
     evidence:{evidenceId,sourceReference,observedAt}});
    continue;
   }
-  if(provider!==base.provider||providerTaskId!==String(t.provider_task_id||"")||evidenceModel!==base.model||
+  if(provider!==base.provider||providerTaskId!==String(t.provider_task_id||"")||!base.model||evidenceModel!==base.model||
      evidenceCurrency!==currency||evidenceEstimate!==estimatedCostMicros){
    counts.identityMismatch++;
    items.push({...base,evidenceStatus:"identity_mismatch",outcome,actualCostMicros:null,varianceMicros:null,
@@ -132,7 +149,7 @@ export function buildProviderCostReconciliationReport(input={}){
    continue;
   }
   const actualCostMicros=integer(e.actual_cost_micros,"evidence actual_cost_micros");
-  const varianceMicros=Number(e.variance_micros);
+  const varianceMicros=signedInteger(e.variance_micros,"evidence variance_micros");
   if(!Number.isSafeInteger(varianceMicros)||varianceMicros!==actualCostMicros-estimatedCostMicros||
      (outcome==="no_charge"&&(actualCostMicros!==0||billableSeconds!==0))||
      (outcome==="charged"&&actualCostMicros<1)){
@@ -147,11 +164,11 @@ export function buildProviderCostReconciliationReport(input={}){
    evidence:{evidenceId,sourceReference,observedAt,evidenceDigest,finalState,route,billableSeconds,inputReferenceCount,audioEnabled}});
  }
  const orphanEvidence=Array.from(evidenceByTask.keys()).filter(taskId=>!taskIds.has(taskId)).length;
- const incomplete=counts.missingEvidence+counts.unknownOutcome+counts.multipleEvidence+counts.identityMismatch+counts.invalidEvidence>0||orphanEvidence>0;
+ const incomplete=counts.pendingTasks+counts.missingEvidence+counts.unknownOutcome+counts.multipleEvidence+counts.identityMismatch+counts.invalidEvidence+counts.orphanTasks>0||orphanEvidence>0;
  return {
   reportVersion:"1.0",reportType:"provider_cost_reconciliation",
   sourceType:"adapter_verified_provider_outcome_not_invoice_reconciled",
-  status:incomplete?"incomplete":"complete_provider_outcomes",
+  status:counts.tasks===0?"no_data":incomplete?"incomplete":"complete_provider_outcomes",
   automaticPosting:false,generatedAt:input.generatedAt||new Date().toISOString(),
   summary:{...counts,orphanEvidence,evidenceCoveragePct:counts.tasks?Math.round(counts.verified/counts.tasks*10000)/100:0,
    totals},
