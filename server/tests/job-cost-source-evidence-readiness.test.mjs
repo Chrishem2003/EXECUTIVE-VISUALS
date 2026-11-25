@@ -17,11 +17,11 @@ function fixture(overrides={}){
   status:"failed",cost_basis:"provider_reported",currency:"USD",cost_minor:340,
   invoice_line_reference:"line-001",period_month:"2026-11-01"};
  const invoice={id:invoiceId,provider:"runway",invoice_reference:"inv-001",currency:"USD",
-  total_minor:340,imported_line_count:1,matched_line_count:1,reconciliation_status:"matched",
+  total_minor:340,imported_line_count:1,matched_line_count:0,reconciliation_status:"pending",
   source_fingerprint:"a".repeat(64),imported_at:"2026-11-24T12:00:00.000Z"};
  const line={id:lineId,import_id:invoiceId,provider_line_reference:"line-001",
   provider:"runway",model:"seedance-2.5",operation:"video",currency:"USD",amount_minor:340,
-  matched_usage_event_id:usageId,match_status:"matched"};
+  matched_usage_event_id:null,match_status:"matched"};
  const recon={id:reconId,invoice_import_id:invoiceId,invoice_line_id:lineId,
   usage_event_id:usageId,match_status:"matched",candidate_count:1,
   expected_amount_minor:340,observed_amount_minor:340,currency:"USD"};
@@ -65,8 +65,13 @@ test("rejects an incomplete invoice attribution chain",()=>{
  assert.ok(result.sourceExceptions.length>0);
 });
 
+test("accepts immutable pending import headers only when every line has a matched reconciliation event",()=>{
+ const valid=buildJobCostSourceEvidenceReadiness(fixture());
+ assert.equal(valid.providerCompute.status,"verified_historical_actual");
+});
+
 test("rejects an invoice that is not fully reconciled to every imported line",()=>{
- const input=fixture({invoiceImports:[{...fixture().invoiceImports[0],reconciliation_status:"pending"}]});
+ const input=fixture({invoiceImports:[{...fixture().invoiceImports[0],reconciliation_status:"variance"}]});
  const result=buildJobCostSourceEvidenceReadiness(input);
  assert.notEqual(result.providerCompute.status,"verified_historical_actual");
 });
