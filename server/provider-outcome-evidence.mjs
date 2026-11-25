@@ -54,6 +54,7 @@ export function verifyProviderOutcomeEvidence({envelope,secret,expected,maxAgeMs
  const model=requiredText(envelope.model,"model");
  const route=requiredText(envelope.route,"route");
  const sourceReference=requiredText(envelope.sourceReference,"sourceReference");
+ const audioEnabled=envelope.audioEnabled;
  const outcome=String(envelope.outcome||"");
  const finalState=String(envelope.finalState||"");
  if(!OUTCOMES.has(outcome)||!STATES.has(finalState))
