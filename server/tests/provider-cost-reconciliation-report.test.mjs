@@ -48,7 +48,7 @@ test("flags invalid no-charge amount, variance or evidence digest",()=>{
 
 test("keeps currencies separate and rejects duplicate task rows",()=>{
  const eurApproval={...approval,id:"approval-02",currency:"EUR"};
- const eurTask={...task,id:"task-02",approval_id:"approval-02",currency:"EUR"};
+ const eurTask={...task,id:"task-02",approval_id:"approval-02",currency:"EUR",estimated_cost_micros:100};
  const eurEvidence={...evidence,task_id:"task-02",currency:"EUR",actual_cost_micros:100,estimated_cost_micros:100,variance_micros:0};
  const report=buildProviderCostReconciliationReport({approvals:[approval,eurApproval],tasks:[task,eurTask],evidence:[evidence,eurEvidence]});
  assert.equal(report.summary.totals.actualCostMicrosByCurrency.USD,3500000);
