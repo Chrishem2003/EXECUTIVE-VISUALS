@@ -18,7 +18,7 @@ const key=(...parts)=>parts.map(x=>String(x??"").toLowerCase()).join("\u001f");
 const hash=value=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const uniqueBy=(rows,field)=>new Map(rows.map(row=>[String(row?.[field]??""),row]));
 const isDate=value=>Number.isFinite(Date.parse(value||""));
-const amount=value=>Number.isSafeInteger(Number(value))&&Number(value)>=0?Number(value):null;
+const amount=value=>value===null||value===undefined||value===""?null:Number.isSafeInteger(Number(value))&&Number(value)>=0?Number(value):null;
 
 function currencyMinorToMicros(value,currency){
   const digits=new Intl.NumberFormat("en",{style:"currency",currency}).resolvedOptions().maximumFractionDigits;
@@ -113,7 +113,7 @@ export function buildJobCostSourceEvidenceReadiness({
       costAmount===value&&cost.currency===curr&&cost.source_type==="provider_invoice"&&
       cost.cost_category===expectedCostCategory&&cost.entry_type==="expense"&&
       cost.owner_id===usage.owner_id&&cost.period_month===usage.period_month&&
-      clean(cost.source_reference).length>0&&
+      cost.source_reference===String(invoice.provider+":"+invoice.invoice_reference+":"+line.provider_line_reference).slice(0,160)&&
       link.owner_id===usage.owner_id&&link.project_id===usage.project_id&&
       link.provider===usage.provider&&clean(link.model)===clea    const allLines=importLineRows.get(invoice.id)||[];
     const allRecon=reconImportRows.get(invoice.id)||[];
