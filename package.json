@@ -148,7 +148,8 @@
     "verify:subscription-plan-economics": "node --test server/tests/subscription-plan-credit-economics-batch-72.test.mjs server/tests/subscription-plan-credit-economics-api-batch-72.test.mjs server/tests/subscription-plan-credit-economics-ui-batch-72.test.mjs server/tests/subscription-credit-cost-evidence-batch-74.test.mjs server/tests/mixed-subscription-workload-economics.test.mjs server/tests/model-invoice-cost-evidence.test.mjs && npm run verify:credit-pack-overage-economics",
     "verify:mixed-subscription-workload-economics": "node --test server/tests/mixed-subscription-workload-economics.test.mjs",
     "verify:credit-pack-overage-economics": "node --test server/tests/credit-pack-overage-economics.test.mjs server/tests/approved-fx-rate-conversion.test.mjs server/tests/approved-fx-rate-migration.test.mjs",
-    "verify:approved-fx-evidence": "node --test server/tests/approved-fx-rate-conversion.test.mjs server/tests/approved-fx-rate-migration.test.mjs server/tests/financial-intelligence-api.test.mjs"
+    "verify:approved-fx-evidence": "node --test server/tests/approved-fx-rate-conversion.test.mjs server/tests/approved-fx-rate-migration.test.mjs server/tests/financial-intelligence-api.test.mjs",
+    "verify:fully-loaded-cost-evidence": "node --test server/tests/fully-loaded-cost-evidence.test.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
