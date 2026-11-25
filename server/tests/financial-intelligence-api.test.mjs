@@ -1902,7 +1902,7 @@ test("platform margin policy GET is restricted to owner roles and exposes no inv
  assert.equal(result.body.configured,false);
  assert.equal(result.body.policy,null);
  assert.equal(result.body.history.length,0);
- assert.equal(result.body.dispatchReadiness,"blocked_margin_policy_not_enabled");
+ assert.equal(result.body.dispatchReadiness,"blocked_margin_policy_not_configured");
 });
 
 test("platform margin policy GET returns the owner-configured policy and immutable history",async()=>{
