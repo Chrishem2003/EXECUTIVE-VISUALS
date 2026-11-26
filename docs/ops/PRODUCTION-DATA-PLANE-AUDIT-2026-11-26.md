@@ -56,3 +56,7 @@ A passing runtime report is not paid-launch approval. The script exits with code
 This audit made no production or shared Supabase changes, no Neon migrations, no Render configuration changes, no deployments, no new services, no paid plan upgrades and no provider calls. It did not retrieve or expose connection strings, passwords, JWTs or API keys.
 
 The production Render service auto-deploys `main`. Keep all PRs review-only until the complete staging and release sequence is accepted; do not merge a workflow-only PR to `main` just to unlock GitHub manual dispatch.
+
+
+## Neon inspection note
+Read-only schema inspection caused the existing Neon `production` and `staging-base` compute endpoints to wake at their configured 0.25–2 CU limits. No new endpoint, branch, database, role or schema was created; no SQL migration was applied. Because the organization is on the Free plan, this used existing included compute allowance rather than upgrading or provisioning paid infrastructure. Allow the endpoints to autosuspend after inactivity.
