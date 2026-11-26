@@ -6,6 +6,7 @@ import {mkdtemp,mkdir,rm,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {verifyEncryptedStagingBackup} from "../../scripts/verify-encrypted-staging-backup.mjs";
+import {createEncryptedStagingBackup,APPROVED_STAGING_PROJECT_REF} from "../../scripts/create-encrypted-staging-backup.mjs";
 
 const passphrase="unit-test-only-backup-passphrase-32";
 const owner="123e4567-e89b-42d3-a456-426614174000";
@@ -80,4 +81,99 @@ test("rejects a tampered authenticated backup before extraction",async()=>{
   const data=await readFile(f.file);data[data.length-1]^=1;await writeFile(f.file,data);
   await assert.rejects(()=>verifyEncryptedStagingBackup({inputFile:f.file,passphrase,runCommand:command}),{code:"STAGING_BACKUP_DECRYPT_FAILED"});
  }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+const exportEnv=output=>({
+ SUPABASE_STAGING_URL:"https://"+APPROVED_STAGING_PROJECT_REF+".supabase.co",
+ SUPABASE_STAGING_SECRET_KEY:"sb_secret_test_placeholder",
+ SUPABASE_STAGING_DB_URL:"postgresql://postgres:staging-password@db."+APPROVED_STAGING_PROJECT_REF+".supabase.co:5432/postgres",
+ STAGING_BACKUP_ENCRYPTION_PASSPHRASE:passphrase,
+ BACKUP_OUTPUT_DIR:output
+});
+
+test("refuses unrelated Supabase projects before any storage or database request",async()=>{
+ let requests=0;
+ await assert.rejects(()=>createEncryptedStagingBackup({
+  env:{...exportEnv("/tmp/never-created"),SUPABASE_STAGING_URL:"https://production-project.supabase.co"},
+  fetchImpl:async()=>{requests++;throw new Error("network must not be called");},
+  runCommand:async()=>{throw new Error("database must not be called");}
+ }),{code:"STAGING_BACKUP_PROJECT_INVALID"});
+ assert.equal(requests,0);
+});
+
+test("refuses a database URL whose host and pooler identity do not match the approved project",async()=>{
+ let requests=0;
+ await assert.rejects(()=>createEncryptedStagingBackup({
+  env:{...exportEnv("/tmp/never-created"),SUPABASE_STAGING_DB_URL:"postgresql://postgres:secret@db.production-project.supabase.co:5432/postgres"},
+  fetchImpl:async()=>{requests++;throw new Error("network must not be called");},
+  runCommand:async()=>{throw new Error("database must not be called");}
+ }),{code:"STAGING_BACKUP_DATABASE_INVALID"});
+ assert.equal(requests,0);
+});
+
+test("exports nested private objects with modern secret-key headers and verifies the encrypted artifact",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-backup-export-"));
+ const output=join(root,"artifacts");
+ const object=Buffer.from("nested private storage object");
+ const calls=[];let databasePasswordSeen=false;
+ const fetchImpl=async(url,options)=>{
+  const target=new URL(url);calls.push({path:target.pathname,method:options.method,headers:options.headers,body:options.body});
+  if(target.pathname==="/storage/v1/bucket/"+bucket)return Response.json({id:bucket,public:false});
+  if(target.pathname==="/storage/v1/object/list/"+bucket){
+   const prefix=JSON.parse(options.body).prefix;
+   if(prefix==="")return Response.json([{name:owner,id:null}]);
+   if(prefix===owner+"/")return Response.json([{name:asset,id:null}]);
+   if(prefix===owner+"/"+asset+"/")return Response.json([{name:"original.txt",id:"object-1",metadata:{size:object.length}}]);
+   return Response.json([]);
+  }
+  if(target.pathname==="/storage/v1/object/authenticated/"+bucket+"/"+owner+"/"+asset+"/original.txt")
+   return new Response(object,{status:200,headers:{"content-length":String(object.length)}});
+  throw new Error("Unexpected storage request "+target.pathname);
+ };
+ const runCommand=async(command,args,options={})=>{
+  if(command==="pg_dump"){
+   const file=args[args.indexOf("--file")+1];
+   await writeFile(file,Buffer.from("synthetic custom-format dump"));
+   databasePasswordSeen=options.env.PGPASSWORD==="staging-password";
+   assert.equal(args.join(" ").includes("staging-password"),false);
+   assert.equal(options.env.PGSSLMODE,"require");
+   return;
+  }
+  if(command==="tar"){
+   const result=spawnSync(command,args,{encoding:"utf8"});
+   assert.equal(result.status,0,result.stderr);
+   return;
+  }
+  throw new Error("Unexpected command "+command);
+ };
+ try{
+  const result=await createEncryptedStagingBackup({env:exportEnv(output),fetchImpl,runCommand});
+  assert.equal(result.result,"encrypted_export_created");
+  assert.equal(result.storageObjects,1);
+  assert.equal(result.credentialValuesExposed,false);
+  assert.equal(databasePasswordSeen,true);
+  assert.ok(calls.some(x=>x.path==="/storage/v1/object/list/"+bucket&&JSON.parse(x.body).prefix===owner+"/"+asset+"/"));
+  assert.ok(calls.filter(x=>x.path.startsWith("/storage/v1/object/list/")).every(x=>x.headers.apikey==="sb_secret_test_placeholder"&&!("authorization" in x.headers)));
+  const verified=await verifyEncryptedStagingBackup({
+   inputFile:join(output,result.file),passphrase,
+   runCommand:async(command,args)=>{
+    if(command==="tar"){const r=spawnSync(command,args,{encoding:"utf8"});assert.equal(r.status,0,r.stderr);}
+    else if(command==="pg_restore")assert.equal(args[0],"--list");
+    else throw new Error("Unexpected verification command "+command);
+   }
+  });
+  assert.equal(verified.result,"encrypted_backup_integrity_verified");
+  assert.equal(verified.storageObjects,1);
+  assert.equal(verified.databaseRestored,false);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test("refuses to back up a public staging bucket before invoking pg_dump",async()=>{
+ let dumpCalled=false;
+ await assert.rejects(()=>createEncryptedStagingBackup({
+  env:exportEnv("/tmp/never-created"),
+  fetchImpl:async()=>Response.json({id:bucket,public:true}),
+  runCommand:async()=>{dumpCalled=true;}
+ }),{code:"STAGING_BACKUP_BUCKET_NOT_PRIVATE"});
+ assert.equal(dumpCalled,false);
 });
