@@ -8,7 +8,7 @@ Required secrets:
 - `SUPABASE_STAGING_DB_URL` (staging-only PostgreSQL connection string)
 - `STAGING_BACKUP_ENCRYPTION_PASSPHRASE` (at least 24 characters; keep separately from the artifact)
 
-The job runs `pg_dump` in custom format, inventories and downloads every object from the configured private bucket, creates a manifest with byte counts and SHA-256 hashes, packages the files, and encrypts the archive using AES-256-GCM with a key derived by scrypt. Plaintext work files are removed in a finally block. The encrypted artifact is retained for seven days.
+The job runs `pg_dump` in custom format, inventories and downloads every object from the configured private bucket, creates a manifest with byte counts and SHA-256 hashes, packages the files, and encrypts the archive using AES-256-GCM with a key derived by scrypt. Plaintext work files are removed in a finally block. Before upload, a second step decrypts the archive in a temporary directory, checks the AES-GCM authentication tag, verifies the manifest and all SHA-256 object/database hashes, and confirms `pg_restore --list` can parse the PostgreSQL dump. Temporary plaintext is deleted after verification. The encrypted artifact is retained for seven days.
 
 Important limitations:
 - This is an encrypted staging export and integrity manifest, not an independent disaster-recovery system.
