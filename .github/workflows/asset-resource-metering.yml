@@ -11,9 +11,9 @@ on:
       - "server/tests/asset-egress-stream.test.mjs"
       - "server/tests/asset-egress-stream.test.mjs"
       - "supabase/migrations/*asset_resource_event_ledger*"
-      - "supabase/migrations/*asset_upload_checkpoint_autoinit*"
+      - "supabase/migrations/*asset_upload_checkpoint_autoinit*"\n      - "supabase/migrations/*asset_egress_attempt_journal*"
       - "scripts/asset-resource-event-postgres-*.sql"
-      - "scripts/asset-resource-checkpoint-autoinit-postgres-integration.sql"
+      - "scripts/asset-resource-checkpoint-autoinit-postgres-integration.sql"\n      - "scripts/asset-egress-attempt-journal-postgres-integration.sql"
       - ".github/workflows/asset-resource-metering.yml"
   push:
     branches:
