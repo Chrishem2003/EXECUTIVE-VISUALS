@@ -5,7 +5,7 @@ const owner="123e4567-e89b-42d3-a456-426614174000";
 const project="223e4567-e89b-42d3-a456-426614174000";
 const approval="323e4567-e89b-42d3-a456-426614174000";
 const jobs=[{jobId:"423e4567-e89b-42d3-a456-426614174000",shotIndex:0,status:"queued"},{jobId:"523e4567-e89b-42d3-a456-426614174000",shotIndex:1,status:"queued"}];
-function fixture({status="approved_pending_submission",projectId=project,canWrite=true,registerResult=null,enqueueResult=jobs,registerError=null,enqueueError=null,cancelResult="default",cancelError=null}={}){
+function fixture({status="approved_pending_submission",projectId=project,canWrite=true,registerResult=null,enqueueResult=jobs,registerError=null,enqueueError=null,cancelResult="default",cancelError=null,authorizeSubscription=null,requireSubscription=false}={}){
  const row={id:approval,owner_id:owner,project_id:projectId,idempotency_key:"approval-key-001",request_hash:"a".repeat(64),snapshot_json:JSON.stringify({shots:[{prompt:"Shot one",model:"seedance2_5",estimatedCostMicros:1000000},{prompt:"Shot two",model:"seedance2_5",estimatedCostMicros:1000000}]}),currency:"USD",quoted_amount_micros:2000000,budget_ceiling_micros:2500000,status};
  const calls=[],events=[];let localStatus=status;
  const db={prepare(sql){return{get(...args){calls.push(["get",sql,args]);return row;},run(...args){calls.push(["run",sql,args]);if(localStatus==="approved_pending_submission"){localStatus="consumed";return{changes:1};}return{changes:0};}}}};
@@ -14,7 +14,7 @@ function fixture({status="approved_pending_submission",projectId=project,canWrit
   async enqueue(id,ownerIdArg){calls.push(["enqueue",id,ownerIdArg]);if(enqueueError)throw enqueueError;return enqueueResult;}
  }};
  const queue={async cancel(jobId,ownerIdArg){calls.push(["cancel",jobId,ownerIdArg]);if(cancelError)throw cancelError;return cancelResult==="default"?{id:jobId,owner_id:owner,status:"cancelled",job_type:"video.generate.shot",project_id:project}:cancelResult;}};
- const dispatch=createCloudVideoGenerationDispatch({db,repositories,queue,canWriteProject:(id,pid)=>canWrite&&id===owner&&pid===project,audit:(...args)=>events.push(args)});
+ const dispatch=createCloudVideoGenerationDispatch({db,repositories,queue,canWriteProject:(id,pid)=>canWrite&&id===owner&&pid===project,audit:(...args)=>events.push(args),authorizeSubscription,requireSubscription});
  return{dispatch,calls,events,get localStatus(){return localStatus;}};
 }
 test("dispatch mirrors approval and atomically enqueues each shot without provider execution",async()=>{
@@ -72,4 +72,44 @@ test("cloud video job cancellation rejects foreign, missing and already-terminal
  assert.equal((await terminal.dispatch.cancelJob({jobId:jobs[0].jobId,ownerId:owner})).status,409);
  const unavailable=fixture({cancelError:new Error("network down")});
  assert.equal((await unavailable.dispatch.cancelJob({jobId:jobs[0].jobId,ownerId:owner})).status,503);
+});
+
+
+test("required subscription entitlement is checked before cloud approval registration and enqueue",async()=>{
+ const authorized=fixture({requireSubscription:true,authorizeSubscription:async()=>({active:true,entitlements:{features:{videoGeneration:true}}})});
+ const result=await authorized.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,202);
+ assert.ok(authorized.calls.some(x=>x[0]==="register"));
+ assert.ok(authorized.calls.some(x=>x[0]==="enqueue"));
+});
+
+test("missing or expired subscription blocks cloud video dispatch before any provider work",async()=>{
+ const denied=fixture({requireSubscription:true,authorizeSubscription:async()=>({active:false,reason:"An active subscription is required."})});
+ const result=await denied.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,403);
+ assert.equal(result.body.error.code,"SUBSCRIPTION_ENTITLEMENT_REQUIRED");
+ assert.equal(denied.calls.some(x=>x[0]==="register"||x[0]==="enqueue"),false);
+});
+
+test("subscription lookup outages fail closed and preserve the local approval for retry",async()=>{
+ const unavailable=fixture({requireSubscription:true,authorizeSubscription:async()=>{throw Object.assign(new Error("database unavailable"),{code:"SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE",status:503});}});
+ const result=await unavailable.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,503);
+ assert.equal(unavailable.localStatus,"approved_pending_submission");
+ assert.equal(unavailable.calls.some(x=>x[0]==="register"||x[0]==="enqueue"),false);
+});
+
+test("subscription enforcement cannot be enabled without a trusted reader",()=>{
+ assert.throws(()=>createCloudVideoGenerationDispatch({
+  db:{prepare(){}},repositories:{approvals:{register(){},enqueue(){}}},canWriteProject:()=>true,requireSubscription:true
+ }),/trusted server-side entitlement reader/);
+});
+
+test("idempotent replay does not re-query subscription or enqueue a second charge",async()=>{
+ let checks=0;
+ const replay=fixture({status:"consumed",requireSubscription:true,authorizeSubscription:async()=>{checks++;return {active:false};}});
+ const result=await replay.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(checks,0);
+ assert.equal(replay.calls.filter(x=>x[0]==="enqueue").length,1);
 });

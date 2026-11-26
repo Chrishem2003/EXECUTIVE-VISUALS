@@ -22,6 +22,7 @@ import { createLumaRay32Adapter } from "./luma-ray32-video-adapter.mjs";
 import { createLumaActualCostResolver } from "./luma-actual-cost-resolver.mjs";
 import { createLumaProviderFileRepository } from "./luma-provider-file-repository.mjs";
 import { createLumaProviderFileService } from "./luma-provider-file-service.mjs";
+import { createSubscriptionEntitlementReader } from "./subscription-entitlements.mjs";
 
 /**
  * Build the provider-aware worker against the existing Supabase queue,
@@ -84,6 +85,10 @@ export function createProviderAwareCloudVideoWorkerComposition({
     throw new Error("Runway model registration must be a unique list of explicitly supported model profiles.");
   }
 
+  const requireSubscription = env.CLOUD_VIDEO_SUBSCRIPTION_ENTITLEMENTS_REQUIRED === "true";
+  const authorizeSubscription = requireSubscription
+    ? createSubscriptionEntitlementReader({ supabaseUrl: url, serviceRoleKey, fetchImpl, timeoutMs: Math.min(timeoutMs, 15000) })
+    : null;
   const clientOptions = { url, serviceRoleKey, fetchImpl, timeoutMs };
   const queue = createCloudQueue(clientOptions);
   const ledger = createCloudVideoSubmissionLedger(clientOptions);
@@ -376,6 +381,8 @@ export function createProviderAwareCloudVideoWorkerComposition({
     enqueue,
     ledger,
     customerCredits,
+    authorizeSubscription,
+    requireSubscription,
     adapters,
     deferSeconds
   });

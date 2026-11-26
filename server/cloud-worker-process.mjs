@@ -33,6 +33,7 @@ export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
  const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED),publicationCleanup=truth(env.CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED),geminiFilesCleanup=truth(env.GOOGLE_GEMINI_FILES_CLEANUP_ENABLED),geminiFilesRecovery=truth(env.GOOGLE_GEMINI_FILES_RECOVERY_ENABLED),b2MultipartCleanup=truth(env.B2_MULTIPART_CLEANUP_WORKER_ENABLED);
  if(!media&&!timeline&&!video&&!publicationCleanup&&!geminiFilesCleanup&&!geminiFilesRecovery&&!b2MultipartCleanup)throw new Error("Enable at least one supported cloud worker family or maintenance task.");
+ if(truth(env.CLOUD_VIDEO_SUBSCRIPTION_ENTITLEMENTS_REQUIRED)&&!video)throw new Error("Cloud video subscription enforcement requires CLOUD_VIDEO_WORKER_ENABLED=true on the dedicated worker service.");
  if(b2MultipartCleanup&&(env.B2_MULTIPART_UPLOAD_API_ENABLED!=="true"||env.CLOUD_MEDIA_STORAGE_PROVIDER!=="b2"))throw new Error("B2 multipart cleanup requires the B2 upload API and B2 storage provider to be explicitly enabled.");
  let googleOmni=false,luma=false;
  if(video){

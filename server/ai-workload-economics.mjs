@@ -136,3 +136,22 @@ export function compareWorkloadCandidates(input={}){
  const recommended=rows.find(row=>row.eligible)||null;
  return {mode:"shadow_only",automaticRouting:false,recommended,reason:recommended?"Lowest forecast worst-case cost among candidates meeting measured quality, sample and latency gates.":"No candidate has sufficient evaluation evidence and satisfies all cost, quality and latency limits.",candidates:rows,limitations:["Recommendation does not invoke a provider or change production routing.","At least 20 measured evaluation samples and a versioned evaluation set are required.","Use task-specific quality thresholds and re-run evaluations after model, prompt or provider changes."]};
 }
+
+/**
+ * Apply the existing workload pricing engine to a verified total cost in
+ * caller-defined integer units (for example USD micros). This keeps provider
+ * quotes and actual-cost settlement on the same margin, fee and reserve logic
+ * used by workload forecasts; it does not introduce a second pricing formula.
+ */
+export function priceWorkloadCostUnits(costUnits, assumptions = {}) {
+ const amount=number(costUnits,"costUnits",{integer:true,min:1});
+ const result=pricing(amount,assumptions);
+ return Object.freeze({
+  targetMarginBps:result.targetMarginBps,
+  paymentFeeBps:result.paymentFeeBps,
+  fixedPaymentFeeUnits:result.fixedPaymentFeeMinor,
+  supportReserveBps:result.supportReserveBps,
+  reservedCostUnits:result.reservedCostMinor,
+  minimumPriceUnits:result.minimumPriceMinor
+ });
+}

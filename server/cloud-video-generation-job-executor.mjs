@@ -1,3 +1,5 @@
+import { assertSubscriptionEntitlement } from "./subscription-entitlements.mjs";
+
 const fail = (message, code) => Object.assign(new Error(message), { code });
 const RETRYABLE_SUBMISSION_CODES = new Set(["RUNWAY_RATE_LIMITED", "RUNWAY_SERVER_ERROR"]);
 function jobInput(job) {
@@ -21,6 +23,8 @@ export async function executeCloudVideoGenerationJob({
   ingestOutputs,
   resolveActualCost,
   customerCredits,
+  authorizeSubscription,
+  requireSubscription = false,
   signal,
   assertLease = async () => true
 } = {}) {
@@ -31,6 +35,9 @@ export async function executeCloudVideoGenerationJob({
   if (!ledger || typeof ledger.prepare !== "function" || typeof ledger.begin !== "function" ||
       typeof ledger.record !== "function" || typeof ledger.markUnknown !== "function") {
     throw new Error("Cloud video executor requires the Postgres submission ledger.");
+  }
+  if (requireSubscription && typeof authorizeSubscription !== "function") {
+    throw fail("Subscription enforcement requires a trusted server-side entitlement reader.", "SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE");
   }
   if (adapter !== undefined && typeof resolveAdapter === "function") {
     throw fail("Provide either a fixed adapter or an adapter resolver, not both.", "VIDEO_ADAPTER_CONFIGURATION_INVALID");
@@ -104,6 +111,22 @@ export async function executeCloudVideoGenerationJob({
           typeof preflightQuote.model !== "string" || !preflightQuote.model.trim()) {
         throw fail("Provider preflight quote is invalid or exceeds the approved reservation; no paid task was submitted.", "VIDEO_PREFLIGHT_REJECTED");
       }
+    }
+    if (requireSubscription) {
+      await ensureLease();
+      try {
+        const entitlements = await authorizeSubscription({ ownerId: job.owner_id, projectId: job.project_id });
+        assertSubscriptionEntitlement(entitlements, { path: "features.videoGeneration" });
+      } catch (error) {
+        if (error?.code === "SUBSCRIPTION_ENTITLEMENT_REQUIRED") throw error;
+        if (error?.code === "SUBSCRIPTION_RECORD_AMBIGUOUS") {
+          throw fail("Multiple active subscriptions require reconciliation; no provider request was submitted.", "SUBSCRIPTION_RECORD_AMBIGUOUS");
+        }
+        const retry = fail("Subscription access could not be verified; provider submission was deferred.", "VIDEO_SUBSCRIPTION_CHECK_RETRYABLE");
+        retry.retryAfterSeconds = 60;
+        throw retry;
+      }
+      await ensureLease();
     }
     await ensureLease();
     const began = await ledger.begin(job.id, workerId, job.lease_token);

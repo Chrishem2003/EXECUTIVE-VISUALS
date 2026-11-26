@@ -40,6 +40,7 @@ import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudPublicationAuditApi } from "./cloud-publication-audit-api.mjs";
 import { createCloudVideoGenerationRepositories } from "./cloud-video-generation-repositories.mjs";
 import { createCloudVideoGenerationDispatch } from "./cloud-video-generation-dispatch.mjs";
+import { createSubscriptionEntitlementReader } from "./subscription-entitlements.mjs";
 import { createNeonStagingApprovalDispatch } from "./neon-staging-application-runtime.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
@@ -328,11 +329,18 @@ const cloudPublicationAuditAuthorize=cloudPublicationAuditApiEnabled?createCloud
 const cloudPublicationAuditApi=cloudPublicationAuditApiEnabled?createCloudPublicationAuditApi({authorize:cloudPublicationAuditAuthorize}):null;
 if(cloudPublicationAuditApi)await cloudPublicationAuditApi.checkReadiness();
 const cloudVideoGenerationDispatchEnabled=process.env.CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED==="true";
+const cloudVideoSubscriptionEntitlementsRequired=process.env.CLOUD_VIDEO_SUBSCRIPTION_ENTITLEMENTS_REQUIRED==="true";
 if(cloudVideoGenerationDispatchEnabled&&!cloudTimelineApiEnabled)throw new Error("Cloud video generation dispatch requires CLOUD_TIMELINE_API_ENABLED=true for authenticated job progress and asset access.");
 if(cloudVideoGenerationDispatchEnabled&&AUTH_MODE!=="supabase")throw new Error("Cloud video generation dispatch requires verified Supabase authentication.");
 if(cloudVideoGenerationDispatchEnabled&&(!process.env.SUPABASE_URL||!SUPABASE_SERVER_KEY))throw new Error("Cloud video generation dispatch requires server-side Supabase credentials.");
+if(cloudVideoSubscriptionEntitlementsRequired&&(!cloudVideoGenerationDispatchEnabled||AUTH_MODE!=="supabase"||!process.env.SUPABASE_URL||!SUPABASE_SERVER_KEY))
+ throw new Error("Cloud video subscription enforcement requires the authenticated cloud generation dispatch and server-side Supabase credentials.");
+const cloudVideoSubscriptionEntitlementReader=cloudVideoSubscriptionEntitlementsRequired
+ ?createSubscriptionEntitlementReader({supabaseUrl:process.env.SUPABASE_URL,serviceRoleKey:SUPABASE_SERVER_KEY})
+ :null;
 const cloudVideoGenerationDispatch=cloudVideoGenerationDispatchEnabled?createCloudVideoGenerationDispatch({
  db,queue:createCloudQueue(),repositories:createCloudVideoGenerationRepositories(),canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
+ authorizeSubscription:cloudVideoSubscriptionEntitlementReader,requireSubscription:cloudVideoSubscriptionEntitlementsRequired,
  audit:(ownerId,...args)=>audit(db,ownerId,...args)
 }):null;
 const neonStagingApprovalRuntime=await createNeonStagingApprovalDispatch({

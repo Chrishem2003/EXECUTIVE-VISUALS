@@ -21,7 +21,9 @@ const QUARANTINE_CODES = new Set([
   "LUMA_FILE_UNSCOPED_REFERENCE",
   "LUMA_FILE_REFERENCE_MODE_UNSUPPORTED",
   "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED",
-  "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED"
+  "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED",
+  "SUBSCRIPTION_ENTITLEMENT_REQUIRED",
+  "SUBSCRIPTION_RECORD_AMBIGUOUS"
 ]);
 
 export async function runCloudVideoWorkerCycle({
@@ -114,7 +116,7 @@ export async function runCloudVideoWorkerCycle({
     if (leaseLost || controller.signal.aborted) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     const code = typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_VIDEO_JOB_FAILED";
     const message = String(error?.message || "Cloud video generation failed.").slice(0, 500);
-    if (code === "VIDEO_PROVIDER_POLL_DEFERRED" || code === "VIDEO_PROVIDER_SUBMISSION_RETRYABLE") {
+    if (code === "VIDEO_PROVIDER_POLL_DEFERRED" || code === "VIDEO_PROVIDER_SUBMISSION_RETRYABLE" || code === "VIDEO_SUBSCRIPTION_CHECK_RETRYABLE") {
       const retryBaseSeconds = Number.isSafeInteger(error?.retryAfterSeconds) && error.retryAfterSeconds >= 5 && error.retryAfterSeconds <= 900
         ? error.retryAfterSeconds : deferSeconds;
       let delaySeconds = retryBaseSeconds;
@@ -164,11 +166,16 @@ export function createCloudVideoWorker({
   ingestOutputs,
   resolveActualCost,
   customerCredits,
+  authorizeSubscription,
+  requireSubscription = false,
   deferSeconds = 30
 } = {}) {
   if (!ledger || (!adapter && typeof resolveAdapter !== "function") ||
       (adapter && typeof resolveAdapter === "function")) {
     throw new Error("Cloud video worker requires a Postgres ledger, provider adapter, private ingestion and cost resolver.");
+  }
+  if (requireSubscription && typeof authorizeSubscription !== "function") {
+    throw new Error("Cloud video worker subscription enforcement requires a trusted entitlement reader.");
   }
   return Object.freeze({
     async runCycle({ leaseSeconds = 90, heartbeatIntervalMs = 15000, onEvent = () => {} } = {}) {
@@ -176,7 +183,7 @@ export function createCloudVideoWorker({
         queue, enqueue, workerId, leaseSeconds, heartbeatIntervalMs, deferSeconds, onEvent,
         execute: ({ job, workerId: activeWorker, signal, assertLease }) => executeCloudVideoGenerationJob({
           job, workerId: activeWorker, ledger, adapter, resolveAdapter, ingestOutputs, resolveActualCost,
-          customerCredits, signal, assertLease
+          customerCredits, authorizeSubscription, requireSubscription, signal, assertLease
         })
       });
     },

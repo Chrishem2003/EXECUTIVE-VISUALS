@@ -121,3 +121,20 @@ test("cloud video worker applies exponential jitter and caps safe submission ret
   });
   assert.equal(f.calls[1].delaySeconds, 900);
 });
+
+
+test("cloud video worker defers when subscription verification is temporarily unavailable",async()=>{
+ const f=fixture(60,"VIDEO_SUBSCRIPTION_CHECK_RETRYABLE");
+ const result=await runCloudVideoWorkerCycle({...f,workerId:"worker-1",heartbeatIntervalMs:1000,execute:f.execute});
+ assert.equal(result.status,"queued");
+ assert.equal(f.calls[0].delaySeconds,60);
+ assert.equal(f.calls[0].reasonCode,"VIDEO_SUBSCRIPTION_CHECK_RETRYABLE");
+});
+
+test("cloud video worker quarantines jobs whose subscription lacks video-generation access",async()=>{
+ const f=fixture(undefined,"SUBSCRIPTION_ENTITLEMENT_REQUIRED");
+ const result=await runCloudVideoWorkerCycle({...f,workerId:"worker-1",heartbeatIntervalMs:1000,execute:f.execute});
+ assert.equal(result.status,"needs_input");
+ assert.equal(f.calls[0].type,"quarantine");
+ assert.equal(f.calls[0].reasonCode,"SUBSCRIPTION_ENTITLEMENT_REQUIRED");
+});

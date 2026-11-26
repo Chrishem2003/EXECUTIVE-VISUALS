@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {estimateWorkloadEconomics,compareWorkloadCandidates} from "../ai-workload-economics.mjs";
+import {estimateWorkloadEconomics,compareWorkloadCandidates,priceWorkloadCostUnits} from "../ai-workload-economics.mjs";
 const rateCard=(provider,model,inputRate,outputRate)=>({
  provider,model,currency:"UGX",version:"2026-11-v1",
  inputMinorPerMillionTokens:inputRate,outputMinorPerMillionTokens:outputRate,
@@ -59,4 +59,19 @@ test("no route is recommended when all candidates fail measured quality or cost 
   limits:{maxCostMinor:100,maxLatencyMs:1000,minQualityScore:.9},uncertaintyBps:0
  });
  assert.equal(result.recommended,null);
+});
+
+
+test("verified total-cost pricing bridge uses the exact shared workload margin, fee and reserve engine",()=>{
+ const assumptions={targetMarginBps:6000,paymentFeeBps:300,fixedPaymentFeeMinor:50,supportReserveBps:500};
+ const estimated=estimateWorkloadEconomics({
+  rateCard:rateCard("provider-a","model-a",1000000,2000000),
+  workload:{operation:"video",currency:"UGX",videoSeconds:12,successfulOutputs:1},
+  pricing:assumptions,uncertaintyBps:0
+ });
+ const verified=priceWorkloadCostUnits(estimated.costRange.baseMinor,assumptions);
+ assert.equal(verified.minimumPriceUnits,estimated.pricing.minimumPriceMinor);
+ assert.equal(verified.targetMarginBps,assumptions.targetMarginBps);
+ assert.equal(verified.paymentFeeBps,assumptions.paymentFeeBps);
+ assert.equal(verified.supportReserveBps,assumptions.supportReserveBps);
 });

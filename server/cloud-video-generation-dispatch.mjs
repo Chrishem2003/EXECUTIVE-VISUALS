@@ -1,3 +1,5 @@
+import { assertSubscriptionEntitlement } from "./subscription-entitlements.mjs";
+
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 function parseSnapshot(value){
@@ -9,16 +11,17 @@ function parseSnapshot(value){
 }
 function safeError(error){
  const code=String(error?.code||"CLOUD_VIDEO_DISPATCH_FAILED").slice(0,80);
- const known=new Set(["VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT","VIDEO_APPROVAL_PROJECT_SCOPE_INVALID","VIDEO_APPROVAL_INVALID","VIDEO_APPROVAL_SNAPSHOT_INVALID","VIDEO_APPROVAL_NOT_EXECUTABLE","VIDEO_JOB_IDEMPOTENCY_CONFLICT","VIDEO_REPOSITORY_TIMEOUT"]);
+ const known=new Set(["VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT","VIDEO_APPROVAL_PROJECT_SCOPE_INVALID","VIDEO_APPROVAL_INVALID","VIDEO_APPROVAL_SNAPSHOT_INVALID","VIDEO_APPROVAL_NOT_EXECUTABLE","VIDEO_JOB_IDEMPOTENCY_CONFLICT","VIDEO_REPOSITORY_TIMEOUT","SUBSCRIPTION_ENTITLEMENT_REQUIRED","SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE","SUBSCRIPTION_RECORD_AMBIGUOUS"]);
  return {code:known.has(code)?code:"CLOUD_VIDEO_DISPATCH_FAILED",message:known.has(code)?String(error?.message||"Cloud generation dispatch failed.").slice(0,300):"Cloud generation dispatch could not be confirmed. Retry the same approval safely."};
 }
 /**
  * Mirrors a locally budget-approved snapshot into the cloud ledger and queues
  * its shots. It never calls a model provider; the separately gated worker does.
  */
-export function createCloudVideoGenerationDispatch({db,repositories,queue=null,audit=()=>{},canWriteProject}={}){
+export function createCloudVideoGenerationDispatch({db,repositories,queue=null,audit=()=>{},canWriteProject,authorizeSubscription=null,requireSubscription=false}={}){
  if(typeof db?.prepare!=="function"||typeof repositories?.approvals?.register!=="function"||typeof repositories?.approvals?.enqueue!=="function"||typeof canWriteProject!=="function")
   throw new Error("Cloud video dispatch requires the local approval database, cloud repositories and project authorization.");
+ if(requireSubscription&&typeof authorizeSubscription!=="function")throw new Error("Subscription enforcement requires a trusted server-side entitlement reader.");
  return Object.freeze({
   async cancelJob({jobId,ownerId}={}){
    if(typeof jobId!=="string"||!UUID.test(jobId)||typeof ownerId!=="string"||!UUID.test(ownerId))
@@ -44,6 +47,16 @@ export function createCloudVideoGenerationDispatch({db,repositories,queue=null,a
    if(!local.project_id)return {status:422,body:{error:{code:"VIDEO_APPROVAL_PROJECT_REQUIRED",message:"Cloud generation requires an approved production attached to a cloud project."}}};
    if(!canWriteProject(ownerId,local.project_id))return {status:404,body:{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}}};
    const replay=local.status==="consumed";
+   if(!replay&&requireSubscription){
+    try{
+     const entitlements=await authorizeSubscription({ownerId,projectId:local.project_id});
+     assertSubscriptionEntitlement(entitlements,{path:"features.videoGeneration"});
+    }catch(error){
+     const detail=safeError(error);
+     const status=error?.status===403?403:error?.status===409?409:error?.status===400?400:503;
+     return {status,body:{error:detail,providerRequestsSubmitted:false}};
+    }
+   }
    if(!replay&&local.status!=="approved_pending_submission")
     return {status:409,body:{error:{code:"VIDEO_APPROVAL_NOT_EXECUTABLE",message:"Only a pending, budget-approved production can be submitted."}}};
    let snapshot;
