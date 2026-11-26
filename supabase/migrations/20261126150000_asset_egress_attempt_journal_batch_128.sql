@@ -73,7 +73,7 @@ begin
    raise exception 'Financial administrator access required' using errcode='42501';
  end if;
  if p_status not in ('completed','partial','measurement_failed') or
-    p_transferred_bytes<0 or p_transferred_bytes>2147483648 then
+    p_transferred_bytes is null or p_transferred_bytes<0 or p_transferred_bytes>2147483648 then
    raise exception 'Invalid egress attempt outcome' using errcode='22023';
  end if;
  select * into v_attempt from executive_visuals.asset_egress_transfer_attempts
