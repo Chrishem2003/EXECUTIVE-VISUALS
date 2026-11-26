@@ -33,6 +33,8 @@ import { preflightVideoProduction } from "./video-shot-preflight.mjs";
 import { buildVideoGenerationApproval } from "./video-generation-approval.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { pipeMeasuredPrivateAssetDownload } from "./asset-egress-stream.mjs";
+import { createAssetResourceEventRecorder } from "./asset-resource-event-recorder.mjs";
 import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
 import { resolveCloudMediaMaxUploadBytes } from "./cloud-upload-limits.mjs";
 import { buildCloudMediaHealth } from "./cloud-media-health.mjs";
@@ -304,6 +306,33 @@ const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({
  quoteCustomerCredits
 }) : null;
 const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : { ready:false, storage:"disabled" };
+const privateAssetEgressProxyEnabled=process.env.PRIVATE_ASSET_EGRESS_PROXY_ENABLED==="true";
+const assetResourceFinanceActorId=String(process.env.ASSET_RESOURCE_FINANCE_ACTOR_ID||"");
+if(privateAssetEgressProxyEnabled&&(!cloudTimelineApi||AUTH_MODE!=="supabase"||!/^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(assetResourceFinanceActorId))){
+ throw new Error("Private asset egress proxy requires the verified cloud timeline API, Supabase authentication and ASSET_RESOURCE_FINANCE_ACTOR_ID.");
+}
+if(privateAssetEgressProxyEnabled){
+ const adminHeaders={apikey:SUPABASE_SERVER_KEY,accept:"application/json","accept-profile":"executive_visuals"};
+ if(!String(SUPABASE_SERVER_KEY).startsWith("sb_secret_"))adminHeaders.authorization="Bearer "+SUPABASE_SERVER_KEY;
+ const adminResponse=await fetch(process.env.SUPABASE_URL+"/rest/v1/platform_admins?select=user_id&user_id=eq."+encodeURIComponent(assetResourceFinanceActorId)+"&role=in.(owner,platform_admin,billing_admin)&limit=1",{headers:adminHeaders});
+ if(!adminResponse.ok)throw new Error("Private asset egress proxy cannot verify the configured financial administrator.");
+ const adminRows=await adminResponse.json();
+ if(!Array.isArray(adminRows)||adminRows.length!==1||adminRows[0].user_id!==assetResourceFinanceActorId)
+  throw new Error("Private asset egress proxy requires ASSET_RESOURCE_FINANCE_ACTOR_ID to identify an active financial administrator.");
+}
+const assetResourceRecorder=privateAssetEgressProxyEnabled?createAssetResourceEventRecorder({
+ actorId:assetResourceFinanceActorId,enabled:true,
+ rpc:async(name,args)=>{
+  if(name!=="record_asset_resource_measurement")throw new Error("Unexpected asset resource RPC.");
+  const headers={apikey:SUPABASE_SERVER_KEY,"content-type":"application/json","content-profile":"executive_visuals",accept:"application/json"};
+  if(!String(SUPABASE_SERVER_KEY).startsWith("sb_secret_"))headers.authorization="Bearer "+SUPABASE_SERVER_KEY;
+  const response=await fetch(process.env.SUPABASE_URL+"/rest/v1/rpc/"+name,{method:"POST",headers,body:JSON.stringify(args)});
+  const raw=await response.text();
+  if(!response.ok)throw Object.assign(new Error("Asset resource evidence could not be persisted (HTTP "+response.status+")."),{code:"ASSET_RESOURCE_RECORD_FAILED",status:response.status});
+  return raw?JSON.parse(raw):null;
+ }
+}):null;
+
 const cloudMediaReadinessBlockers=[];
 if(!cloudTimelineApiEnabled)cloudMediaReadinessBlockers.push("CLOUD_TIMELINE_API_ENABLED");
 if(AUTH_MODE!=="supabase")cloudMediaReadinessBlockers.push("AUTH_MODE");
@@ -770,7 +799,7 @@ export function createAppServer() {
         const creativeArtifactsHealth=creativeArtifactsPostgres
           ?await creativeArtifactsPostgres.checkReadiness().catch(error=>({backend:"supabase-postgres",configured:true,ready:false,durableAcrossDeploys:false,errorCode:error.code||"CREATIVE_ARTIFACT_DATABASE_UNAVAILABLE"}))
           :{...creativeArtifactPersistence(),configured:true,ready:true};
-        send(res,200,{status:"ok",localAssetUploads:{enabled:localAssetUploadPolicy.allowed,code:localAssetUploadPolicy.code,message:localAssetUploadPolicy.message},staging:{d1WorkspaceEnabled:Boolean(String(process.env.D1_STAGING_WORKER_URL||"").trim()),localAuthEnabled:stagingLocalAuthPolicy.enabled},storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},creativeArtifacts:creativeArtifactsHealth,media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,authSession:{opaqueCookie:true,encryptedServerTokens:Boolean(supabaseSessionStore),configurationReady:AUTH_MODE!=="supabase"||Boolean(supabaseSessionStore)},googleDriveOAuth:{enabled:googleDriveOAuthEnabled,configured:Boolean(googleDriveOAuth),exportRecoveryConfigured:Boolean(googleDriveExportAttemptStore)},cloudMedia:buildCloudMediaHealth({enabled:Boolean(cloudTimelineApi),readiness:cloudTimelineReadiness,storageProvider:process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase",uploadLimitBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,blockers:cloudMediaReadinessBlockers}),cloudMediaJobsApi:{enabled:cloudMediaJobsApiEnabled&&Boolean(cloudTimelineApi),blockers:cloudMediaJobsApiEnabled?[]:["CLOUD_MEDIA_JOBS_API_ENABLED"]},billing:{enabled:billingApiEnabled,refundsEnabled:billingApiEnabled&&process.env.FLW_REFUNDS_ENABLED==="true",platformMarginPolicyApiEnabled,provider:process.env.FLW_API_BASE_URL==="https://f4bexperience.flutterwave.com"?"live":"sandbox",providerKeyConfigured:Boolean(process.env.FLW_CLIENT_ID&&process.env.FLW_CLIENT_SECRET),webhookSecretConfigured:Boolean(process.env.FLW_SECRET_HASH),paddlePesapal:providerSubscriptionBillingReadiness},cloudVideoWorker:{enabled:process.env.CLOUD_WORKER_ENABLED==="true"&&process.env.CLOUD_VIDEO_WORKER_ENABLED==="true",remoteExecutionGates:process.env.VIDEO_GATEWAY_ENABLED==="true"&&process.env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",falAdapterConfigured:Boolean(process.env.FAL_VIDEO_MODEL&&process.env.FAL_KEY&&process.env.FAL_BILLING_KEY),lumaAdapterConfigured:process.env.LUMA_VIDEO_ENABLED==="true"&&process.env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&Boolean(process.env.LUMA_AGENTS_API_KEY)&&Number.isFinite(Number(process.env.LUMA_USD_PER_CREDIT))&&Number(process.env.LUMA_USD_PER_CREDIT)>0&&Number(process.env.LUMA_USD_PER_CREDIT)<=1000,modelRouterEnabled:process.env.RUNWAY_MODEL_ROUTER_ENABLED==="true",modelRouterRemoteEnabled:process.env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",modelRouterConfigPresent:/^[a-z][a-z0-9_-]{0,63}$/.test(String(process.env.RUNWAY_VIDEO_ROUTER_CONFIG||"")),providerCredentialConfigured:Boolean(process.env.RUNWAY_API_KEY||process.env.RUNWAYML_API_SECRET),outputHostAllowlistConfigured:(()=>{const hosts=String(process.env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);return hosts.length>0&&hosts.length<=100&&hosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));})(),supabaseCredentialsConfigured:Boolean(process.env.SUPABASE_URL&&SUPABASE_SERVER_KEY),directRunwayModelsRequested:Boolean(String(process.env.RUNWAY_VIDEO_MODELS||"").trim()),runtimeMode:embeddedCloudWorkerSupervisor?"embedded-api-process":"separate-process",inProcessSupervisorActive:Boolean(embeddedCloudWorkerSupervisor)},version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",localAssetUploads:{enabled:localAssetUploadPolicy.allowed,code:localAssetUploadPolicy.code,message:localAssetUploadPolicy.message},staging:{d1WorkspaceEnabled:Boolean(String(process.env.D1_STAGING_WORKER_URL||"").trim()),localAuthEnabled:stagingLocalAuthPolicy.enabled},storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},creativeArtifacts:creativeArtifactsHealth,media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,authSession:{opaqueCookie:true,encryptedServerTokens:Boolean(supabaseSessionStore),configurationReady:AUTH_MODE!=="supabase"||Boolean(supabaseSessionStore)},googleDriveOAuth:{enabled:googleDriveOAuthEnabled,configured:Boolean(googleDriveOAuth),exportRecoveryConfigured:Boolean(googleDriveExportAttemptStore)},cloudMedia:buildCloudMediaHealth({enabled:Boolean(cloudTimelineApi),readiness:cloudTimelineReadiness,storageProvider:process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase",uploadLimitBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,blockers:cloudMediaReadinessBlockers}),cloudMediaJobsApi:{enabled:cloudMediaJobsApiEnabled&&Boolean(cloudTimelineApi),blockers:cloudMediaJobsApiEnabled?[]:["CLOUD_MEDIA_JOBS_API_ENABLED"]},privateAssetEgress:{enabled:privateAssetEgressProxyEnabled,recorderConfigured:Boolean(assetResourceRecorder),financeActorVerified:privateAssetEgressProxyEnabled},billing:{enabled:billingApiEnabled,refundsEnabled:billingApiEnabled&&process.env.FLW_REFUNDS_ENABLED==="true",platformMarginPolicyApiEnabled,provider:process.env.FLW_API_BASE_URL==="https://f4bexperience.flutterwave.com"?"live":"sandbox",providerKeyConfigured:Boolean(process.env.FLW_CLIENT_ID&&process.env.FLW_CLIENT_SECRET),webhookSecretConfigured:Boolean(process.env.FLW_SECRET_HASH),paddlePesapal:providerSubscriptionBillingReadiness},cloudVideoWorker:{enabled:process.env.CLOUD_WORKER_ENABLED==="true"&&process.env.CLOUD_VIDEO_WORKER_ENABLED==="true",remoteExecutionGates:process.env.VIDEO_GATEWAY_ENABLED==="true"&&process.env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",falAdapterConfigured:Boolean(process.env.FAL_VIDEO_MODEL&&process.env.FAL_KEY&&process.env.FAL_BILLING_KEY),lumaAdapterConfigured:process.env.LUMA_VIDEO_ENABLED==="true"&&process.env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&Boolean(process.env.LUMA_AGENTS_API_KEY)&&Number.isFinite(Number(process.env.LUMA_USD_PER_CREDIT))&&Number(process.env.LUMA_USD_PER_CREDIT)>0&&Number(process.env.LUMA_USD_PER_CREDIT)<=1000,modelRouterEnabled:process.env.RUNWAY_MODEL_ROUTER_ENABLED==="true",modelRouterRemoteEnabled:process.env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",modelRouterConfigPresent:/^[a-z][a-z0-9_-]{0,63}$/.test(String(process.env.RUNWAY_VIDEO_ROUTER_CONFIG||"")),providerCredentialConfigured:Boolean(process.env.RUNWAY_API_KEY||process.env.RUNWAYML_API_SECRET),outputHostAllowlistConfigured:(()=>{const hosts=String(process.env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);return hosts.length>0&&hosts.length<=100&&hosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));})(),supabaseCredentialsConfigured:Boolean(process.env.SUPABASE_URL&&SUPABASE_SERVER_KEY),directRunwayModelsRequested:Boolean(String(process.env.RUNWAY_VIDEO_MODELS||"").trim()),runtimeMode:embeddedCloudWorkerSupervisor?"embedded-api-process":"separate-process",inProcessSupervisorActive:Boolean(embeddedCloudWorkerSupervisor)},version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/recover"&&req.method==="POST"){
         if(AUTH_MODE!=="supabase"){fail(res,501,"PASSWORD_RECOVERY_UNAVAILABLE","Password recovery is available only when Supabase authentication is configured.");return;}const publicAppUrl=String(process.env.PUBLIC_APP_URL||"").trim();if(!publicAppUrl){fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","Password recovery needs PUBLIC_APP_URL and an exact matching Supabase Auth redirect URL.");return;}let redirect;try{redirect=new URL(publicAppUrl);}catch{fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL is not a valid absolute URL.");return;}const localRedirect=process.env.NODE_ENV!=="production"&&["localhost","127.0.0.1","::1"].includes(redirect.hostname);if((redirect.protocol!=="https:"&&!localRedirect)||redirect.username||redirect.password||redirect.search||redirect.hash||redirect.pathname!=="/"){fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL must be an HTTPS site origin ending in /, without credentials, query parameters or fragments.");return;}const body=await readJson(req);await requestSupabasePasswordRecovery({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,email:String(body.email||""),redirectTo:redirect.origin+"/"});send(res,200,{ok:true,message:"If an account exists for that address, a password recovery email has been sent."},cors);return;
@@ -1169,6 +1198,56 @@ export function createAppServer() {
         }
         else{fail(res,405,"B2_MULTIPART_METHOD_NOT_ALLOWED","This upload session endpoint does not support the requested method.");return;}
         send(res,result.status,result.body,cors);return;
+      }
+      const privateAssetDownloadMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]{36})$/i);
+      if(privateAssetEgressProxyEnabled&&privateAssetDownloadMatch&&req.method==="GET"){
+        if(!rateAllowed("private-asset-download:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many private asset downloads. Try again shortly.");return;}
+        const range=String(req.headers.range||"");
+        if(range&&(!/^bytes=(?:\d+-\d*|-\d+)$/.test(range)||range.length>128)){fail(res,416,"ASSET_RANGE_INVALID","Only one valid byte range may be requested.");return;}
+        let controller=null,timer=null;
+        try{
+          const authorized=await cloudTimelineApi.getPrivateAssetDownload({ownerId:user.id,assetId:privateAssetDownloadMatch[1],expiresIn:60});
+          const signedUrl=new URL(authorized.url);
+          if(!CLOUD_MEDIA_ORIGIN||signedUrl.protocol!=="https:"||signedUrl.origin!==CLOUD_MEDIA_ORIGIN||signedUrl.username||signedUrl.password)
+            throw Object.assign(new Error("Private storage returned an untrusted download URL."),{code:"PRIVATE_ASSET_DOWNLOAD_ORIGIN_INVALID"});
+          controller=new AbortController();timer=setTimeout(()=>controller.abort(),120000);
+          const headers={};if(range)headers.range=range;
+          const upstream=await fetch(signedUrl,{method:"GET",headers,redirect:"error",signal:controller.signal});
+          if(upstream.status===416){
+            const contentRange=upstream.headers.get("content-range");
+            res.writeHead(416,{"content-range":contentRange||"bytes */"+authorized.asset.size,"cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+          }
+          res.setHeader("cache-control","private, no-store");
+          res.setHeader("x-content-type-options","nosniff");
+          res.setHeader("content-disposition","attachment; filename*=UTF-8''"+encodeURIComponent(authorized.asset.name||"asset"));
+          const measured=await pipeMeasuredPrivateAssetDownload({
+            upstream,response:res,asset:authorized.asset,
+            record:async event=>{
+              const result=await assetResourceRecorder.record(event);
+              if(result?.recorded!==true)throw Object.assign(new Error("Private download measurement was not durably recorded."),{code:"ASSET_RESOURCE_RECORD_NOT_CONFIRMED"});
+              audit(db,user.id,"asset.private_download_measured","asset",authorized.asset.id,{
+                transferId:event.measurement.dimensions.transferId,
+                transferredBytes:event.measurement.dimensions.transferredBytes,
+                partial:event.measurement.dimensions.partial
+              },authorized.asset.projectId||null);
+              return result;
+            }
+          });
+          if(measured.error)audit(db,user.id,"asset.private_download_interrupted","asset",authorized.asset.id,{
+            transferId:measured.transferId,transferredBytes:measured.transferredBytes,
+            errorCode:measured.error.code||"STREAM_INTERRUPTED"
+          },authorized.asset.projectId||null);
+          return;
+        }catch(error){
+          if(!res.headersSent&&!res.destroyed){
+            const status=error.code==="CLOUD_ASSET_NOT_FOUND"||error.code==="CLOUD_ASSET_ACCESS_DENIED"?404:
+              error.code==="ASSET_RESOURCE_RECORD_NOT_CONFIRMED"||error.code==="ASSET_RESOURCE_RECORD_FAILED"?503:
+              error.code==="PRIVATE_ASSET_DOWNLOAD_ORIGIN_INVALID"?502:502;
+            fail(res,status,error.code||"PRIVATE_ASSET_DOWNLOAD_FAILED",
+              status===404?"Asset not found.":status===503?"Download accounting is temporarily unavailable.":"Private asset download could not be completed.");
+          }else if(!res.destroyed)res.destroy();
+          return;
+        }finally{if(timer)clearTimeout(timer);}
       }
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({

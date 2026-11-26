@@ -991,5 +991,14 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    throw error;
   }finally{await rm(directory,{recursive:true,force:true}).catch(()=>{});}
  }
- return Object.freeze({handle,uploadAsset,checkReadiness});
+ async function getPrivateAssetDownload({ownerId,assetId,expiresIn=60}={}){
+  if(!safeId(ownerId)||!safeId(assetId))throw Object.assign(new Error("A verified owner and asset identity are required."),{code:"CLOUD_ASSET_NOT_FOUND"});
+  if(!service.assets||typeof service.assets.createSignedUrl!=="function")throw Object.assign(new Error("Private asset storage is unavailable."),{code:"CLOUD_ASSET_DOWNLOAD_UNAVAILABLE"});
+  const signed=await service.assets.createSignedUrl({ownerId,assetId,expiresIn});
+  if(!signed?.asset||signed.asset.id!==assetId||signed.asset.ownerId!==ownerId||
+     !Number.isSafeInteger(signed.asset.size)||signed.asset.size<1||
+     !/^https:\/\//i.test(String(signed.url||"")))throw Object.assign(new Error("Private asset download authorization returned invalid metadata."),{code:"CLOUD_ASSET_DOWNLOAD_INVALID"});
+  return{asset:signed.asset,url:signed.url};
+ }
+ return Object.freeze({handle,uploadAsset,checkReadiness,getPrivateAssetDownload});
 }
