@@ -1,5 +1,10 @@
 name: Staging private asset round-trip acceptance
 on:
+  pull_request:
+    paths:
+      - "scripts/verify-private-storage-roundtrip.mjs"
+      - ".github/workflows/staging-private-storage-acceptance.yml"
+      - "docs/ops/STAGING-PRIVATE-STORAGE-ROUNDTRIP-BATCH-140.md"
   workflow_dispatch:
 permissions:
   contents: read
@@ -7,7 +12,18 @@ concurrency:
   group: executive-visuals-staging-private-storage-acceptance
   cancel-in-progress: false
 jobs:
+  static-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Check staging acceptance script syntax
+        run: node --check scripts/verify-private-storage-roundtrip.mjs
   private-storage-acceptance:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 10
