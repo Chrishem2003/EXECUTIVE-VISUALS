@@ -253,6 +253,12 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/luma-provider-files-postgres-integration.sql
       - name: Apply Gemini Omni workflow quote and approval constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115100000_google_omni_workflow_quote_approval.sql
+      - name: Apply durable Google video interaction ownership ledger
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_video_interactions.sql
+      - name: Apply Vertex Omni 1.2 model and private GCS URI constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261121100000_google_omni_vertex_interaction_records.sql
+      - name: Verify Google interaction ledger RLS, model allowlist and URI constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-video-interactions-postgres-integration.sql
       - name: Apply Luma Ray 3.2 workflow quote and enqueue constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115180000_luma_workflow_quote_and_enqueue.sql
       - name: Apply Luma source-video edit and reframe quote operations

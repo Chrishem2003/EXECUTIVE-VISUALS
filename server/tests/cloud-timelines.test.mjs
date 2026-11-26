@@ -74,7 +74,7 @@ test("lists active cloud timelines for an authorized project with bounded pagina
  const f=setup();await f.repo.create({ownerId:owner,projectId:project,name:"Episode master",timeline:document});
  const result=await f.repo.list({ownerId:owner,projectId:project,limit:500,offset:5});
  assert.equal(result.length,1);assert.equal(result[0].projectId,project);
- const listCall=f.calls.find(x=>x.url.includes("timelines?")&&x.options.method==="GET");
+ const listCall=f.calls.find(x=>x.url.includes("timelines?")&&x.url.includes("order=updated_at.desc")&&x.options.method==="GET");
  assert.ok(listCall.url.includes("project_id=eq."+project));assert.ok(listCall.url.includes("limit=100"));assert.ok(listCall.url.includes("offset=5"));
 });
 test("does not list cloud timelines when project read permission is denied",async()=>{
@@ -97,4 +97,27 @@ test("accepts valid adjacent dip-to-black transitions and rejects invalid transi
  const audio={...transitioned,tracks:[{...transitioned.tracks[0],kind:"audio"}]};
  const audioRepo=setup({assetLookup:async()=>({...asset,mediaType:"audio/mpeg"})});
  await assert.rejects(()=>audioRepo.repo.create({ownerId:owner,timeline:audio}),error=>error.code==="CLOUD_TIMELINE_INVALID");
+});
+
+
+test("replays cloud timeline creation by supplied ID without creating a duplicate",async()=>{
+ const f=setup();
+ const requested={...document,id:timelineId};
+ const first=await f.repo.create({ownerId:owner,projectId:project,name:"Generated assembly",timeline:requested});
+ const postCount=f.calls.filter(call=>call.options.method==="POST").length;
+ const replay=await f.repo.create({ownerId:owner,projectId:project,name:"Generated assembly",timeline:requested});
+ assert.equal(first.id,timelineId);
+ assert.equal(replay.id,first.id);
+ assert.equal(replay.revision,first.revision);
+ assert.equal(f.calls.filter(call=>call.options.method==="POST").length,postCount);
+});
+
+test("rejects reuse of an existing cloud timeline ID for different content",async()=>{
+ const f=setup();
+ await f.repo.create({ownerId:owner,projectId:project,name:"Generated assembly",timeline:{...document,id:timelineId}});
+ await assert.rejects(
+  ()=>f.repo.create({ownerId:owner,projectId:project,name:"Different assembly",timeline:{...document,id:timelineId}}),
+  error=>error.code==="CLOUD_TIMELINE_IDEMPOTENCY_CONFLICT"
+ );
+ assert.equal(f.calls.filter(call=>call.options.method==="POST").length,1);
 });

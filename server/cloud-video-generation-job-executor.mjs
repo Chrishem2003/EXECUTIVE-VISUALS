@@ -22,7 +22,8 @@ export async function executeCloudVideoGenerationJob({
   resolveActualCost,
   customerCredits,
   signal,
-  assertLease = async () => true
+  assertLease = async () => true,
+  isCancellationRequested = async () => false
 } = {}) {
   if (!job?.id || !job?.owner_id || job.job_type !== "video.generate" ||
       typeof workerId !== "string" || !workerId.trim() || workerId.length > 128) {
@@ -41,6 +42,7 @@ export async function executeCloudVideoGenerationJob({
   }
   const ensureLease = async () => {
     if (signal?.aborted || await assertLease() !== true) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
+    return true;
   };
   const input = jobInput(job);
   let selectedAdapter = adapter;
@@ -86,6 +88,7 @@ export async function executeCloudVideoGenerationJob({
   }
 
   if (state === "prepared") {
+    if (await isCancellationRequested()) throw fail("Video generation was cancelled before provider submission.", "VIDEO_JOB_CANCELLED_BEFORE_SUBMISSION");
     const providerInput = typeof selectedAdapter.prepareInput === "function"
       ? await selectedAdapter.prepareInput(input, { job })
       : input;
@@ -105,6 +108,7 @@ export async function executeCloudVideoGenerationJob({
         throw fail("Provider preflight quote is invalid or exceeds the approved reservation; no paid task was submitted.", "VIDEO_PREFLIGHT_REJECTED");
       }
     }
+    if (await isCancellationRequested()) throw fail("Video generation was cancelled before provider submission.", "VIDEO_JOB_CANCELLED_BEFORE_SUBMISSION");
     await ensureLease();
     const began = await ledger.begin(job.id, workerId, job.lease_token);
     if (!began) throw fail("Another worker owns the provider submission transition.", "VIDEO_SUBMISSION_IN_PROGRESS");
@@ -166,15 +170,29 @@ export async function executeCloudVideoGenerationJob({
   }
 
   if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
+  if (await isCancellationRequested()) {
+    if (typeof selectedAdapter.cancel !== "function") {
+      throw fail("Owner cancellation was requested but this provider cannot cancel the accepted task; retain the reservation for reconciliation.", "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED");
+    }
+    try {
+      await ensureLease();
+      await selectedAdapter.cancel(providerTaskId, { job, workerId, signal });
+    } catch {
+      throw fail("Provider cancellation could not be confirmed; retain the reservation for reconciliation.", "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED");
+    }
+  }
   let task;
   try {
-    task = await selectedAdapter.getStatus(providerTaskId, { job, workerId });
+    task = await selectedAdapter.getStatus(providerTaskId, { job, workerId, signal });
   } catch {
     const deferred = fail("Provider status is temporarily unavailable; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
     deferred.retryAfterSeconds = minimumPollSeconds;
     throw deferred;
   }
   if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
+  if (task.status === "succeeded" && await isCancellationRequested()) {
+    throw fail("Provider completed while owner cancellation was being processed; hold output and reconcile provider charges before finalization.", "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED");
+  }
   if (task.status === "canceled") {
     // Provider cancellation is not proof of a refund. Runway may still charge
     // when cancellation races with a transition to RUNNING, so retain the
@@ -182,6 +200,14 @@ export async function executeCloudVideoGenerationJob({
     throw fail("Provider task is canceled, but its final billable amount is not yet verified; retain the reservation for reconciliation.", "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED");
   }
   if (task.status === "failed") {
+    if (input.provider === "google" && input.model === "gemini-omni-1.2-flash") {
+      // Vertex Omni failures can still have billable input or partial output
+      // usage. Retain the approved reservation until usage is reconciled.
+      throw fail(
+        "Google Vertex Omni task failed; provider usage may still be billable. Keep the reservation for billing reconciliation.",
+        "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED"
+      );
+    }
     if (input.provider === "runway" && ["veo3.1", "veo3.1_fast"].includes(input.model)) {
       // Veo moderation failures may still incur provider charges. Do not
       // release the approved reservation until linked-workspace usage has
@@ -244,7 +270,7 @@ export async function executeCloudVideoGenerationJob({
     }
   }
   let ingested;
-  try { ingested = await selectedIngestOutputs({ job, input, task, providerTaskId }); }
+  try { ingested = await selectedIngestOutputs({ job, input, task, providerTaskId, signal, assertLease: ensureLease }); }
   catch (error) {
     const cleanupPending = error?.cleanupPending === true;
     const held = fail(

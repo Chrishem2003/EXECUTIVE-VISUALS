@@ -424,3 +424,80 @@ test("registers Kling 3.0 4K in the durable Runway worker allowlist",()=>{
  });
  assert.ok(worker.listSupported().includes("runway:kling3.0_4k"));
 });
+
+
+test("Vertex Omni 1.2 registration remains disabled unless all provider gates are explicit", () => {
+  const integration = {
+    adapter: {
+      provider: "google", model: "gemini-omni-1.2-flash",
+      async prepareInput() {}, async preflight() {}, async submit() {}, async getStatus() {}
+    },
+    async ingestOutputs() { return { assetIds: ["asset-vertex"] }; },
+    async resolveActualCost() { return { amount: 0.1, currency: "USD", evidenceReference: "test:vertex-usage" }; }
+  };
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, createAdapters: undefined,
+    providerDependencies: { googleOmniVertexIntegration: integration }
+  }), /cannot be injected while its explicit provider gates are disabled/);
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, createAdapters: undefined,
+    env: { ...env, GOOGLE_OMNI_VERTEX_VIDEO_ENABLED: "true" },
+    providerDependencies: { googleOmniVertexIntegration: integration }
+  }), /both shared Google and Vertex-specific remote execution gates/);
+});
+
+test("Vertex Omni 1.2 requires verified Google Cloud connection status and live verifier", () => {
+  const integration = {
+    adapter: {
+      provider: "google", model: "gemini-omni-1.2-flash",
+      async prepareInput() {}, async preflight() {}, async submit() {}, async getStatus() {}
+    },
+    async ingestOutputs() { return { assetIds: ["asset-vertex"] }; },
+    async resolveActualCost() { return { amount: 0.1, currency: "USD", evidenceReference: "test:vertex-usage" }; }
+  };
+  const gates = {
+    ...env,
+    GOOGLE_OMNI_VIDEO_ENABLED: "true", GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
+    GOOGLE_OMNI_VERTEX_VIDEO_ENABLED: "true", GOOGLE_OMNI_VERTEX_VIDEO_ALLOW_REMOTE: "true"
+  };
+  const verifier = async () => ({ connected: true, verified: true, connectionId: "vertex-connection-test" });
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, createAdapters: undefined, env: gates,
+    providerDependencies: { googleOmniVertexIntegration: integration, googleOmniVertexAssertConnection: verifier }
+  }), /external Google Cloud connection is complete and verified/);
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, createAdapters: undefined,
+    env: { ...gates, GOOGLE_OMNI_VERTEX_CONNECTION_STATUS: "connected" },
+    providerDependencies: { googleOmniVertexIntegration: integration }
+  }), /live Google Cloud connection verifier/);
+});
+
+test("registers Vertex Omni 1.2 as a separate model only behind all verified execution gates", () => {
+  const integration = {
+    adapter: {
+      provider: "google", model: "gemini-omni-1.2-flash",
+      async prepareInput() {}, async preflight() {}, async submit() {}, async getStatus() {}
+    },
+    async ingestOutputs() { return { assetIds: ["asset-vertex"] }; },
+    async resolveActualCost() { return { amount: 0.1, currency: "USD", evidenceReference: "test:vertex-usage" }; }
+  };
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base, createAdapters: undefined,
+    env: {
+      ...env,
+      GOOGLE_OMNI_VIDEO_ENABLED: "true", GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
+      GOOGLE_OMNI_VERTEX_VIDEO_ENABLED: "true", GOOGLE_OMNI_VERTEX_VIDEO_ALLOW_REMOTE: "true",
+      GOOGLE_OMNI_VERTEX_CONNECTION_STATUS: "connected"
+    },
+    providerDependencies: {
+      googleOmniVertexIntegration: integration,
+      googleOmniVertexAssertConnection: async ({ provider, model, operation }) => {
+        assert.equal(provider, "google");
+        assert.equal(model, "gemini-omni-1.2-flash");
+        assert.ok(operation);
+        return { connected: true, verified: true, connectionId: "vertex-connection-test" };
+      }
+    }
+  });
+  assert.ok(worker.listSupported().includes("google:gemini-omni-1.2-flash"));
+});

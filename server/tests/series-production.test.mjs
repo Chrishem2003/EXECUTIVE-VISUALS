@@ -191,17 +191,19 @@ console.log("Creative Director handoff verification passed: timed storyboard con
 
 
 const generatedShots=convertedEpisode.scenes.flatMap(scene=>scene.shots);
+const generatedJobIds=generatedShots.map((_,index)=>"523e4567-e89b-42d3-a456-"+String(426614174000+index).padStart(12,"0"));
 const generatedAssets=generatedShots.map((shot,shotIndex)=>({
- id:"asset-"+shotIndex,projectId:"cloud-project-1",mediaType:"video/mp4",
- metadata:{operation:"video.generate",approvalId:"approval-1",shotIndex,provider:"fal",model:"test-model"}
+ id:"323e4567-e89b-42d3-a456-"+String(426614174000+shotIndex).padStart(12,"0"),
+ projectId:"cloud-project-1",mediaType:"video/mp4",sha256:"a".repeat(64),
+ metadata:{operation:"video.generate",approvalId:"approval-1",shotIndex,jobId:generatedJobIds[shotIndex],provider:"fal",model:"test-model",providerTaskId:"provider-task-"+shotIndex}
 }));
-const matchedGenerated=matchGeneratedStoryboardAssets(generatedShots,[...generatedAssets].reverse(),"approval-1","cloud-project-1");
-assert.deepEqual(matchedGenerated.map(item=>item.asset.id),generatedShots.map((_,index)=>"asset-"+index));
+const matchedGenerated=matchGeneratedStoryboardAssets(generatedShots,[...generatedAssets].reverse(),"approval-1","cloud-project-1",generatedJobIds);
+assert.deepEqual(matchedGenerated.map(item=>item.asset.id),generatedShots.map((_,index)=>generatedAssets[index].id));
 assert.deepEqual(matchedGenerated.map(item=>item.shotIndex),generatedShots.map((_,index)=>index));
-assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.slice(1),"approval-1","cloud-project-1"),/incomplete/);
-assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,[...generatedAssets,{...generatedAssets[0],id:"duplicate-asset"}],"approval-1","cloud-project-1"),/More than one generated asset/);
-assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.map(asset=>({...asset,projectId:"other-project"})),"approval-1","cloud-project-1"),/different cloud project/);
-assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.map((asset,index)=>index===0?{...asset,metadata:{...asset.metadata,shotIndex:generatedShots.length}}:asset),"approval-1","cloud-project-1"),/invalid shot index/);
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.slice(1),"approval-1","cloud-project-1",generatedJobIds),/incomplete/);
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,[...generatedAssets,{...generatedAssets[0],id:"723e4567-e89b-42d3-a456-426614174000"}],"approval-1","cloud-project-1",generatedJobIds),/More than one generated asset/);
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.map(asset=>({...asset,projectId:"other-project"})),"approval-1","cloud-project-1",generatedJobIds),/different cloud project/);
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.map((asset,index)=>index===0?{...asset,metadata:{...asset.metadata,shotIndex:generatedShots.length}}:asset),"approval-1","cloud-project-1",generatedJobIds),/invalid shot index/);
 console.log("Generated storyboard asset matching verification passed: exact shot order, completeness, duplicate rejection and cloud-project isolation.");
 
 
@@ -216,10 +218,10 @@ for(const {shot,asset,shotIndex} of matchedGenerated){
   id:"generated-clip-"+shotIndex,assetId:asset.id,name:shot.framing||("Shot "+(shotIndex+1)),
   durationSeconds:shot.durationSeconds,frameRate:generatedTimeline.frameRate,
   startFrame:Math.round(marker.start.value/marker.start.rate*fps),
-  metadata:{source:"creative-storyboard",approvalId:"approval-1",shotIndex,cloudAssetId:asset.id,cloudSha256:"a".repeat(64)}
+  metadata:{source:"creative-storyboard",approvalId:"approval-1",shotIndex,jobId:asset.metadata?.jobId,cloudAssetId:asset.id,cloudSha256:asset.sha256}
  }));
 }
 assert.equal(generatedVideoTrack.clips.length,generatedShots.length);
 assert.equal(validateTimeline(generatedTimeline).valid,true);
-assert.deepEqual(generatedVideoTrack.clips.map(clip=>clip.assetId),generatedShots.map((_,index)=>"asset-"+index));
+assert.deepEqual(generatedVideoTrack.clips.map(clip=>clip.assetId),generatedAssets.map(asset=>asset.id));
 console.log("Generated storyboard timeline verification passed: validated video clips align with their original shot markers and approved cloud assets.");

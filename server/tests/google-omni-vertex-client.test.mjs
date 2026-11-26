@@ -46,6 +46,11 @@ test("Vertex client submits an approved Omni 1.2 interaction to the project-scop
   assert.equal(calls[0].body.model, "gemini-omni-1.2-flash");
   assert.equal(calls[0].body.store, true);
   assert.equal(calls[0].body.background, true);
+  assert.deepEqual(calls[0].body.labels, {
+    application: "executive_visuals", component: "video_generation",
+    provider: "google", model: "omni_1_2_flash"
+  });
+  assert.equal(JSON.stringify(calls[0].body.labels).includes(jobId), false);
   assert.equal(Array.isArray(calls[0].body.response_format), true);
   assert.equal(calls[0].body.response_format.length, 1);
   assert.equal(calls[0].body.response_format[0].delivery, "uri");
@@ -71,8 +76,7 @@ test("Vertex client retrieves only the requested model interaction", async () =>
   const result = await client.getInteractionForIngestion(interactionId, context);
   assert.equal(result.id, interactionId);
   assert.equal(result.status, "completed");
-  assert.equal(calls[0], "https://aiplatform.googleapis.com/v1beta1/projects/" + projectId +
-    "/locations/global/interactions/" + interactionId);
+  assert.equal(calls[0], "https://aiplatform.googleapis.com/v1beta1/projects/" + projectId + "/locations/global/interactions/" + interactionId);
 });
 
 test("Vertex client rejects an unapproved plan before obtaining credentials or calling Google", async () => {
@@ -149,4 +153,34 @@ test("Vertex client rejects requests without an explicit video task", async () =
     ...plan, payload: { ...plan.payload, generation_config: {} }
   }, context, { onInteractionCreated: async () => {} }),
   error => error.code === "GOOGLE_VERTEX_PLAN_INVALID");
+});
+
+
+test("Vertex client uses the documented interactions cancel endpoint with an empty request body", async () => {
+  let sent;
+  const client = createGoogleOmniVertexClient({
+    projectId, outputBucket: bucket, authClient,
+    fetchImpl: async (url, options) => {
+      sent = { url: String(url), options };
+      return new Response(null, { status: 200 });
+    }
+  });
+  const result = await client.cancelInteraction(interactionId, context);
+  assert.equal(result.status, "cancel_requested");
+  assert.equal(sent.url, "https://aiplatform.googleapis.com/v1/projects/" + projectId + "/locations/global/interactions/" + interactionId + "/cancel");
+  assert.equal(sent.options.method, "POST");
+  assert.equal(sent.options.body, undefined);
+});
+
+test("Vertex client refuses polling and cancellation without an authorized job scope", async () => {
+  let requests = 0;
+  const client = createGoogleOmniVertexClient({
+    projectId, outputBucket: bucket, authClient,
+    fetchImpl: async () => { requests++; throw new Error("must not call"); }
+  });
+  await assert.rejects(() => client.getInteractionForIngestion(interactionId, { ownerId }), error =>
+    error.code === "GOOGLE_VERTEX_CONTEXT_INVALID");
+  await assert.rejects(() => client.cancelInteraction(interactionId, { jobId }), error =>
+    error.code === "GOOGLE_VERTEX_CONTEXT_INVALID");
+  assert.equal(requests, 0);
 });

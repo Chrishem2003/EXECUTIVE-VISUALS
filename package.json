@@ -40,7 +40,7 @@
     "verify:ai-workflow": "node scripts/verify-ai-workflow.mjs",
     "start:cloud-worker": "node server/cloud-worker-process.mjs",
     "start:neon-staging-worker": "node server/neon-staging-worker-process.mjs",
-    "verify:series": "node --experimental-strip-types --test server/tests/series-production.test.mjs",
+    "verify:series": "node --experimental-strip-types --test server/tests/series-production.test.mjs server/tests/series-production-handoff.test.mjs",
     "verify:shot-readiness": "node --experimental-strip-types --test server/tests/series-production.test.mjs",
     "verify:ai-upscale": "node --test server/tests/ai-upscale-engine.test.mjs",
     "verify:shot-continuity": "node --test server/tests/shot-continuity.test.mjs",

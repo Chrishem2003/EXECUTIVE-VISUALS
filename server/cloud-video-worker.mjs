@@ -58,12 +58,23 @@ export async function runCloudVideoWorkerCycle({
   let leaseLost = false;
   let heartbeatPending = false;
   let heartbeatError = null;
+  let ownerCancellationRequested = job.cancel_requested_at !== null && job.cancel_requested_at !== undefined;
   const assertLease = async () => {
     if (leaseLost || controller.signal.aborted) throw Object.assign(new Error("Cloud video worker lease was lost."), { code: "VIDEO_WORKER_LEASE_LOST" });
     let valid = false;
     try { valid = await queue.assertLease(job.id, workerId, job.lease_token); } catch {}
     if (!valid) { leaseLost = true; controller.abort(new Error("Cloud video worker lease was lost.")); onEvent({ type: "video.job.lease_lost", jobId: job.id, workerId }); throw Object.assign(new Error("Cloud video worker lease verification failed."), { code: "VIDEO_WORKER_LEASE_LOST" }); }
     return true;
+  };
+  const isCancellationRequested = async () => {
+    if (ownerCancellationRequested || typeof queue.cancellationRequested !== "function") return ownerCancellationRequested;
+    await assertLease();
+    const requested = await queue.cancellationRequested(job.id, workerId, job.lease_token);
+    if (requested && !ownerCancellationRequested) {
+      ownerCancellationRequested = true;
+      onEvent({ type: "video.job.cancellation_requested", jobId: job.id, workerId });
+    }
+    return ownerCancellationRequested;
   };
   onEvent({ type: "video.job.started", jobId: job.id, workerId });
 
@@ -75,6 +86,8 @@ export async function runCloudVideoWorkerCycle({
         leaseLost = true;
         controller.abort(new Error("Cloud video worker lease was lost."));
         onEvent({ type: "video.job.lease_lost", jobId: job.id, workerId });
+      } else {
+        await isCancellationRequested();
       }
     } catch (error) {
       heartbeatError = error;
@@ -89,7 +102,8 @@ export async function runCloudVideoWorkerCycle({
 
   try {
     await assertLease();
-    const output = await execute({ job, workerId, signal: controller.signal, assertLease });
+    await isCancellationRequested();
+    const output = await execute({ job, workerId, signal: controller.signal, assertLease, isCancellationRequested });
     if (leaseLost || controller.signal.aborted) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     if (!output || !Array.isArray(output.assetIds) || typeof output.actualAmount !== "number" ||
         !Number.isFinite(output.actualAmount) || typeof output.currency !== "string") {
@@ -114,6 +128,14 @@ export async function runCloudVideoWorkerCycle({
     if (leaseLost || controller.signal.aborted) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     const code = typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_VIDEO_JOB_FAILED";
     const message = String(error?.message || "Cloud video generation failed.").slice(0, 500);
+    if (code === "VIDEO_JOB_CANCELLED_BEFORE_SUBMISSION") {
+      await assertLease();
+      const outcome = await enqueue.finish({ jobId: job.id, workerId, leaseToken: job.lease_token, status: "cancelled", error: { code, message } });
+      const finished = outcome === true || outcome?.finished === true;
+      if (!finished) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
+      onEvent({ type: "video.job.cancelled", jobId: job.id, workerId, beforeSubmission: true });
+      return { claimed: true, finished: true, status: outcome?.status || "cancelled", jobId: job.id, reason: code };
+    }
     if (code === "VIDEO_PROVIDER_POLL_DEFERRED" || code === "VIDEO_PROVIDER_SUBMISSION_RETRYABLE") {
       const retryBaseSeconds = Number.isSafeInteger(error?.retryAfterSeconds) && error.retryAfterSeconds >= 5 && error.retryAfterSeconds <= 900
         ? error.retryAfterSeconds : deferSeconds;
@@ -174,9 +196,9 @@ export function createCloudVideoWorker({
     async runCycle({ leaseSeconds = 90, heartbeatIntervalMs = 15000, onEvent = () => {} } = {}) {
       return runCloudVideoWorkerCycle({
         queue, enqueue, workerId, leaseSeconds, heartbeatIntervalMs, deferSeconds, onEvent,
-        execute: ({ job, workerId: activeWorker, signal, assertLease }) => executeCloudVideoGenerationJob({
+        execute: ({ job, workerId: activeWorker, signal, assertLease, isCancellationRequested }) => executeCloudVideoGenerationJob({
           job, workerId: activeWorker, ledger, adapter, resolveAdapter, ingestOutputs, resolveActualCost,
-          customerCredits, signal, assertLease
+          customerCredits, signal, assertLease, isCancellationRequested
         })
       });
     },

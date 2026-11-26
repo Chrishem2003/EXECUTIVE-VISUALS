@@ -25,7 +25,7 @@ function assetRepo({ failOn = -1, cleanupFails = false, cleanupPending = false }
       if (created.length === failOn) throw new Error("storage registration failed");
       const asset = {
         id: `323e4567-e89b-42d3-a456-42661417400${created.length + 1}`,
-        ownerId: value.ownerId, projectId: value.projectId, mediaType: value.mediaType, size: 1024, value
+        ownerId: value.ownerId, projectId: value.projectId, mediaType: value.mediaType, size: 1024, metadata: value.metadata, value
       };
       created.push(asset);
       return asset;
@@ -50,7 +50,7 @@ test("downloads only from allowlisted HTTPS hosts, validates, and registers priv
   });
   const result = await ingest.ingest({
     job: { id: "job-1", owner_id: ownerId, project_id: projectId },
-    task, input: { provider: "runway", model: "gen4.5" }
+    task, input: { provider: "runway", model: "gen4.5", requestHash: "a".repeat(64) }
   });
   assert.equal(result.assetIds.length, 1);
   assert.equal(result.assetIds[0], assets.created[0].id);
@@ -58,6 +58,8 @@ test("downloads only from allowlisted HTTPS hosts, validates, and registers priv
   assert.equal(assets.created[0].value.projectId, projectId);
   assert.equal(assets.created[0].value.metadata.validated, true);
   assert.equal(assets.created[0].value.metadata.outputIndex, 0);
+  assert.equal(assets.created[0].value.metadata.jobId, "job-1");
+  assert.equal(assets.created[0].value.metadata.requestHash, "a".repeat(64));
   assert.equal(calls.length, 1);
   assert.equal(calls[0].address.address, "93.184.216.34");
 });
@@ -66,7 +68,7 @@ test("reuses the existing private asset for a repeated provider task and output 
   const assets = assetRepo();
   const ingest = createPrivateVideoOutputIngestor({ ...config, assets });
   const request = {
-    job: { owner_id: ownerId, project_id: projectId },
+    job: { id: "job-1", owner_id: ownerId, project_id: projectId },
     task, input: { provider: "runway", model: "gen4.5" }
   };
   const first = await ingest.ingest(request);
@@ -80,7 +82,7 @@ test("does not delete a previously registered idempotent asset when a later outp
   const assets = assetRepo({ failOn: 1 });
   const ingest = createPrivateVideoOutputIngestor({ ...config, assets });
   const firstRequest = {
-    job: { owner_id: ownerId, project_id: projectId },
+    job: { id: "job-1", owner_id: ownerId, project_id: projectId },
     task, input: { provider: "runway", model: "gen4.5" }
   };
   const first = await ingest.ingest(firstRequest);
@@ -106,7 +108,7 @@ test("rejects non-allowlisted, non-HTTPS, credentialed, and nonstandard-port URL
     "https://cdn.example.test:8443/file.mp4"
   ]) {
     await assert.rejects(ingest.ingest({
-      job: { owner_id: ownerId, project_id: projectId },
+      job: { id: "job-1", owner_id: ownerId, project_id: projectId },
       task: { ...task, outputUrls: [url] }, input: {}
     }), error => error.code === "VIDEO_OUTPUT_URL_REJECTED");
   }
@@ -132,7 +134,7 @@ test("rejects private, loopback, link-local, and mixed public/private DNS answer
       download: async () => { throw new Error("must not download"); }
     });
     await assert.rejects(ingest.ingest({
-      job: { owner_id: ownerId, project_id: projectId }, task, input: {}
+      job: { id: "job-1", owner_id: ownerId, project_id: projectId }, task, input: {}
     }), error => error.code === "VIDEO_OUTPUT_HOST_NOT_PUBLIC");
   }
 });
@@ -145,7 +147,7 @@ test("accepts generic binary MIME only when the media validator identifies a rea
     validateMedia: async () => ({ valid: true, mediaType: "video/mp4" })
   });
   const result = await ingest.ingest({
-    job: { owner_id: ownerId, project_id: projectId }, task, input: {}
+    job: { id: "job-1", owner_id: ownerId, project_id: projectId }, task, input: {}
   });
   assert.equal(result.assetIds.length, 1);
 });
@@ -157,7 +159,7 @@ test("fails closed when media validation rejects content even when HTTP MIME loo
     validateMedia: async () => ({ valid: false, mediaType: "video/mp4" })
   });
   await assert.rejects(ingest.ingest({
-    job: { owner_id: ownerId, project_id: projectId }, task, input: {}
+    job: { id: "job-1", owner_id: ownerId, project_id: projectId }, task, input: {}
   }), error => error.code === "VIDEO_OUTPUT_MEDIA_INVALID");
   assert.equal(assets.created.length, 0);
 });
@@ -169,7 +171,7 @@ test("rolls back previously registered private assets if a later output fails", 
     download: async () => ({ size: 1024, contentType: "video/mp4" })
   });
   await assert.rejects(ingest.ingest({
-    job: { owner_id: ownerId, project_id: projectId },
+    job: { id: "job-1", owner_id: ownerId, project_id: projectId },
     task: { ...task, outputUrls: [task.outputUrls[0], task.outputUrls[0]] }, input: {}
   }), /storage registration failed/);
   assert.equal(assets.removed.length, 1);
@@ -183,7 +185,7 @@ test("reports cleanup pending if rollback cannot remove a previously registered 
     download: async () => ({ size: 1024, contentType: "video/mp4" })
   });
   await assert.rejects(ingest.ingest({
-    job: { owner_id: ownerId, project_id: projectId },
+    job: { id: "job-1", owner_id: ownerId, project_id: projectId },
     task: { ...task, outputUrls: [task.outputUrls[0], task.outputUrls[0]] }, input: {}
   }), error => error.cleanupPending === true);
 });
@@ -195,7 +197,7 @@ test("propagates a soft-delete receipt when private object removal remains pendi
     download: async () => ({ size: 1024, contentType: "video/mp4" })
   });
   await assert.rejects(ingest.ingest({
-    job: { owner_id: ownerId, project_id: projectId },
+    job: { id: "job-1", owner_id: ownerId, project_id: projectId },
     task: { ...task, outputUrls: [task.outputUrls[0], task.outputUrls[0]] }, input: {}
   }), error => error.cleanupPending === true);
 });
@@ -215,11 +217,11 @@ test("enforces job ownership, output count and bounded response sizes", async ()
   });
   await assert.rejects(ingest.ingest({ job: { owner_id: "bad" }, task, input: {} }), error => error.code === "VIDEO_OUTPUT_JOB_SCOPE_INVALID");
   await assert.rejects(ingest.ingest({
-    job: { owner_id: ownerId, project_id: projectId },
+    job: { id: "job-1", owner_id: ownerId, project_id: projectId },
     task: { ...task, outputUrls: Array(11).fill(task.outputUrls[0]) }, input: {}
   }), error => error.code === "VIDEO_OUTPUT_COLLECTION_INVALID");
   await assert.rejects(ingest.ingest({
-    job: { owner_id: ownerId, project_id: projectId }, task, input: {}
+    job: { id: "job-1", owner_id: ownerId, project_id: projectId }, task, input: {}
   }), error => error.code === "VIDEO_OUTPUT_DOWNLOAD_INVALID");
 });
 
@@ -282,4 +284,20 @@ test("FFprobe validator fails closed when the binary is missing or output is mal
     execFileImpl(_command, _args, _options, callback) { callback(null, "not-json", ""); }
   });
   assert.equal((await malformed({ path: "/tmp/output", contentType: "video/mp4", size: 1024 })).reason, "FFPROBE_INVALID_JSON");
+});
+
+test("rejects idempotent asset reuse when durable job lineage no longer matches", async () => {
+  const assets = assetRepo();
+  const ingest = createPrivateVideoOutputIngestor({ ...config, assets });
+  const request = {
+    job: { id: "job-1", owner_id: ownerId, project_id: projectId },
+    task, input: { provider: "runway", model: "gen4.5", requestHash: "a".repeat(64) }
+  };
+  await ingest.ingest(request);
+  assets.created[0].value.metadata.jobId = "different-job";
+  await assert.rejects(
+    ingest.ingest(request),
+    error => error.code === "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID"
+  );
+  assert.equal(assets.created.length, 1);
 });

@@ -19,7 +19,7 @@ function row(overrides = {}) {
     ...overrides
   };
 }
-function harness(handler) {
+function harness(handler, repositoryOptions = {}) {
   const calls = [];
   const repository = createGoogleVideoInteractionRepository({
     url: "https://project.supabase.co",
@@ -28,7 +28,8 @@ function harness(handler) {
     fetchImpl: async (url, options) => {
       calls.push({ url: String(url), options });
       return handler(url, options);
-    }
+    },
+    ...repositoryOptions
   });
   return { repository, calls };
 }
@@ -116,6 +117,88 @@ test("rejects malformed IDs, scope, model, status and expiry before network call
   await assert.rejects(() => h.repository.recordInteraction({
     provider: "google", model: "gemini-omni-1.1-flash", ...scope,
     requestHash, state: "running", expiresAt: "not-a-date"
+  }));
+  assert.equal(h.calls.length, 0);
+});
+
+
+test("records Vertex Omni 1.2 GCS output locations only with an explicit model allowlist", async () => {
+  const outputUri = "gs://executive-visuals-test/executive-visuals/omni-12/" + jobId + "/" + requestHash + "/";
+  const h = harness(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    assert.equal(body.model, "gemini-omni-1.2-flash");
+    assert.equal(body.output_uri, outputUri);
+    return response(201, [row({ model: "gemini-omni-1.2-flash", output_uri: outputUri })]);
+  }, { allowedModels: ["gemini-omni-1.2-flash"] });
+  const result = await h.repository.recordInteraction({
+    provider: "google", model: "gemini-omni-1.2-flash",
+    ...scope, requestHash, state: "running", expiresAt: now, outputUri
+  });
+  assert.equal(result.model, "gemini-omni-1.2-flash");
+  assert.equal(result.outputUri, outputUri);
+});
+
+test("Vertex Omni 1.2 repository rejects arbitrary GCS paths and 1.1 model records", async () => {
+  const h = harness(async () => response(201, [row()]), {
+    allowedModels: ["gemini-omni-1.2-flash"]
+  });
+  await assert.rejects(() => h.repository.recordInteraction({
+    provider: "google", model: "gemini-omni-1.2-flash",
+    ...scope, requestHash, state: "running", expiresAt: now,
+    outputUri: "gs://attacker-bucket/public/output.mp4"
+  }));
+  await assert.rejects(() => h.repository.recordInteraction({
+    provider: "google", model: "gemini-omni-1.1-flash",
+    ...scope, requestHash, state: "running", expiresAt: now
+  }));
+  assert.equal(h.calls.length, 0);
+});
+
+
+test("accepts a completed Vertex output object only inside its job/request GCS prefix", async () => {
+  const outputUri = "gs://executive-visuals-test/executive-visuals/omni-12/" + jobId + "/" + requestHash + "/finished-video.mp4";
+  const h = harness(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    assert.equal(body.output_uri, outputUri);
+    return response(201, [row({ model: "gemini-omni-1.2-flash", output_uri: outputUri })]);
+  }, { allowedModels: ["gemini-omni-1.2-flash"] });
+  const result = await h.repository.recordInteraction({
+    provider: "google", model: "gemini-omni-1.2-flash",
+    ...scope, requestHash, state: "succeeded", expiresAt: now, outputUri
+  });
+  assert.equal(result.outputUri, outputUri);
+});
+
+
+test("repository validates output URI contract against the record model, not the whole allowlist", async () => {
+  const h = harness(async () => response(201, [row()]), {
+    allowedModels: ["gemini-omni-1.1-flash", "gemini-omni-1.2-flash"]
+  });
+  await assert.rejects(() => h.repository.recordInteraction({
+    provider: "google", model: "gemini-omni-1.2-flash", ...scope,
+    requestHash, state: "running", expiresAt: now,
+    outputUri: "https://generativelanguage.googleapis.com/v1beta/files/legacy-file"
+  }));
+  assert.equal(h.calls.length, 0);
+});
+
+test("repository refuses to decode a Vertex row carrying a legacy Files API URI", async () => {
+  const h = harness(async () => response(200, [row({
+    model: "gemini-omni-1.2-flash",
+    output_uri: "https://generativelanguage.googleapis.com/v1beta/files/legacy-file"
+  })]), {
+    allowedModels: ["gemini-omni-1.1-flash", "gemini-omni-1.2-flash"]
+  });
+  await assert.rejects(() => h.repository.findInteraction(scope));
+});
+
+test("repository requires an explicit model when updating a multi-model interaction allowlist", async () => {
+  const h = harness(async () => response(200, [row()]), {
+    allowedModels: ["gemini-omni-1.1-flash", "gemini-omni-1.2-flash"]
+  });
+  await assert.rejects(() => h.repository.updateInteraction({
+    ...scope, state: "succeeded",
+    outputUri: "gs://executive-visuals-test/executive-visuals/omni-12/" + jobId + "/" + requestHash + "/video.mp4"
   }));
   assert.equal(h.calls.length, 0);
 });
