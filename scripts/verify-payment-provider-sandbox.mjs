@@ -29,6 +29,25 @@ function config(env){
   pesapalSecret:env.PESAPAL_SANDBOX_CONSUMER_SECRET,ipnId:env.PESAPAL_IPN_ID};
 }
 
+async function readBounded(response){
+ const reader=response.body?.getReader?.();
+ if(!reader){
+  const raw=await response.text();
+  if(Buffer.byteLength(raw)>65536)throw fail("PAYMENT_PROVIDER_RESPONSE_TOO_LARGE","Provider response exceeded the safety limit.");
+  return raw;
+ }
+ const chunks=[];let size=0;
+ try{
+  while(true){
+   const {done,value}=await reader.read();if(done)break;
+   size+=value.byteLength;
+   if(size>65536){await reader.cancel().catch(()=>{});throw fail("PAYMENT_PROVIDER_RESPONSE_TOO_LARGE","Provider response exceeded the safety limit.");}
+   chunks.push(Buffer.from(value));
+  }
+ }finally{reader.releaseLock?.();}
+ return Buffer.concat(chunks).toString("utf8");
+}
+
 async function request(fetchImpl,url,{method="GET",headers={},body=null,provider}={}){
  let response;
  try{
