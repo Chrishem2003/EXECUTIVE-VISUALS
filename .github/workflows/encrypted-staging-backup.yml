@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - "scripts/create-encrypted-staging-backup.mjs"
+      - "scripts/verify-encrypted-staging-backup.mjs"
+      - "server/tests/encrypted-staging-backup.test.mjs"
       - ".github/workflows/encrypted-staging-backup.yml"
   workflow_dispatch:
 permissions:
@@ -32,12 +34,20 @@ jobs:
           sudo apt-get install -y postgresql-client
       - name: Export and encrypt staging database and private objects
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_STAGING_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_STAGING_SECRET_KEY }}
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
-          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.STAGING_BACKUP_ENCRYPTION_PASSPHRASE }}
+          SUPABASE_STAGING_URL: ${{ secrets.SUPABASE_STAGING_URL }}
+          SUPABASE_STAGING_SECRET_KEY: ${{ secrets.SUPABASE_STAGING_SECRET_KEY }}
+          SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+          STAGING_BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.STAGING_BACKUP_ENCRYPTION_PASSPHRASE }}
           STORAGE_BACKUP_BUCKET: executive-visuals-media
         run: node scripts/create-encrypted-staging-backup.mjs
+      - name: Decrypt and verify backup archive, database dump and private object checksums
+        env:
+          STAGING_BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.STAGING_BACKUP_ENCRYPTION_PASSPHRASE }}
+          STORAGE_BACKUP_BUCKET: executive-visuals-media
+        run: |
+          BACKUP_INPUT_FILE="$(find artifacts -maxdepth 1 -type f -name '*.evb' -print -quit)"
+          test -n "$BACKUP_INPUT_FILE"
+          BACKUP_INPUT_FILE="$BACKUP_INPUT_FILE" node scripts/verify-encrypted-staging-backup.mjs
       - name: Store encrypted artifact temporarily
         uses: actions/upload-artifact@v4
         with:
