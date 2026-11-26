@@ -1,0 +1,24 @@
+name: Staging private asset round-trip acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: executive-visuals-staging-private-storage-acceptance
+  cancel-in-progress: false
+jobs:
+  private-storage-acceptance:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 10
+    env:
+      SUPABASE_STAGING_URL: ${{ secrets.SUPABASE_STAGING_URL }}
+      SUPABASE_STAGING_SECRET_KEY: ${{ secrets.SUPABASE_STAGING_SECRET_KEY }}
+      STORAGE_TEST_OWNER_ID: ${{ secrets.STORAGE_TEST_OWNER_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Verify private upload, signed download, tenant isolation and cleanup
+        run: node scripts/verify-private-storage-roundtrip.mjs
