@@ -1,0 +1,32 @@
+name: Paddle Pesapal staging database acceptance
+on:
+  pull_request:
+    paths:
+      - "scripts/paddle-pesapal-staging-acceptance.sql"
+      - ".github/workflows/paddle-pesapal-staging-acceptance.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: test -s scripts/paddle-pesapal-staging-acceptance.sql
+  staging-database:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Verify provider schema, RLS, RPC permissions and inactive pricing
+        env:
+          SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: |
+          test -n "$SUPABASE_STAGING_DB_URL"
+          psql "$SUPABASE_STAGING_DB_URL" -v ON_ERROR_STOP=1 -f scripts/paddle-pesapal-staging-acceptance.sql
