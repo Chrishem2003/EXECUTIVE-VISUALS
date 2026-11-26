@@ -1190,6 +1190,56 @@ export function createAppServer() {
         else{fail(res,405,"B2_MULTIPART_METHOD_NOT_ALLOWED","This upload session endpoint does not support the requested method.");return;}
         send(res,result.status,result.body,cors);return;
       }
+      const privateAssetDownloadMatch=path.match(/^\\/api\\/cloud\\/assets\\/([0-9a-f-]{36})$/i);
+      if(privateAssetEgressProxyEnabled&&privateAssetDownloadMatch&&req.method==="GET"){
+        if(!rateAllowed("private-asset-download:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many private asset downloads. Try again shortly.");return;}
+        const range=String(req.headers.range||"");
+        if(range&&(!/^bytes=(?:\\d+-\\d*|-\\d+)$/.test(range)||range.length>128)){fail(res,416,"ASSET_RANGE_INVALID","Only one valid byte range may be requested.");return;}
+        let controller=null,timer=null;
+        try{
+          const authorized=await cloudTimelineApi.getPrivateAssetDownload({ownerId:user.id,assetId:privateAssetDownloadMatch[1],expiresIn:60});
+          const signedUrl=new URL(authorized.url);
+          if(!CLOUD_MEDIA_ORIGIN||signedUrl.protocol!=="https:"||signedUrl.origin!==CLOUD_MEDIA_ORIGIN||signedUrl.username||signedUrl.password)
+            throw Object.assign(new Error("Private storage returned an untrusted download URL."),{code:"PRIVATE_ASSET_DOWNLOAD_ORIGIN_INVALID"});
+          controller=new AbortController();timer=setTimeout(()=>controller.abort(),120000);
+          const headers={};if(range)headers.range=range;
+          const upstream=await fetch(signedUrl,{method:"GET",headers,redirect:"error",signal:controller.signal});
+          if(upstream.status===416){
+            const contentRange=upstream.headers.get("content-range");
+            res.writeHead(416,{"content-range":contentRange||"bytes */"+authorized.asset.size,"cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+          }
+          res.setHeader("cache-control","private, no-store");
+          res.setHeader("x-content-type-options","nosniff");
+          res.setHeader("content-disposition","attachment; filename*=UTF-8''"+encodeURIComponent(authorized.asset.name||"asset"));
+          const measured=await pipeMeasuredPrivateAssetDownload({
+            upstream,response:res,asset:authorized.asset,
+            record:async event=>{
+              const result=await assetResourceRecorder.record(event);
+              if(result?.recorded!==true)throw Object.assign(new Error("Private download measurement was not durably recorded."),{code:"ASSET_RESOURCE_RECORD_NOT_CONFIRMED"});
+              audit(db,user.id,"asset.private_download_measured","asset",authorized.asset.id,{
+                transferId:event.measurement.dimensions.transferId,
+                transferredBytes:event.measurement.dimensions.transferredBytes,
+                partial:event.measurement.dimensions.partial
+              },authorized.asset.projectId||null);
+              return result;
+            }
+          });
+          if(measured.error)audit(db,user.id,"asset.private_download_interrupted","asset",authorized.asset.id,{
+            transferId:measured.transferId,transferredBytes:measured.transferredBytes,
+            errorCode:measured.error.code||"STREAM_INTERRUPTED"
+          },authorized.asset.projectId||null);
+          return;
+        }catch(error){
+          if(!res.headersSent&&!res.destroyed){
+            const status=error.code==="CLOUD_ASSET_NOT_FOUND"||error.code==="CLOUD_ASSET_ACCESS_DENIED"?404:
+              error.code==="ASSET_RESOURCE_RECORD_NOT_CONFIRMED"||error.code==="ASSET_RESOURCE_RECORD_FAILED"?503:
+              error.code==="PRIVATE_ASSET_DOWNLOAD_ORIGIN_INVALID"?502:502;
+            fail(res,status,error.code||"PRIVATE_ASSET_DOWNLOAD_FAILED",
+              status===404?"Asset not found.":status===503?"Download accounting is temporarily unavailable.":"Private asset download could not be completed.");
+          }else if(!res.destroyed)res.destroy();
+          return;
+        }finally{if(timer)clearTimeout(timer);}
+      }
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({
           req,ownerId:user.id,projectId:String(req.headers["x-project-id"]||""),
