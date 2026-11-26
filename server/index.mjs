@@ -35,6 +35,7 @@ import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { pipeMeasuredPrivateAssetDownload } from "./asset-egress-stream.mjs";
 import { createAssetResourceEventRecorder } from "./asset-resource-event-recorder.mjs";
+import { createAssetEgressAttemptJournal } from "./asset-egress-attempt-journal.mjs";
 import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
 import { resolveCloudMediaMaxUploadBytes } from "./cloud-upload-limits.mjs";
 import { buildCloudMediaHealth } from "./cloud-media-health.mjs";
@@ -329,6 +330,19 @@ const assetResourceRecorder=privateAssetEgressProxyEnabled?createAssetResourceEv
   const response=await fetch(process.env.SUPABASE_URL+"/rest/v1/rpc/"+name,{method:"POST",headers,body:JSON.stringify(args)});
   const raw=await response.text();
   if(!response.ok)throw Object.assign(new Error("Asset resource evidence could not be persisted (HTTP "+response.status+")."),{code:"ASSET_RESOURCE_RECORD_FAILED",status:response.status});
+  return raw?JSON.parse(raw):null;
+ }
+}):null;
+
+const assetEgressAttemptJournal=privateAssetEgressProxyEnabled?createAssetEgressAttemptJournal({
+ actorId:assetResourceFinanceActorId,enabled:true,
+ rpc:async(name,args)=>{
+  if(!["begin_asset_egress_transfer_attempt","finish_asset_egress_transfer_attempt"].includes(name))throw new Error("Unexpected private egress attempt RPC.");
+  const headers={apikey:SUPABASE_SERVER_KEY,"content-type":"application/json","content-profile":"executive_visuals",accept:"application/json"};
+  if(!String(SUPABASE_SERVER_KEY).startsWith("sb_secret_"))headers.authorization="Bearer "+SUPABASE_SERVER_KEY;
+  const response=await fetch(process.env.SUPABASE_URL+"/rest/v1/rpc/"+name,{method:"POST",headers,body:JSON.stringify(args)});
+  const raw=await response.text();
+  if(!response.ok)throw Object.assign(new Error("Private egress attempt journal could not be persisted (HTTP "+response.status+")."),{code:"ASSET_EGRESS_JOURNAL_FAILED",status:response.status});
   return raw?JSON.parse(raw):null;
  }
 }):null;
@@ -1204,12 +1218,15 @@ export function createAppServer() {
         if(!rateAllowed("private-asset-download:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many private asset downloads. Try again shortly.");return;}
         const range=String(req.headers.range||"");
         if(range&&(!/^bytes=(?:\d+-\d*|-\d+)$/.test(range)||range.length>128)){fail(res,416,"ASSET_RANGE_INVALID","Only one valid byte range may be requested.");return;}
-        let controller=null,timer=null;
+        let controller=null,timer=null,transferId=randomUUID(),attemptStarted=false,attemptFinalized=false;
         try{
           const authorized=await cloudTimelineApi.getPrivateAssetDownload({ownerId:user.id,assetId:privateAssetDownloadMatch[1],expiresIn:60});
           const signedUrl=new URL(authorized.url);
           if(!CLOUD_MEDIA_ORIGIN||signedUrl.protocol!=="https:"||signedUrl.origin!==CLOUD_MEDIA_ORIGIN||signedUrl.username||signedUrl.password)
             throw Object.assign(new Error("Private storage returned an untrusted download URL."),{code:"PRIVATE_ASSET_DOWNLOAD_ORIGIN_INVALID"});
+          const attempt=await assetEgressAttemptJournal.begin({asset:authorized.asset,transferId});
+          if(attempt?.recorded!==true)throw Object.assign(new Error("Private download attempt could not be journaled."),{code:"ASSET_EGRESS_JOURNAL_NOT_CONFIRMED"});
+          attemptStarted=true;
           controller=new AbortController();timer=setTimeout(()=>controller.abort(),120000);
           const headers={};if(range)headers.range=range;
           const upstream=await fetch(signedUrl,{method:"GET",headers,redirect:"error",signal:controller.signal});
@@ -1221,16 +1238,36 @@ export function createAppServer() {
           res.setHeader("x-content-type-options","nosniff");
           res.setHeader("content-disposition","attachment; filename*=UTF-8''"+encodeURIComponent(authorized.asset.name||"asset"));
           const measured=await pipeMeasuredPrivateAssetDownload({
-            upstream,response:res,asset:authorized.asset,
+            upstream,response:res,asset:authorized.asset,transferId,
             record:async event=>{
-              const result=await assetResourceRecorder.record(event);
-              if(result?.recorded!==true)throw Object.assign(new Error("Private download measurement was not durably recorded."),{code:"ASSET_RESOURCE_RECORD_NOT_CONFIRMED"});
-              audit(db,user.id,"asset.private_download_measured","asset",authorized.asset.id,{
+              try{
+                const result=await assetResourceRecorder.record(event);
+                if(result?.recorded!==true)throw Object.assign(new Error("Private download measurement was not durably recorded."),{code:"ASSET_RESOURCE_RECORD_NOT_CONFIRMED"});
+                await assetEgressAttemptJournal.finish({
+                  transferId,status:event.measurement.dimensions.partial?"partial":"completed",
+                  transferredBytes:event.measurement.dimensions.transferredBytes,
+                  upstreamStatus:event.measurement.dimensions.upstreamStatus,
+                  measurementId:event.measurement.measurementId
+                });
+                attemptFinalized=true;
+                audit(db,user.id,"asset.private_download_measured","asset",authorized.asset.id,{
                 transferId:event.measurement.dimensions.transferId,
                 transferredBytes:event.measurement.dimensions.transferredBytes,
                 partial:event.measurement.dimensions.partial
-              },authorized.asset.projectId||null);
-              return result;
+                },authorized.asset.projectId||null);
+                return result;
+              }catch(error){
+                if(attemptStarted&&!attemptFinalized){
+                  await assetEgressAttemptJournal.finish({
+                    transferId,status:"measurement_failed",
+                    transferredBytes:event.measurement.dimensions.transferredBytes,
+                    upstreamStatus:event.measurement.dimensions.upstreamStatus,
+                    measurementId:null,errorCode:error.code||"MEASUREMENT_FAILED"
+                  });
+                  attemptFinalized=true;
+                }
+                throw error;
+              }
             }
           });
           if(measured.error)audit(db,user.id,"asset.private_download_interrupted","asset",authorized.asset.id,{
