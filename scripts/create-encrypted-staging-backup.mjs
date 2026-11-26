@@ -1,9 +1,10 @@
 import {createCipheriv,createHash,randomBytes,scryptSync,randomUUID} from "node:crypto";
 import {spawnSync} from "node:child_process";
 import {mkdir,readFile,rm,stat,writeFile} from "node:fs/promises";
-import {createWriteStream} from "node:fs";
+import {createReadStream,createWriteStream} from "node:fs";
 import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
+import {pathToFileURL} from "node:url";
 import {Readable,Transform} from "node:stream";
 import {pipeline} from "node:stream/promises";
 import {supabaseServerAuthHeaders} from "../server/supabase-server-credentials.mjs";
@@ -25,10 +26,9 @@ function config(env){
   throw Object.assign(new Error("Backup export is restricted to the approved staging Supabase project."),{code:"STAGING_BACKUP_PROJECT_INVALID"});
  const database=new URL(env.SUPABASE_STAGING_DB_URL);
  const dbUser=decodeURIComponent(database.username);
- const dbMatches=database.protocol.startsWith("postgres")&&(
-  database.hostname==="db."+APPROVED_STAGING_PROJECT_REF+".supabase.co"||
-  dbUser.endsWith("."+APPROVED_STAGING_PROJECT_REF)
- );
+ const dbDirect=database.hostname==="db."+APPROVED_STAGING_PROJECT_REF+".supabase.co";
+ const dbPooler=database.hostname.endsWith(".pooler.supabase.com")&&dbUser.endsWith("."+APPROVED_STAGING_PROJECT_REF);
+ const dbMatches=database.protocol.startsWith("postgres")&&(dbDirect||dbPooler);
  if(!dbMatches||!database.password)
   throw Object.assign(new Error("Backup database connection does not identify the approved staging project."),{code:"STAGING_BACKUP_DATABASE_INVALID"});
  const passphrase=String(env.STAGING_BACKUP_ENCRYPTION_PASSPHRASE);
@@ -58,7 +58,7 @@ function safeObjectPath(value){
  return parts.join("/");
 }
 
-async function listPrivateObjects(origin,key,bucket){
+async function listPrivateObjects(origin,key,bucket,fetchImpl){
  const headers={...supabaseServerAuthHeaders(key),"content-type":"application/json",accept:"application/json"};
  const entries=[];const visited=new Set();
  async function walk(prefix,depth){
@@ -67,7 +67,7 @@ async function listPrivateObjects(origin,key,bucket){
   visited.add(prefix);
   let offset=0;
   while(true){
-   const response=await fetch(origin+"/storage/v1/object/list/"+encodeURIComponent(bucket),{
+   const response=await fetchImpl(origin+"/storage/v1/object/list/"+encodeURIComponent(bucket),{
     method:"POST",headers,body:JSON.stringify({prefix,limit:PAGE_SIZE,offset,sortBy:{column:"name",order:"asc"}}),redirect:"error"
    });
    if(!response.ok)throw Object.assign(new Error("Private storage inventory failed (HTTP "+response.status+")."),{code:"STAGING_BACKUP_STORAGE_LIST_FAILED"});
@@ -96,9 +96,9 @@ async function listPrivateObjects(origin,key,bucket){
  return entries;
 }
 
-async function downloadObject(origin,key,bucket,objectPath,filePath){
+async function downloadObject(origin,key,bucket,objectPath,filePath,fetchImpl){
  const encoded=objectPath.split("/").map(encodeURIComponent).join("/");
- const response=await fetch(origin+"/storage/v1/object/authenticated/"+encodeURIComponent(bucket)+"/"+encoded,{
+ const response=await fetchImpl(origin+"/storage/v1/object/authenticated/"+encodeURIComponent(bucket)+"/"+encoded,{
   method:"GET",headers:supabaseServerAuthHeaders(key),redirect:"error"
  });
  if(!response.ok||!response.body)throw Object.assign(new Error("A private storage object could not be downloaded for backup (HTTP "+response.status+")."),{code:"STAGING_BACKUP_OBJECT_DOWNLOAD_FAILED"});
@@ -114,7 +114,7 @@ async function downloadObject(origin,key,bucket,objectPath,filePath){
  return {bytes:size,sha256:hash.digest("hex")};
 }
 
-export async function createEncryptedStagingBackup({env=process.env,fetchImpl=globalThis.fetch,runCommand=run}={}){
+async function hashFile(filePath){\n const hash=createHash("sha256");let size=0;\n for await(const chunk of createReadStream(filePath)){size+=chunk.length;hash.update(chunk);}\n return{bytes:size,sha256:hash.digest("hex")};\n}\n\nexport async function createEncryptedStagingBackup({env=process.env,fetchImpl=globalThis.fetch,runCommand=run}={}){
  const c=config(env);
  const work=join(tmpdir(),"executive-visuals-backup-"+randomUUID());
  const source=join(work,"source"),objectsDir=join(source,"objects");
@@ -132,12 +132,12 @@ export async function createEncryptedStagingBackup({env=process.env,fetchImpl=gl
   const dump=join(source,"database.dump");
   const childEnv={...process.env,PGPASSWORD:c.databasePassword,PGSSLMODE:"require"};
   runCommand("pg_dump",["--format=custom","--no-owner","--no-acl","--file",dump,"--dbname",c.databaseUrl],{env:childEnv});
-  const objectEntries=await listPrivateObjects(c.origin,c.key,c.bucket);
+  const objectEntries=await listPrivateObjects(c.origin,c.key,c.bucket,fetchImpl);
   const manifestEntries=[];
   for(let index=0;index<objectEntries.length;index++){
    const entry=objectEntries[index];
    const file=String(index+1).padStart(8,"0")+".bin";
-   const result=await downloadObject(c.origin,c.key,c.bucket,entry.name,join(objectsDir,file));
+   const result=await downloadObject(c.origin,c.key,c.bucket,entry.name,join(objectsDir,file),fetchImpl);
    manifestEntries.push({name:entry.name,file,bytes:result.bytes,sha256:result.sha256});
   }
   const dbBytes=await readFile(dump);
@@ -157,7 +157,7 @@ export async function createEncryptedStagingBackup({env=process.env,fetchImpl=gl
  }finally{await rm(work,{recursive:true,force:true});}
 }
 
-if(process.argv[1]&&import.meta.url===new URL("file://"+process.argv[1]).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  createEncryptedStagingBackup().then(report=>console.log(JSON.stringify(report))).catch(error=>{
   console.log(JSON.stringify({result:"failed",code:error?.code||"STAGING_BACKUP_FAILED",
    missing:error?.missing||undefined,credentialValuesExposed:false}));
