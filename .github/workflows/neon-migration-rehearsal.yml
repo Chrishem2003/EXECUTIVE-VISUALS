@@ -1,0 +1,67 @@
+name: Isolated Neon PostgreSQL migration rehearsal
+on:
+  push:
+    branches:
+      - feat/batch-138-isolated-postgres-migration-rehearsal-2026-11-26
+    paths:
+      - "database/neon/migrations/**"
+      - "scripts/verify-neon-*-postgres.sql"
+      - "scripts/verify-neon-migration-isolation.mjs"
+      - ".github/workflows/neon-migration-rehearsal.yml"
+  pull_request:
+    paths:
+      - "database/neon/migrations/**"
+      - "scripts/verify-neon-*-postgres.sql"
+      - "scripts/verify-neon-migration-isolation.mjs"
+      - ".github/workflows/neon-migration-rehearsal.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  disposable-postgres-rehearsal:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: executive_visuals_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d executive_visuals_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: executive_visuals_ci
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Verify migration schema boundary and security-definer search paths
+        run: node scripts/verify-neon-migration-isolation.mjs
+      - name: Apply Neon migrations 0001 through 0009 to disposable PostgreSQL
+        run: |
+          set -euo pipefail
+          for migration in database/neon/migrations/000[1-9]_*.sql; do
+            echo "Applying $(basename "$migration")"
+            psql -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Verify queue admission, idempotency and worker lease recovery
+        run: psql -v ON_ERROR_STOP=1 -f scripts/verify-neon-queue-postgres.sql
+      - name: Verify financial reservations, settlement and refund evidence
+        run: psql -v ON_ERROR_STOP=1 -f scripts/verify-neon-financials-postgres.sql
+      - name: Verify atomic video enqueue and reservation rollback
+        run: psql -v ON_ERROR_STOP=1 -f scripts/verify-neon-video-enqueue-postgres.sql
+      - name: Verify multi-shot approval bridge schema
+        run: psql -v ON_ERROR_STOP=1 -f scripts/verify-neon-video-approval-bridge-postgres.sql
+      - name: Verify safe queued cancellation and idempotent refund
+        run: psql -v ON_ERROR_STOP=1 -f scripts/verify-neon-queued-cancellation-postgres.sql
