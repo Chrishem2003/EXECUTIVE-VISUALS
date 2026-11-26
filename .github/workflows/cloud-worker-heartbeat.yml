@@ -1,0 +1,45 @@
+name: Cloud worker heartbeat verification
+on:
+  pull_request:
+    paths:
+      - "server/cloud-worker-process.mjs"
+      - "server/cloud-worker-heartbeat.mjs"
+      - "server/tests/cloud-worker-heartbeat.test.mjs"
+      - "supabase/migrations/*cloud_worker_heartbeat*"
+      - "scripts/cloud-worker-heartbeat-postgres-integration.sql"
+      - ".github/workflows/cloud-worker-heartbeat.yml"
+permissions:
+  contents: read
+jobs:
+  worker-heartbeat:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: worker_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d worker_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/worker_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Bootstrap isolated Supabase-compatible schema
+        run: psql "$TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
+      - name: Apply Batch 129 worker heartbeat migration
+        run: psql "$TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261126160000_cloud_worker_heartbeat_batch_129.sql
+      - name: Verify heartbeat writes and access boundary
+        run: psql "$TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-worker-heartbeat-postgres-integration.sql
+      - name: Run worker heartbeat unit tests
+        run: node --test server/tests/cloud-worker-heartbeat.test.mjs
