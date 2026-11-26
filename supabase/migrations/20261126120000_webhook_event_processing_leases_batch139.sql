@@ -38,10 +38,112 @@ declare
   event_row executive_visuals.payment_webhook_events%rowtype;
   next_lease uuid;
 begin
-  if p_provider not in ('flutterwave','paddle','pesapal')
-     or p_event_key !~ '^[a-f0-9]{64}$'
-     or p_payload_hash !~ '^[a-f0-9]{64}$'
-     or p_lease_seconds not between 30 and 900 then
+  if p_provider is null or p_provider not in ('flutterwave','paddle','pesapal')
+     or p_event_key is null or p_event_key !~ '^[a-f0-9]{64}
+    raise exception 'Invalid payment webhook claim input' using errcode='22023';
+  end if;
+
+  select * into event_row
+    from payment_webhook_events
+   where provider=p_provider and event_key=p_event_key
+   for update;
+
+  if not found then
+    return jsonb_build_object('claimed',false,'processingStatus','missing');
+  end if;
+
+  if event_row.signature_verified is not true then
+    raise exception 'Only verified provider events can be claimed' using errcode='42501';
+  end if;
+
+  if event_row.payload_hash<>p_payload_hash then
+    raise exception 'Provider event payload hash conflict' using errcode='23505';
+  end if;
+
+  if event_row.processing_status in ('processed','ignored','needs_review') then
+    return jsonb_build_object('claimed',false,'processingStatus',event_row.processing_status);
+  end if;
+
+  if event_row.processing_status='processing'
+     and event_row.processing_started_at is not null
+     and event_row.processing_started_at > now()-make_interval(secs=>p_lease_seconds) then
+    return jsonb_build_object('claimed',false,'processingStatus','processing');
+  end if;
+
+  next_lease:=gen_random_uuid();
+  update payment_webhook_events
+     set processing_status='processing',
+         processing_started_at=now(),
+         processing_lease_id=next_lease,
+         processing_attempts=processing_attempts+1,
+         error_message=null
+   where id=event_row.id;
+
+  return jsonb_build_object(
+    'claimed',true,
+    'processingStatus','processing',
+    'leaseId',next_lease,
+    'attempt',event_row.processing_attempts+1
+  );
+end;
+$$;
+
+revoke all on function executive_visuals.claim_payment_webhook_event(text,text,text,integer)
+  from public,anon,authenticated;
+grant execute on function executive_visuals.claim_payment_webhook_event(text,text,text,integer)
+  to service_role;
+
+     or p_payload_hash is null or p_payload_hash !~ '^[a-f0-9]{64}
+    raise exception 'Invalid payment webhook claim input' using errcode='22023';
+  end if;
+
+  select * into event_row
+    from payment_webhook_events
+   where provider=p_provider and event_key=p_event_key
+   for update;
+
+  if not found then
+    return jsonb_build_object('claimed',false,'processingStatus','missing');
+  end if;
+
+  if event_row.payload_hash<>p_payload_hash then
+    raise exception 'Provider event payload hash conflict' using errcode='23505';
+  end if;
+
+  if event_row.processing_status in ('processed','ignored','needs_review') then
+    return jsonb_build_object('claimed',false,'processingStatus',event_row.processing_status);
+  end if;
+
+  if event_row.processing_status='processing'
+     and event_row.processing_started_at is not null
+     and event_row.processing_started_at > now()-make_interval(secs=>p_lease_seconds) then
+    return jsonb_build_object('claimed',false,'processingStatus','processing');
+  end if;
+
+  next_lease:=gen_random_uuid();
+  update payment_webhook_events
+     set processing_status='processing',
+         processing_started_at=now(),
+         processing_lease_id=next_lease,
+         processing_attempts=processing_attempts+1,
+         error_message=null
+   where id=event_row.id;
+
+  return jsonb_build_object(
+    'claimed',true,
+    'processingStatus','processing',
+    'leaseId',next_lease,
+    'attempt',event_row.processing_attempts+1
+  );
+end;
+$$;
+
+revoke all on function executive_visuals.claim_payment_webhook_event(text,text,text,integer)
+  from public,anon,authenticated;
+grant execute on function executive_visuals.claim_payment_webhook_event(text,text,text,integer)
+  to service_role;
+
+     or p_lease_seconds is null or p_lease_seconds not between 30 and 900 then
     raise exception 'Invalid payment webhook claim input' using errcode='22023';
   end if;
 
