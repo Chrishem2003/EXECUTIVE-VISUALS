@@ -56,8 +56,7 @@ async function request(fetchImpl,url,{method="GET",headers={},body=null,provider
  }catch{
   throw fail(provider+"_NETWORK_FAILED",provider+" sandbox endpoint could not be reached.");
  }
- const raw=await response.text();
- if(raw.length>65536)throw fail(provider+"_RESPONSE_TOO_LARGE",provider+" sandbox response exceeded its safety limit.");
+ const raw=await readBounded(response);
  let data=null;try{data=raw?JSON.parse(raw):null;}catch{throw fail(provider+"_RESPONSE_INVALID",provider+" sandbox returned invalid JSON.");}
  if(!response.ok)throw fail(provider+"_HTTP_"+response.status,provider+" sandbox rejected the verification request.",response.status);
  return data;
