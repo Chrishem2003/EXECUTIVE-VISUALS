@@ -7,6 +7,7 @@ on:
       - "server/tests/cloud-worker-heartbeat.test.mjs"
       - "supabase/migrations/*cloud_worker_heartbeat*"
       - "scripts/cloud-worker-heartbeat-postgres-integration.sql"
+      - "scripts/cloud-worker-heartbeat-readback-postgres-integration.sql"
       - ".github/workflows/cloud-worker-heartbeat.yml"
 permissions:
   contents: read
@@ -41,5 +42,9 @@ jobs:
         run: psql "$TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261126160000_cloud_worker_heartbeat_batch_129.sql
       - name: Verify heartbeat writes and access boundary
         run: psql "$TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-worker-heartbeat-postgres-integration.sql
+      - name: Apply Batch 141 service-role heartbeat readback migration
+        run: psql "$TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261126180000_cloud_worker_heartbeat_readback_batch_141.sql
+      - name: Verify restricted heartbeat readback RPC
+        run: psql "$TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-worker-heartbeat-readback-postgres-integration.sql
       - name: Run worker heartbeat unit tests
         run: node --test server/tests/cloud-worker-heartbeat.test.mjs
