@@ -24,7 +24,7 @@ if(process.argv[2]==="--child"){
  const write=async status=>{const result=await record(workerId,status,status==="healthy"?new Date().toISOString():null);process.stdout.write(JSON.stringify({workerId,status,result})+"\n");};
  await write("starting");await write("healthy");
  const timer=setInterval(()=>{void write("healthy").catch(error=>{process.stderr.write(String(error.message||error));process.exitCode=1;});},1500);
- process.on("SIGTERM",async()=>{clearInterval(timer);try{await write("stopped");process.exit(0);}catch{process.exit(1);}});
+ process.on("SIGTERM",async()=>{clearInterval(timer);try{await write("stopped");process.exitCode=0;}catch{process.exitCode=1;}});
 }else{
  const launch=workerId=>{
   const child=spawn(process.execPath,[file,"--child",workerId],{stdio:["ignore","pipe","pipe"],env:process.env});
