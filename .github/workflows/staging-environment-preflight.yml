@@ -17,7 +17,7 @@ permissions:
   contents: read
 jobs:
   static-contract:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -27,7 +27,7 @@ jobs:
       - run: node --check scripts/check-staging-environment-readiness.mjs
       - run: node --test scripts/check-staging-environment-readiness.test.mjs
   staging-preflight:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'Chrishem2003')
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'Chrishem2003')
     runs-on: ubuntu-latest
     environment: staging
     steps:
