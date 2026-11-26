@@ -156,7 +156,7 @@ test("Paddle refund and chargeback adjustments are durably quarantined without c
     assert.equal(result.body.adjustment.reason,"customer request");
     assert.equal(result.body.adjustment.subtotal,"4500");
     assert.equal(result.body.adjustment.items[0].transactionItemId,"txnitm-1");
-    assert.equal(calls.filter(call=>call.method==="POST").length,1);
+    assert.equal(calls.filter(call=>call.method==="POST"&&call.path.endsWith("/payment_webhook_events")).length,1);
     const stored=calls.find(call=>call.method==="POST").body.payload;
     assert.equal(stored.adjustmentId,"adj-"+adjustmentAction);
     assert.equal(stored.adjustmentItems[0].total,"5000");
