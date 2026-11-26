@@ -39,7 +39,7 @@ try{
    for(const item of page){
     if(!item?.name||item.name.includes("\\0")||item.name.includes("/")||item.name==="."||item.name==="..")throw new Error("Storage inventory returned an invalid child name.");
     const objectPath=prefix+item.name;
-    if(item.id===null||item.metadata===null){
+    if(item.id===null){
      pendingPrefixes.push(objectPath+"/");
      if(pendingPrefixes.length+visitedPrefixes.size>100000)throw new Error("Storage inventory exceeded the 100,000-folder safety limit.");
      continue;
