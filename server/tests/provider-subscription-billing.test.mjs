@@ -170,7 +170,7 @@ test("Paddle refund and chargeback adjustments are durably quarantined without c
     else assert.equal(result.body.adjustment.taxRates[0].rate,"0.1111");
     assert.equal(calls.filter(call=>call.method==="PATCH").length,2);
     assert.equal(calls.at(-1).body.processing_status,"needs_review");
-    assert.ok(calls.every(call=>call.path.endsWith("/payment_webhook_events")));
+    assert.ok(calls.every(call=>call.path.endsWith("/payment_webhook_events")||call.path.endsWith("/rpc/claim_payment_webhook_event")));
   }
 });
 
