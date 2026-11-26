@@ -1,0 +1,53 @@
+name: Encrypted staging backup export
+on:
+  pull_request:
+    paths:
+      - "scripts/create-encrypted-staging-backup.mjs"
+      - "scripts/verify-encrypted-staging-backup.mjs"
+      - ".github/workflows/encrypted-staging-backup.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - run: node --check scripts/create-encrypted-staging-backup.mjs
+      - run: node --check scripts/verify-encrypted-staging-backup.mjs
+  encrypted-staging-export:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'Chrishem2003')
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Export and encrypt staging database and private objects
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_STAGING_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_STAGING_SECRET_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.STAGING_BACKUP_ENCRYPTION_PASSPHRASE }}
+          STORAGE_BACKUP_BUCKET: executive-visuals-media
+        run: node scripts/create-encrypted-staging-backup.mjs
+      - name: Decrypt and verify archive, database dump and object checksums
+        env:
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.STAGING_BACKUP_ENCRYPTION_PASSPHRASE }}
+        run: node scripts/verify-encrypted-staging-backup.mjs "$(find artifacts -maxdepth 1 -name '*.evb' -print -quit)"
+      - name: Store encrypted artifact temporarily
+        uses: actions/upload-artifact@v4
+        with:
+          name: executive-visuals-encrypted-staging-backup
+          path: artifacts/*.evb
+          if-no-files-found: error
+          retention-days: 7
