@@ -18,7 +18,7 @@ jobs:
           node-version: "22.23.4"
       - run: node --check scripts/verify-private-storage-staging.mjs
   staging-roundtrip:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'Chrishem2003')
     runs-on: ubuntu-latest
     environment: staging
     steps:
