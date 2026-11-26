@@ -33,6 +33,8 @@ import { preflightVideoProduction } from "./video-shot-preflight.mjs";
 import { buildVideoGenerationApproval } from "./video-generation-approval.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { pipeMeasuredPrivateAssetDownload } from "./asset-egress-stream.mjs";
+import { createAssetResourceEventRecorder } from "./asset-resource-event-recorder.mjs";
 import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
 import { resolveCloudMediaMaxUploadBytes } from "./cloud-upload-limits.mjs";
 import { buildCloudMediaHealth } from "./cloud-media-health.mjs";
@@ -304,6 +306,24 @@ const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({
  quoteCustomerCredits
 }) : null;
 const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : { ready:false, storage:"disabled" };
+const privateAssetEgressProxyEnabled=process.env.PRIVATE_ASSET_EGRESS_PROXY_ENABLED==="true";
+const assetResourceFinanceActorId=String(process.env.ASSET_RESOURCE_FINANCE_ACTOR_ID||"");
+if(privateAssetEgressProxyEnabled&&(!cloudTimelineApi||AUTH_MODE!=="supabase"||!/^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(assetResourceFinanceActorId))){
+ throw new Error("Private asset egress proxy requires the verified cloud timeline API, Supabase authentication and ASSET_RESOURCE_FINANCE_ACTOR_ID.");
+}
+const assetResourceRecorder=privateAssetEgressProxyEnabled?createAssetResourceEventRecorder({
+ actorId:assetResourceFinanceActorId,enabled:true,
+ rpc:async(name,args)=>{
+  if(name!=="record_asset_resource_measurement")throw new Error("Unexpected asset resource RPC.");
+  const headers={apikey:SUPABASE_SERVER_KEY,"content-type":"application/json","content-profile":"executive_visuals",accept:"application/json"};
+  if(!String(SUPABASE_SERVER_KEY).startsWith("sb_secret_"))headers.authorization="Bearer "+SUPABASE_SERVER_KEY;
+  const response=await fetch(process.env.SUPABASE_URL+"/rest/v1/rpc/"+name,{method:"POST",headers,body:JSON.stringify(args)});
+  const raw=await response.text();
+  if(!response.ok)throw Object.assign(new Error("Asset resource evidence could not be persisted (HTTP "+response.status+")."),{code:"ASSET_RESOURCE_RECORD_FAILED",status:response.status});
+  return raw?JSON.parse(raw):null;
+ }
+}):null;
+
 const cloudMediaReadinessBlockers=[];
 if(!cloudTimelineApiEnabled)cloudMediaReadinessBlockers.push("CLOUD_TIMELINE_API_ENABLED");
 if(AUTH_MODE!=="supabase")cloudMediaReadinessBlockers.push("AUTH_MODE");
