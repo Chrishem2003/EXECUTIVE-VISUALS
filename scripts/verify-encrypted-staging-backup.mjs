@@ -1,10 +1,10 @@
-import {createDecipheriv,createHash,scryptSync} from "node:crypto";
+import {createDecipheriv,createHash,scryptSync,randomUUID} from "node:crypto";
 import {spawnSync} from "node:child_process";
 import {mkdir,open,readdir,rm,stat,readFile} from "node:fs/promises";
 import {createReadStream,createWriteStream} from "node:fs";
 import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
-import {randomUUID} from "node:crypto";
+import {pathToFileURL} from "node:url";
 import {pipeline} from "node:stream/promises";
 
 const DEFAULT_BUCKET="executive-visuals-media";
@@ -98,7 +98,7 @@ export async function verifyEncryptedStagingBackup({
  }finally{await rm(work,{recursive:true,force:true});}
 }
 
-if(process.argv[1]&&import.meta.url===new URL("file://"+process.argv[1]).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  verifyEncryptedStagingBackup().then(report=>console.log(JSON.stringify(report))).catch(error=>{
   console.log(JSON.stringify({result:"failed",code:error?.code||"STAGING_BACKUP_VERIFY_FAILED",credentialValuesExposed:false}));
   process.exitCode=1;
