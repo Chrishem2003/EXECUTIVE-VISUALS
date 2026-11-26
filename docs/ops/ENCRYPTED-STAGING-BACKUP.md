@@ -19,3 +19,6 @@ Important limitations:
 
 
 The exporter traverses nested Storage folders (not just bucket-root objects), paginates each prefix, enforces a 100,000-object/folder safety ceiling, and stores each object under a generated numeric archive filename while preserving its original Storage key in the manifest. The verifier checks archive paths before extraction and validates manifest file names before reading objects. This export is not a transactionally consistent point-in-time snapshot while uploads are changing; quiesce writes or schedule a maintenance window for a restore-grade backup.
+
+## Workflow availability and deployment safety
+These workflows currently live on a review branch. GitHub manual `workflow_dispatch` and scheduled `schedule` runs require the workflow file to be present on the repository's default branch. Do not merge this PR to `main` solely to unlock testing: the Executive Visuals Render web service automatically deploys commits to `main`. First establish a safe staging execution path or explicitly approve a controlled deployment/configuration change. Until then, the PR-triggered static checks are the only GitHub Actions evidence; the manual runtime acceptance is pending.
