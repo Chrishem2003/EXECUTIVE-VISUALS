@@ -140,6 +140,7 @@ test("Paddle refund and chargeback adjustments are durably quarantined without c
     };
     const fetchImpl=async(url,options)=>{
       const target=new URL(url);calls.push({method:options.method,path:target.pathname,body:options.body?JSON.parse(options.body):null});
+      if(target.pathname.endsWith("/rpc/claim_payment_webhook_event"))return json({claimed:true,processingStatus:"processing",leaseId:"44444444-4444-4444-8444-444444444444",attempt:1});
       if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
       if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
       throw new Error("Adjustment reconciliation must not invoke payment/subscription settlement: "+target.pathname);
@@ -185,7 +186,8 @@ test("verified Paddle transaction webhook settles only the matching reserved led
   };
   const fetchImpl=async(url,options)=>{
     const target=new URL(url);calls.push([options.method,target.pathname]);
-    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
+    if(target.pathname.endsWith("/rpc/claim_payment_webhook_event"))return json({claimed:true,processingStatus:"processing",leaseId:"44444444-4444-4444-8444-444444444444",attempt:1});
+      if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
     if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
     if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="GET")return json([]);
     if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([payment]);
@@ -213,7 +215,8 @@ test("verified Pesapal renewal IPN extends the existing subscription through the
   };
   const fetchImpl=async(url,options)=>{
     const target=new URL(url);calls.push([options.method,target.pathname]);
-    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
+    if(target.pathname.endsWith("/rpc/claim_payment_webhook_event"))return json({claimed:true,processingStatus:"processing",leaseId:"44444444-4444-4444-8444-444444444444",attempt:1});
+      if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
     if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
     if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([renewalPayment]);
     if(target.pathname.endsWith("/rpc/finalize_subscription_renewal_for_provider"))return json({status:"active",subscriptionId});
@@ -241,7 +244,8 @@ test("Pesapal IPN verifies the pending UGX order before invoking the atomic subs
   };
   const fetchImpl=async(url,options)=>{
     const target=new URL(url);calls.push([options.method,target.pathname,target.search]);
-    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
+    if(target.pathname.endsWith("/rpc/claim_payment_webhook_event"))return json({claimed:true,processingStatus:"processing",leaseId:"44444444-4444-4444-8444-444444444444",attempt:1});
+      if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
     if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
     if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([pesapalPayment]);
     if(target.pathname.endsWith("/rpc/finalize_subscription_purchase_for_provider"))return json({status:"active",subscriptionId});
@@ -281,4 +285,53 @@ test("subscription database response bodies are streamed with a strict 1 MiB cap
   assert.equal(result.body.error.code,"SUBSCRIPTION_DATABASE_RESPONSE_TOO_LARGE");
   assert.equal(canceled,true);
   assert.equal(providerCalled,false);
+});
+
+
+test("duplicate provider webhook delivery cannot settle while the first event is already processed",async()=>{
+  const calls=[];
+  let inserted=false,claimCount=0;
+  const providers={
+    paddle:{createCheckout:async()=>({}),verifyWebhook:()=>({
+      provider:"paddle",eventId:"evt-duplicate-1",eventType:"transaction.completed",ownerId:owner,planCode:"creator",
+      paymentId,reference:"EVP-order-1",providerTransactionId:"txn-1",providerCustomerId:"ctm-1",
+      providerSubscriptionId:"sub_01abcdefghijklmnopqrstuvwxyz",providerPriceId:"pri_01creator123",origin:"web",
+      amountMinor:5000,totalPaidMinor:5500,discountMinor:0,currency:"USD",occurredAt:"2026-11-14T10:00:00Z"
+    })},
+    pesapal:{createCheckout:async()=>({}),handleNotification:async()=>({})}
+  };
+  const fetchImpl=async(url,options)=>{
+    const target=new URL(url);
+    calls.push({method:options.method,path:target.pathname,search:target.search,body:options.body?JSON.parse(options.body):null});
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST"){
+      if(inserted)return empty(409);
+      inserted=true;return empty(201);
+    }
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="GET")return json([{
+      processing_status:"processed",
+      payload_hash:calls.find(x=>x.path.endsWith("/payment_webhook_events")&&x.method==="POST")?.body?.payload_hash
+    }]);
+    if(target.pathname.endsWith("/rpc/claim_payment_webhook_event")){
+      claimCount++;
+      const body=JSON.parse(options.body);
+      assert.equal(body.p_provider,"paddle");
+      return json(claimCount===1
+        ?{claimed:true,processingStatus:"processing",leaseId:"55555555-5555-4555-8555-555555555555",attempt:1}
+        :{claimed:false,processingStatus:"processed"});
+    }
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
+    if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([payment]);
+    if(target.pathname.endsWith("/rpc/finalize_subscription_purchase_for_provider"))return json({status:"active",subscriptionId});
+    throw new Error("unexpected database request "+target.pathname);
+  };
+  const billing=createProviderSubscriptionBilling({supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+    paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,pesapalNotificationId:env.PESAPAL_IPN_ID,providers,fetchImpl});
+  const first=await billing.handlePaddleWebhook({rawBody:Buffer.from("{}"),signature:"signed"});
+  const second=await billing.handlePaddleWebhook({rawBody:Buffer.from("{}"),signature:"signed"});
+  assert.equal(first.status,200);
+  assert.equal(first.body.applied,true);
+  assert.equal(second.status,200);
+  assert.equal(second.body.duplicate,true);
+  assert.equal(second.body.processingStatus,"processed");
+  assert.equal(calls.filter(x=>x.path.endsWith("/rpc/finalize_subscription_purchase_for_provider")).length,1);
 });
