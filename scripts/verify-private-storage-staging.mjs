@@ -37,7 +37,7 @@ try{
  const signedBody=await signed.json();
  const signedPath=signedBody.signedURL||signedBody.signedUrl;
  assert.ok(typeof signedPath==="string"&&signedPath.length>0,"signed URL response missing URL");
- const signedUrl=new URL(signedPath,base).toString();
+ const signedUrl=(signedPath.startsWith("/object/")?base+"/storage/v1"+signedPath:new URL(signedPath,base).toString());
  const signedGet=await request(signedUrl,{headers:{apikey:anon}});
  assert.equal(signedGet.status,200,"signed URL download failed: HTTP "+signedGet.status);
  const signedBytes=Buffer.from(await signedGet.arrayBuffer());
