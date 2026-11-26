@@ -1,0 +1,41 @@
+name: Payment provider sandbox acceptance
+on:
+  pull_request:
+    paths:
+      - "scripts/verify-payment-provider-sandbox.mjs"
+      - "server/tests/payment-provider-sandbox-acceptance.test.mjs"
+      - ".github/workflows/payment-provider-sandbox-acceptance.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - run: node --check scripts/verify-payment-provider-sandbox.mjs
+      - run: node --test server/tests/payment-provider-sandbox-acceptance.test.mjs
+  sandbox-acceptance:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - name: Verify Paddle and Pesapal sandbox credentials, prices and IPN
+        env:
+          SUPABASE_STAGING_URL: ${{ secrets.SUPABASE_STAGING_URL }}
+          SUPABASE_STAGING_SECRET_KEY: ${{ secrets.SUPABASE_STAGING_SECRET_KEY }}
+          PADDLE_SANDBOX_API_KEY: ${{ secrets.PADDLE_SANDBOX_API_KEY }}
+          PADDLE_WEBHOOK_SECRET: ${{ secrets.PADDLE_WEBHOOK_SECRET }}
+          PESAPAL_SANDBOX_CONSUMER_KEY: ${{ secrets.PESAPAL_SANDBOX_CONSUMER_KEY }}
+          PESAPAL_SANDBOX_CONSUMER_SECRET: ${{ secrets.PESAPAL_SANDBOX_CONSUMER_SECRET }}
+          PESAPAL_IPN_ID: ${{ vars.PESAPAL_IPN_ID }}
+        run: node scripts/verify-payment-provider-sandbox.mjs
