@@ -11,8 +11,10 @@ const REQUIRED_SECRETS = [
   "STORAGE_TEST_OTHER_JWT",
   "STAGING_BACKUP_ENCRYPTION_PASSPHRASE",
   "PADDLE_SANDBOX_API_KEY",
+  "PADDLE_WEBHOOK_SECRET",
   "PESAPAL_SANDBOX_CONSUMER_KEY",
   "PESAPAL_SANDBOX_CONSUMER_SECRET",
+  "PESAPAL_IPN_ID",
   "OPS_ALERT_WEBHOOK_URL",
 ];
 
@@ -22,15 +24,16 @@ const REQUIRED_VARIABLES = [
 ];
 
 function isHttpsUrl(value) {
-  try { return new URL(value).protocol === "https:"; } catch { return false; }
+  try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password && !url.hash; } catch { return false; }
 }
 
 function databaseMatchesApprovedProject(value) {
   try {
     const url = new URL(value);
     const username = decodeURIComponent(url.username);
-    return url.hostname === `db.${APPROVED_STAGING_PROJECT_REF}.supabase.co`
-      || username.endsWith(`.${APPROVED_STAGING_PROJECT_REF}`);
+    const direct = url.hostname === `db.${APPROVED_STAGING_PROJECT_REF}.supabase.co`;
+    const pooler = url.hostname.endsWith(".pooler.supabase.com") && username.endsWith(`.${APPROVED_STAGING_PROJECT_REF}`);
+    return url.protocol.startsWith("postgres") && (direct || pooler) && Boolean(url.password);
   } catch { return false; }
 }
 
@@ -47,7 +50,7 @@ export function assessStagingConfig(env = process.env) {
   if (supabaseUrl) {
     try {
       const url = new URL(supabaseUrl);
-      if (url.protocol !== "https:" || url.hostname !== `${APPROVED_STAGING_PROJECT_REF}.supabase.co`) {
+      if (url.protocol !== "https:" || url.hostname !== `${APPROVED_STAGING_PROJECT_REF}.supabase.co` || url.username || url.password || url.search || url.hash) {
         invalid.push("SUPABASE_STAGING_URL");
       }
     } catch { invalid.push("SUPABASE_STAGING_URL"); }
@@ -60,6 +63,12 @@ export function assessStagingConfig(env = process.env) {
   if (paddleKey && (!paddleKey.includes("_sdbx_") || paddleKey.includes("_live_"))) {
     invalid.push("PADDLE_SANDBOX_API_KEY");
   }
+
+  const webhookSecret = String(env.PADDLE_WEBHOOK_SECRET || "");
+  if (webhookSecret && webhookSecret.length < 16) invalid.push("PADDLE_WEBHOOK_SECRET");
+
+  const pesapalIpnId = String(env.PESAPAL_IPN_ID || "");
+  if (pesapalIpnId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pesapalIpnId)) invalid.push("PESAPAL_IPN_ID");
 
   const passphrase = String(env.STAGING_BACKUP_ENCRYPTION_PASSPHRASE || "");
   if (passphrase && passphrase.length < 24) invalid.push("STAGING_BACKUP_ENCRYPTION_PASSPHRASE");
