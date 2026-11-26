@@ -4,7 +4,7 @@ select executive_visuals.record_cloud_worker_heartbeat(
  'integration-worker-001',array['media','storage_maintenance'],'starting',null,null
 );
 select executive_visuals.record_cloud_worker_heartbeat(
- 'integration-worker-001',array['media','storage_maintenance'],'healthy',now(),''
+ 'integration-worker-001',array['media','storage_maintenance'],'healthy',now(),null
 );
 select executive_visuals.record_cloud_worker_heartbeat(
  'integration-worker-001',array['media','storage_maintenance'],'degraded',now(),'QUEUE_RENEW_FAILED'
