@@ -8,7 +8,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 const fail=(code,message,status)=>Object.assign(new Error(message),{code,status});
 const required=[
  "SUPABASE_STAGING_URL","SUPABASE_STAGING_SECRET_KEY","PADDLE_SANDBOX_API_KEY",
- "PADDLE_WEBHOOK_SECRET","PESAPAL_SANDBOX_CONSUMER_KEY","PESAPAL_SANDBOX_CONSUMER_SECRET","PESAPAL_IPN_ID"
+ "PADDLE_WEBHOOK_SECRET","PESAPAL_SANDBOX_CONSUMER_KEY","PESAPAL_SANDBOX_CONSUMER_SECRET","PESAPAL_IPN_ID","PESAPAL_CALLBACK_URL"
 ];
 
 function config(env){
@@ -24,9 +24,12 @@ function config(env){
   throw fail("PADDLE_WEBHOOK_SECRET_INVALID","Paddle sandbox webhook secret is invalid.");
  if(!UUID.test(String(env.PESAPAL_IPN_ID)))
   throw fail("PESAPAL_IPN_ID_INVALID","Pesapal sandbox IPN ID must be a UUID.");
+ const callback=new URL(env.PESAPAL_CALLBACK_URL);
+ if(callback.protocol!=="https:"||callback.username||callback.password||callback.hash)
+  throw fail("PESAPAL_CALLBACK_URL_INVALID","Pesapal sandbox callback must be a valid HTTPS URL.");
  return{origin:url.origin,supabaseKey:env.SUPABASE_STAGING_SECRET_KEY,paddleKey,
   paddleWebhookSecret:env.PADDLE_WEBHOOK_SECRET,pesapalKey:env.PESAPAL_SANDBOX_CONSUMER_KEY,
-  pesapalSecret:env.PESAPAL_SANDBOX_CONSUMER_SECRET,ipnId:env.PESAPAL_IPN_ID};
+  pesapalSecret:env.PESAPAL_SANDBOX_CONSUMER_SECRET,ipnId:env.PESAPAL_IPN_ID,callbackUrl:callback.toString()};
 }
 
 async function readBounded(response){
@@ -98,7 +101,7 @@ export async function verifyPaymentProviderSandbox({env=process.env,fetchImpl=gl
   headers:{authorization:"Bearer "+token,accept:"application/json"},provider:"PESAPAL"
  });
  const registered=Array.isArray(ipns)?ipns:Array.isArray(ipns?.ipn_list)?ipns.ipn_list:[];
- if(!registered.some(item=>String(item?.ipn_id||"")===c.ipnId))
+ if(!registered.some(item=>String(item?.ipn_id||"")===c.ipnId&&String(item?.url||"")===c.callbackUrl))
   throw fail("PESAPAL_IPN_NOT_REGISTERED","The configured Pesapal sandbox IPN ID is not registered to this merchant account.");
 
  const pesapalRows=await request(fetchImpl,c.origin+"/rest/v1/subscription_plan_provider_prices?select=amount_minor,currency,active&provider=eq.pesapal&active=eq.true",{
