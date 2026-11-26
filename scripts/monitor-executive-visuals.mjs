@@ -21,7 +21,7 @@ if(testMode){
   let data=null;try{data=JSON.parse(raw);}catch{}
   const statusValue=String(data?.status||data?.health?.status||"").toLowerCase();
   const failedChecks=Array.isArray(data?.checks)?data.checks.filter(x=>["failed","error","unhealthy","blocked"].includes(String(x?.status||"").toLowerCase())).map(x=>String(x.name||x.key||"unknown").slice(0,80)): [];
-  if(!response.ok||["error","unhealthy","failed","down"].includes(statusValue)||failedChecks.length){
+  if(!response.ok||data?.ok===false||["error","unhealthy","failed","down"].includes(statusValue)||failedChecks.length){
    failure={httpStatus:response.status,reportedStatus:statusValue||"unspecified",failedChecks};
   }else if(!data){
    failure={httpStatus:response.status,reportedStatus:"invalid_json",failedChecks:[]};
