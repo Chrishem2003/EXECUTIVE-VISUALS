@@ -1218,9 +1218,10 @@ export function createAppServer() {
         if(!rateAllowed("private-asset-download:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many private asset downloads. Try again shortly.");return;}
         const range=String(req.headers.range||"");
         if(range&&(!/^bytes=(?:\d+-\d*|-\d+)$/.test(range)||range.length>128)){fail(res,416,"ASSET_RANGE_INVALID","Only one valid byte range may be requested.");return;}
-        let controller=null,timer=null,transferId=randomUUID(),attemptStarted=false,attemptFinalized=false;
+        let controller=null,timer=null,transferId=randomUUID(),attemptStarted=false,attemptFinalized=false,authorizedAsset=null,upstreamStatus=null;
         try{
           const authorized=await cloudTimelineApi.getPrivateAssetDownload({ownerId:user.id,assetId:privateAssetDownloadMatch[1],expiresIn:60});
+          authorizedAsset=authorized.asset;
           const signedUrl=new URL(authorized.url);
           if(!CLOUD_MEDIA_ORIGIN||signedUrl.protocol!=="https:"||signedUrl.origin!==CLOUD_MEDIA_ORIGIN||signedUrl.username||signedUrl.password)
             throw Object.assign(new Error("Private storage returned an untrusted download URL."),{code:"PRIVATE_ASSET_DOWNLOAD_ORIGIN_INVALID"});
@@ -1230,8 +1231,11 @@ export function createAppServer() {
           controller=new AbortController();timer=setTimeout(()=>controller.abort(),120000);
           const headers={};if(range)headers.range=range;
           const upstream=await fetch(signedUrl,{method:"GET",headers,redirect:"error",signal:controller.signal});
+          upstreamStatus=upstream.status;
           if(upstream.status===416){
             const contentRange=upstream.headers.get("content-range");
+            await assetEgressAttemptJournal.finish({transferId,status:"measurement_failed",transferredBytes:0,upstreamStatus:416,errorCode:"RANGE_NOT_SATISFIABLE"});
+            attemptFinalized=true;
             res.writeHead(416,{"content-range":contentRange||"bytes */"+authorized.asset.size,"cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
           }
           res.setHeader("cache-control","private, no-store");
@@ -1276,6 +1280,14 @@ export function createAppServer() {
           },authorized.asset.projectId||null);
           return;
         }catch(error){
+          if(attemptStarted&&!attemptFinalized){
+            try{
+              await assetEgressAttemptJournal.finish({transferId,status:"measurement_failed",transferredBytes:0,upstreamStatus,errorCode:error.code||"TRANSFER_ABORTED"});
+              attemptFinalized=true;
+            }catch(journalError){
+              audit(db,user.id,"asset.private_download_journal_failed","asset",authorizedAsset?.id||privateAssetDownloadMatch[1],{transferId,errorCode:journalError.code||"JOURNAL_FINALIZATION_FAILED"},authorizedAsset?.projectId||null);
+            }
+          }
           if(!res.headersSent&&!res.destroyed){
             const status=error.code==="CLOUD_ASSET_NOT_FOUND"||error.code==="CLOUD_ASSET_ACCESS_DENIED"?404:
               error.code==="ASSET_RESOURCE_RECORD_NOT_CONFIRMED"||error.code==="ASSET_RESOURCE_RECORD_FAILED"?503:
