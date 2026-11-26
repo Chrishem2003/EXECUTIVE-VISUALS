@@ -5,12 +5,12 @@ import { pipeMeasuredPrivateAssetDownload } from "../asset-egress-stream.mjs";
 
 const asset={id:"323e4567-e89b-42d3-a456-426614174000",ownerId:"123e4567-e89b-42d3-a456-426614174000",projectId:null,size:8};
 function response(status=200,body=Buffer.from("12345678"),headers={}){
- return {status,body:Readable.from([body]),headers:{get(name){return headers[name]??(name==="content-type"?"video/mp4":null);}}};
+ return {status,body:Readable.from(Array.from({length:Math.ceil(body.length/4)},(_,i)=>body.subarray(i*4,(i+1)*4))),headers:{get(name){return headers[name]??(name==="content-type"?"video/mp4":null);}}};
 }
 function output({failAfter=null}={}){
  const chunks=[];let count=0;
  const res=new Writable({
-  write(chunk,encoding,callback){count+=chunk.length;chunks.push(Buffer.from(chunk));if(failAfter!==null&&count>=failAfter)callback(new Error("client disconnected"));else callback();}
+  write(chunk,encoding,callback){if(failAfter!==null&&count+chunk.length>failAfter){callback(new Error("client disconnected"));return;}count+=chunk.length;chunks.push(Buffer.from(chunk));callback();}
  });
  res.setHeader=()=>{};res.headersSent=true;res.destroyed=false;res.statusCode=200;
  return {res,chunks,get bytes(){return Buffer.concat(chunks).length;}};
