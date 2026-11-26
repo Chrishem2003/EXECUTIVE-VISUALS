@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - "server/asset-resource-measurements.mjs"
-      - "server/asset-resource-event-recorder.mjs"
+      - "server/asset-resource-event-recorder.mjs"\n      - "server/asset-egress-stream.mjs"\n      - "server/tests/asset-egress-stream.test.mjs"
       - "server/tests/asset-resource-*.test.mjs"
       - "supabase/migrations/*asset_resource_event_ledger*"
       - "supabase/migrations/*asset_upload_checkpoint_autoinit*"
