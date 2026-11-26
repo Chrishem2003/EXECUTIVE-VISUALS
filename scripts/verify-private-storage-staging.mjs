@@ -17,10 +17,11 @@ const endpoint=(suffix)=>base+"/storage/v1/"+suffix;
 let uploaded=false;
 async function request(url,options){const r=await fetch(url,{...options,redirect:"manual"});return r;}
 try{
+ uploaded=true;
  const put=await request(endpoint("object/"+bucket+"/"+objectPath),{
   method:"POST",headers:{...headers(ownerJwt),"content-type":"application/octet-stream","x-upsert":"false"},body:payload
  });
- assert.ok(put.ok,"owner upload denied: HTTP "+put.status+" "+(await put.text()).slice(0,300));uploaded=true;
+ assert.ok(put.ok,"owner upload denied: HTTP "+put.status+" "+(await put.text()).slice(0,300));
  const ownerGet=await request(endpoint("object/authenticated/"+bucket+"/"+objectPath),{headers:headers(ownerJwt)});
  assert.equal(ownerGet.status,200,"owner authenticated download failed: HTTP "+ownerGet.status);
  const ownerBytes=Buffer.from(await ownerGet.arrayBuffer());
@@ -49,6 +50,6 @@ try{
    method:"DELETE",headers:{...headers(ownerJwt),"content-type":"application/json"},
    body:JSON.stringify({prefixes:[objectPath]})
   });
-  assert.ok(del.ok,"test object cleanup failed: HTTP "+del.status);
+  assert.ok(del.ok||del.status===404,"test object cleanup failed: HTTP "+del.status);
  }
 }
