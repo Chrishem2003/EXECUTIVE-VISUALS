@@ -16,6 +16,7 @@ const complete = () => ({
   PESAPAL_SANDBOX_CONSUMER_KEY: "test-pesapal-key",
   PESAPAL_SANDBOX_CONSUMER_SECRET: "test-pesapal-secret",
   PESAPAL_IPN_ID: "223e4567-e89b-42d3-a456-426614174000",
+  PESAPAL_IPN_ID: "223e4567-e89b-42d3-a456-426614174000",
   OPS_ALERT_WEBHOOK_URL: "https://alerts.example.test/webhook",
   EXECUTIVE_VISUALS_HEALTH_URL: "https://staging.example.test/api/health",
 });
