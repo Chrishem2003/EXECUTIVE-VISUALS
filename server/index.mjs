@@ -1199,11 +1199,11 @@ export function createAppServer() {
         else{fail(res,405,"B2_MULTIPART_METHOD_NOT_ALLOWED","This upload session endpoint does not support the requested method.");return;}
         send(res,result.status,result.body,cors);return;
       }
-      const privateAssetDownloadMatch=path.match(/^\\/api\\/cloud\\/assets\\/([0-9a-f-]{36})$/i);
+      const privateAssetDownloadMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]{36})$/i);
       if(privateAssetEgressProxyEnabled&&privateAssetDownloadMatch&&req.method==="GET"){
         if(!rateAllowed("private-asset-download:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many private asset downloads. Try again shortly.");return;}
         const range=String(req.headers.range||"");
-        if(range&&(!/^bytes=(?:\\d+-\\d*|-\\d+)$/.test(range)||range.length>128)){fail(res,416,"ASSET_RANGE_INVALID","Only one valid byte range may be requested.");return;}
+        if(range&&(!/^bytes=(?:\d+-\d*|-\d+)$/.test(range)||range.length>128)){fail(res,416,"ASSET_RANGE_INVALID","Only one valid byte range may be requested.");return;}
         let controller=null,timer=null;
         try{
           const authorized=await cloudTimelineApi.getPrivateAssetDownload({ownerId:user.id,assetId:privateAssetDownloadMatch[1],expiresIn:60});
