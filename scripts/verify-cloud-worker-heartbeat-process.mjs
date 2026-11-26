@@ -5,6 +5,8 @@ import {createInterface} from "node:readline";
 import {fileURLToPath} from "node:url";
 
 const url=String(process.env.SUPABASE_URL||"").replace(/\/$/,"");
+const EXPECTED_STAGING_PROJECT_REF="bokxljngydmqrmktofwm";
+if(url&&new URL(url).hostname!==`\${EXPECTED_STAGING_PROJECT_REF}.supabase.co`)throw new Error("Refusing worker test against a non-approved Supabase staging project.");
 const key=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY||"";
 if(!url||!key)throw new Error("Staging SUPABASE_URL and service-role/secret key are required.");
 const file=fileURLToPath(import.meta.url);
