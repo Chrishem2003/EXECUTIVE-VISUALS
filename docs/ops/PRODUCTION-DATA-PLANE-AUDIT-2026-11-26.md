@@ -34,7 +34,7 @@ The Render Free filesystem is ephemeral. Do not treat this service as a durable 
 - Source-controlled Neon migrations `0001`–`0009` exist, but they are not applied to these Neon branches. Their source comments explicitly require a separately approved staging branch and migration plan.
 - No Neon branch was changed and no connection string/password was retrieved.
 
-The existing Neon project is a possible isolated PostgreSQL target, not a verified production database. Do not point Render at it or apply migrations until the staging branch, migration baseline, connection/pool settings, backup strategy and rollback plan have been approved and tested.
+The existing Neon project is a possible isolated PostgreSQL target, not a verified production database. The staging branch's private media bucket is a useful provisioned component, but it does not establish database readiness or tenant-isolated storage acceptance. The staging branch inherits its parent lineage and the prior integration runbook still requires a reviewed sanitization/empty-staging plan. Do not point Render at it or apply migrations until branch isolation, migration baseline, connection/pool settings, backup strategy and rollback plan have been approved and tested.
 
 ## Readiness contract
 
