@@ -28,7 +28,7 @@ if(testMode){
   }
  }catch(error){failure={httpStatus:null,reportedStatus:"probe_failed",failedChecks:[],errorCode:String(error?.name||"NETWORK_ERROR").slice(0,80)};}
  if(failure){
-  const host=new URL(healthUrl).host;
+  let host="configured-health-endpoint";try{host=new URL(healthUrl).host;}catch{}
   const delivered=await notify({text:"Executive Visuals health check failed: "+host,source:"executive-visuals",event:"health.check.failed",severity:"critical",timestamp:new Date().toISOString(),details:failure});
   console.error(JSON.stringify({result:"health_failure_alerted",webhookStatus:delivered,host,...failure}));
   process.exitCode=1;
