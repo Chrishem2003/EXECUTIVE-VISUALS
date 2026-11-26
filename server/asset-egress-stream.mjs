@@ -24,8 +24,8 @@ export async function pipeMeasuredPrivateAssetDownload({
 
   const headers=upstream.headers,contentType=headers?.get?.("content-type"),contentLength=headers?.get?.("content-length"),contentRange=headers?.get?.("content-range");
   if(contentType)response.setHeader("content-type",contentType);
-  if(contentLength&&/^\\d{1,12}$/.test(contentLength)&&Number(contentLength)<=assetSize)response.setHeader("content-length",contentLength);
-  if(contentRange&&/^bytes \\d+-\\d+\\/\\d+$/.test(contentRange))response.setHeader("content-range",contentRange);
+  if(contentLength&&/^\d{1,12}$/.test(contentLength)&&Number(contentLength)<=assetSize)response.setHeader("content-length",contentLength);
+  if(contentRange&&/^bytes \d+-\d+\/\d+$/.test(contentRange))response.setHeader("content-range",contentRange);
   response.setHeader("accept-ranges","bytes");response.statusCode=upstream.status;
 
   const source=upstream.body instanceof Readable?upstream.body:Readable.fromWeb(upstream.body);
