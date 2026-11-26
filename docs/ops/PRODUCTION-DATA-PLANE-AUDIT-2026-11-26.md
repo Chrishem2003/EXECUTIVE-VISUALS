@@ -64,3 +64,10 @@ Read-only schema inspection caused the existing Neon `production` and `staging-b
 
 ## Qualification: connected Supabase staging is shared
 The connected `Chrishem Platform Staging` project is not a dedicated isolated Executive Visuals database. Its migration history includes NEMA/shared-AI/platform records. In this work sequence, additive Executive Visuals migrations for Batch 128, Batch 129, Batch 130 (hardening and FK indexes), and Paddle/Pesapal billing were applied only inside the `executive_visuals` schema. The public NEMA tables, Auth users, customer assets and production project were not modified by those migrations. This does not satisfy the isolated-database release gate. Do not apply additional migrations to this shared project, repair its migration history, or treat it as the future production database until a reviewed isolation/baseline decision is made. Do not attempt to roll back these additive migrations automatically; review their dependency chain and keep the current schema intact.
+
+
+## Existing Render staging web services
+A fresh workspace inventory found two additional existing Executive Visuals web services; neither was modified:
+- `executive-visuals-cloud-staging` is Free, auto-deploys from `main`, and its health endpoint returned HTTP 200. It reports the same unready runtime as production: SQLite/local disk, non-durable storage, cloud media disabled, billing disabled and cloud video worker disabled. It is a separate web-service instance, but not a separately versioned staging branch or a ready data plane.
+- `EXECUTIVE-VISUALS-1` is Free and auto-deploys from `feat/staging-local-auth-allowlist-2026-11-13`; its health probe returned HTTP 503 during this audit. It is not accepted as a stable staging target.
+Both services remain untouched. No environment variables, branch settings, deploys or service configurations were changed.
