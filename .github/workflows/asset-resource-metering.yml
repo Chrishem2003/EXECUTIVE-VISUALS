@@ -18,6 +18,7 @@ on:
   push:
     branches:
       - feat/asset-resource-event-ledger-batch-123-2026-11-25
+      - feat/private-download-egress-metering-batch-125-2026-11-26
     paths:
       - "server/asset-resource-measurements.mjs"
       - "server/asset-resource-event-recorder.mjs"
