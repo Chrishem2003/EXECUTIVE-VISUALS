@@ -36,7 +36,10 @@ language plpgsql security definer
 set search_path=pg_catalog,executive_visuals,auth
 set row_security=off
 as $begin_egress$
-declare v_asset executive_visuals.assets%rowtype;
+declare
+ v_asset executive_visuals.assets%rowtype;
+ v_attempt executive_visuals.asset_egress_transfer_attempts%rowtype;
+ v_inserted integer;
 begin
  if not exists(select 1 from executive_visuals.platform_admins
    where user_id=p_actor_id and role in ('owner','platform_admin','billing_admin')) then
@@ -49,12 +52,18 @@ begin
    transfer_id,asset_id,owner_id,project_id,initiated_by
  ) values(p_transfer_id,p_asset_id,p_owner_id,p_project_id,p_actor_id)
  on conflict(transfer_id) do nothing;
- if not exists(select 1 from executive_visuals.asset_egress_transfer_attempts
-   where transfer_id=p_transfer_id and asset_id=p_asset_id and owner_id=p_owner_id
-     and project_id is not distinct from p_project_id and initiated_by=p_actor_id) then
+ get diagnostics v_inserted = row_count;
+ select * into v_attempt from executive_visuals.asset_egress_transfer_attempts
+ where transfer_id=p_transfer_id;
+ if not found or v_attempt.asset_id<>p_asset_id or v_attempt.owner_id<>p_owner_id
+    or v_attempt.project_id is distinct from p_project_id or v_attempt.initiated_by<>p_actor_id then
    raise exception 'Egress transfer identity conflict' using errcode='23505';
  end if;
- return jsonb_build_object('transferId',p_transfer_id,'status','started');
+ return jsonb_build_object(
+   'transferId',p_transfer_id,'status',v_attempt.status,
+   'idempotentReplay',(v_inserted=0),
+   'transferredBytes',v_attempt.transferred_bytes
+ );
 end;
 $begin_egress$;
 
@@ -66,24 +75,37 @@ language plpgsql security definer
 set search_path=pg_catalog,executive_visuals,auth
 set row_security=off
 as $finish_egress$
-declare v_attempt executive_visuals.asset_egress_transfer_attempts%rowtype;
+declare
+ v_attempt executive_visuals.asset_egress_transfer_attempts%rowtype;
+ v_asset_bytes bigint;
 begin
  if not exists(select 1 from executive_visuals.platform_admins
    where user_id=p_actor_id and role in ('owner','platform_admin','billing_admin')) then
    raise exception 'Financial administrator access required' using errcode='42501';
  end if;
  if p_status not in ('completed','partial','measurement_failed') or
-    p_transferred_bytes is null or p_transferred_bytes<0 or p_transferred_bytes>2147483648 then
+    p_transferred_bytes is null or p_transferred_bytes<0 or p_transferred_bytes>2147483648 or
+    (p_upstream_status is not null and p_upstream_status not between 200 and 599) then
    raise exception 'Invalid egress attempt outcome' using errcode='22023';
  end if;
  select * into v_attempt from executive_visuals.asset_egress_transfer_attempts
  where transfer_id=p_transfer_id for update;
  if not found then raise exception 'Egress attempt not found' using errcode='P0002'; end if;
  if v_attempt.initiated_by<>p_actor_id then raise exception 'Egress attempt actor mismatch' using errcode='42501'; end if;
+ select byte_size into v_asset_bytes from executive_visuals.assets
+ where id=v_attempt.asset_id and owner_id=v_attempt.owner_id
+   and project_id is not distinct from v_attempt.project_id;
+ if not found then raise exception 'Egress attempt asset no longer matches persisted attribution' using errcode='22023'; end if;
+ if p_transferred_bytes>v_asset_bytes then
+   raise exception 'Transferred bytes exceed persisted asset size' using errcode='22023';
+ end if;
  if v_attempt.status<>'started' then
    if v_attempt.status=p_status and v_attempt.transferred_bytes=p_transferred_bytes
-      and v_attempt.measurement_id is not distinct from p_measurement_id then
-     return jsonb_build_object('transferId',p_transfer_id,'status',v_attempt.status,'idempotentReplay',true);
+      and v_attempt.upstream_status is not distinct from p_upstream_status
+      and v_attempt.measurement_id is not distinct from p_measurement_id
+      and v_attempt.error_code is not distinct from left(p_error_code,100) then
+     return jsonb_build_object('transferId',p_transfer_id,'status',v_attempt.status,
+       'transferredBytes',v_attempt.transferred_bytes,'idempotentReplay',true);
    end if;
    raise exception 'Egress attempt already finalized with different evidence' using errcode='23505';
  end if;
@@ -95,7 +117,8 @@ begin
      measurement_id=p_measurement_id,error_code=left(p_error_code,100),
      finished_at=now()
  where transfer_id=p_transfer_id;
- return jsonb_build_object('transferId',p_transfer_id,'status',p_status,'idempotentReplay',false);
+ return jsonb_build_object('transferId',p_transfer_id,'status',p_status,
+   'transferredBytes',p_transferred_bytes,'idempotentReplay',false);
 end;
 $finish_egress$;
 
