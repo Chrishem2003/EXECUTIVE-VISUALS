@@ -14,3 +14,7 @@ The test uploads a unique small binary, verifies owner download and SHA-256 equa
 Use disposable staging identities only. Never use production JWTs, production project URLs, service-role keys, or customer assets. The script intentionally does not print tokens or response authorization headers. A signed URL is a bearer capability until expiry; do not log or share it.
 
 A successful workflow proves only the tested staging bucket and identities. It does not establish production storage readiness or object-backup coverage.
+
+
+## Workflow availability and deployment safety
+These workflows currently live on a review branch. GitHub manual `workflow_dispatch` and scheduled `schedule` runs require the workflow file to be present on the repository's default branch. Do not merge this PR to `main` solely to unlock testing: the Executive Visuals Render web service automatically deploys commits to `main`. First establish a safe staging execution path or explicitly approve a controlled deployment/configuration change. Until then, the PR-triggered static checks are the only GitHub Actions evidence; the manual runtime acceptance is pending.
