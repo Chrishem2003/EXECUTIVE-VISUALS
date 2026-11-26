@@ -10,7 +10,8 @@ const env={
  PADDLE_WEBHOOK_SECRET:"webhook-secret-test-placeholder-not-a-real-key",
  PESAPAL_SANDBOX_CONSUMER_KEY:"pesapal-test-consumer-key",
  PESAPAL_SANDBOX_CONSUMER_SECRET:"pesapal-test-consumer-secret",
- PESAPAL_IPN_ID:"123e4567-e89b-42d3-a456-426614174000"
+ PESAPAL_IPN_ID:"123e4567-e89b-42d3-a456-426614174000",
+ PESAPAL_CALLBACK_URL:"https://staging.example.test/api/billing/pesapal/ipn"
 };
 const paddlePrice={provider_price_id:"pri_12345678901234567890123456",amount_minor:25000,currency:"USD",active:true};
 const pesapalPrice={amount_minor:75000,currency:"UGX",active:true};
@@ -30,7 +31,7 @@ function mockFetch({price=paddlePrice,ipn=true,paddlePrices=[paddlePrice],pesapa
   if(target.origin==="https://cybqa.pesapal.com"&&target.pathname==="/pesapalv3/api/Auth/RequestToken")
    return Response.json({token:"short-lived-sandbox-token"});
   if(target.origin==="https://cybqa.pesapal.com"&&target.pathname==="/pesapalv3/api/URLSetup/GetIpnList")
-   return Response.json(ipn?[{ipn_id:env.PESAPAL_IPN_ID,url:"https://staging.example.test/api/billing/pesapal/ipn"}]:[]);
+   return Response.json(ipn?[{ipn_id:env.PESAPAL_IPN_ID,url:env.PESAPAL_CALLBACK_URL}]:[]);
   throw new Error("Unexpected sandbox request "+target.toString());
  };
  return{fetchImpl,calls};
