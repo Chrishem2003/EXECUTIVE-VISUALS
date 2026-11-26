@@ -1,0 +1,28 @@
+name: Staging private storage round-trip acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: executive-visuals-staging-private-storage-acceptance
+  cancel-in-progress: false
+jobs:
+  private-storage-roundtrip:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Run owner-approved private storage round-trip
+        env:
+          SUPABASE_STAGING_URL: ${{ secrets.SUPABASE_STAGING_URL }}
+          SUPABASE_STAGING_ANON_KEY: ${{ secrets.SUPABASE_STAGING_ANON_KEY }}
+          SUPABASE_STAGING_SECRET_KEY: ${{ secrets.SUPABASE_STAGING_SECRET_KEY }}
+          STORAGE_TEST_OWNER_JWT: ${{ secrets.STORAGE_TEST_OWNER_JWT }}
+          STORAGE_TEST_OTHER_JWT: ${{ secrets.STORAGE_TEST_OTHER_JWT }}
+          STORAGE_TEST_OWNER_ID: ${{ vars.STORAGE_TEST_OWNER_ID }}
+          SUPABASE_STAGING_BUCKET: ${{ vars.SUPABASE_STAGING_BUCKET }}
+        run: node scripts/verify-staging-private-storage-roundtrip.mjs
