@@ -24,8 +24,8 @@ export async function pipeMeasuredPrivateAssetDownload({
 
   const headers=upstream.headers,contentType=headers?.get?.("content-type"),contentLength=headers?.get?.("content-length"),contentRange=headers?.get?.("content-range");
   if(contentType)response.setHeader("content-type",contentType);
-  if(contentLength&&/^\\d{1,12}$/.test(contentLength)&&Number(contentLength)<=assetSize)response.setHeader("content-length",contentLength);
-  if(contentRange&&/^bytes \\d+-\\d+\\/\\d+$/.test(contentRange))response.setHeader("content-range",contentRange);
+  if(contentLength&&/^\d{1,12}$/.test(contentLength)&&Number(contentLength)<=assetSize)response.setHeader("content-length",contentLength);
+  if(contentRange&&/^bytes \d+-\d+\/\d+$/.test(contentRange))response.setHeader("content-range",contentRange);
   response.setHeader("accept-ranges","bytes");response.statusCode=upstream.status;
 
   const source=upstream.body instanceof Readable?upstream.body:Readable.fromWeb(upstream.body);
@@ -36,19 +36,29 @@ export async function pipeMeasuredPrivateAssetDownload({
       if(transferredBytes+chunk.length>assetSize)
         throw Object.assign(new Error("Private download exceeded the persisted asset size."),{code:"PRIVATE_ASSET_DOWNLOAD_SIZE_MISMATCH"});
       await new Promise((resolve,reject)=>{
-        try{response.write(chunk,error=>error?reject(error):resolve());}
-        catch(error){reject(error);}
+        let settled=false;
+        const cleanup=()=>{if(typeof response.off==="function")response.off("error",onError);};
+        const finish=(error)=>{if(settled)return;settled=true;if(!error)cleanup();error?reject(error):resolve();};
+        const onError=error=>{cleanup();finish(error);};
+        if(typeof response.once==="function")response.once("error",onError);
+        try{response.write(chunk,error=>finish(error));}
+        catch(error){cleanup();finish(error);}
       });
       transferredBytes+=chunk.length;
     }
     await new Promise((resolve,reject)=>{
-      try{response.end(error=>error?reject(error):resolve());}
-      catch(error){reject(error);}
+      let settled=false;
+      const cleanup=()=>{if(typeof response.off==="function")response.off("error",onError);};
+      const finish=(error)=>{if(settled)return;settled=true;if(!error)cleanup();error?reject(error):resolve();};
+      const onError=error=>{cleanup();finish(error);};
+      if(typeof response.once==="function")response.once("error",onError);
+      try{response.end(error=>finish(error));}
+      catch(error){cleanup();finish(error);}
     });
   }catch(error){
     streamError=error;
     source.destroy?.();
-    if(response.headersSent&&!response.destroyed)response.destroy();
+    if(response.headersSent&&!response.destroyed)response.destroy?.();
     else if(!response.destroyed){response.statusCode=502;response.end();}
   }finally{
     if(transferredBytes>0){

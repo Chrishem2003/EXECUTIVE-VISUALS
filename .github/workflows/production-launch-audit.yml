@@ -1,0 +1,27 @@
+name: Production launch audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run production launch gate
+        env:
+          EXECUTIVE_VISUALS_BASE_URL: ${{ secrets.EXECUTIVE_VISUALS_AUDIT_URL }}
+          PRIVATE_BUCKET_VERIFIED_AT: ${{ vars.PRIVATE_BUCKET_VERIFIED_AT }}
+          WORKER_HEARTBEAT_VERIFIED_AT: ${{ vars.WORKER_HEARTBEAT_VERIFIED_AT }}
+          BACKUP_RESTORE_VERIFIED_AT: ${{ vars.BACKUP_RESTORE_VERIFIED_AT }}
+          MONITORING_ALERT_VERIFIED_AT: ${{ vars.MONITORING_ALERT_VERIFIED_AT }}
+        run: node scripts/production-launch-audit.mjs
