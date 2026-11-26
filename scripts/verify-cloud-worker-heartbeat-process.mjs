@@ -62,7 +62,7 @@ if(process.argv[2]==="--child"){
  },1500);
  process.on("SIGTERM",async()=>{
   clearInterval(timer);
-  try{await write("stopped");process.exit(0);}catch{process.exit(1);}
+  try{await write("stopped");process.exitCode=0;}catch{process.exit(1);}
  });
 }else{
  const launch=workerId=>{
