@@ -30,7 +30,7 @@ function fixture({bucketPublic=false,otherCanRead=false,ownerCanRead=true,signed
       return new Response(objects.values().next().value||body,{status:200});
     }
     if(target.pathname.startsWith("/storage/v1/object/sign/executive-visuals-media/")&&options.method==="POST"){
-      return Response.json({signedURL:signedHost||"/storage/v1/object/sign/executive-visuals-media/temporary?token=opaque"});
+      return Response.json({signedURL:signedHost||target.pathname+"?token=opaque"});
     }
     if(target.pathname.startsWith("/storage/v1/object/sign/executive-visuals-media/")&&options.method==="GET"){
       return new Response(objects.values().next().value||body,{status:200});
