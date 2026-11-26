@@ -19,6 +19,7 @@ jobs:
         with:
           node-version: "22.23.4"
       - run: node --check scripts/create-encrypted-staging-backup.mjs
+      - run: node --check scripts/verify-encrypted-staging-backup.mjs
   encrypted-staging-export:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
