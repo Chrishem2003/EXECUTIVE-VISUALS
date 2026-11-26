@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - "scripts/monitor-executive-visuals.mjs"
+      - "server/ops-monitoring.mjs"
+      - "server/tests/ops-monitoring.test.mjs"
       - ".github/workflows/executive-visuals-monitoring.yml"
   workflow_dispatch:
     inputs:
@@ -29,7 +31,12 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22.23.4"
-      - run: node --check scripts/monitor-executive-visuals.mjs
+      - name: Check monitoring module syntax
+        run: node --check server/ops-monitoring.mjs
+      - name: Check monitoring entrypoint syntax
+        run: node --check scripts/monitor-executive-visuals.mjs
+      - name: Test monitoring and alert delivery contract
+        run: node --test server/tests/ops-monitoring.test.mjs
   monitor:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
