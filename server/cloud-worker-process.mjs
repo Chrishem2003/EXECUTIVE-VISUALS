@@ -25,6 +25,7 @@ import { createGoogleGeminiGcsMirrorBootstrap } from "./google-gemini-gcs-mirror
 import { createB2MultipartUploadStore } from "./b2-multipart-upload-store.mjs";
 import { createBackblazeB2Storage } from "./backblaze-b2-storage.mjs";
 import { createB2MultipartCleanupWorker } from "./b2-multipart-cleanup-worker.mjs";
+import { createCloudWorkerHeartbeat } from "./cloud-worker-heartbeat.mjs";
 
 const truth=(value)=>value==="true";
 const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||value===""?fallback:Number(value);if(!Number.isInteger(parsed)||parsed<min||parsed>max)throw new Error(label+" is outside the supported range.");return parsed;};
@@ -278,14 +279,57 @@ export async function startCloudWorkerProcess(env=process.env){
    maintenanceTasks.push(()=>recoveryWorker.run({limit:100}));
   }
  }
+ const workerId="cloud-worker-"+randomUUID();
+ const workerFamilies=[
+  ...(config.media?["media"]:[]),...(config.timeline?["timeline"]:[]),...(config.video?["video"]:[]),
+  ...(config.publicationCleanup?["publication_cleanup"]:[]),
+  ...(config.geminiFilesCleanup?["gemini_files_cleanup"]:[]),
+  ...(config.geminiFilesRecovery?["gemini_files_recovery"]:[]),
+  ...(config.b2MultipartCleanup?["b2_multipart_cleanup"]:[]),
+  ...(maintenanceTasks.length?["storage_maintenance"]:[])
+ ];
+ const heartbeat=createCloudWorkerHeartbeat({
+  workerId,workerFamilies,enabled:true,
+  rpc:async(name,args)=>{
+   if(name!=="record_cloud_worker_heartbeat")throw new Error("Unexpected cloud worker heartbeat RPC.");
+   const headers={apikey:cloudCredentials.serviceRoleKey,"content-type":"application/json","content-profile":"executive_visuals",accept:"application/json"};
+   if(!String(cloudCredentials.serviceRoleKey).startsWith("sb_secret_"))headers.authorization="Bearer "+cloudCredentials.serviceRoleKey;
+   const response=await fetch(cloudCredentials.url+"/rest/v1/rpc/"+name,{method:"POST",headers,body:JSON.stringify(args)});
+   const raw=await response.text();
+   if(!response.ok)throw Object.assign(new Error("Cloud worker heartbeat could not be persisted (HTTP "+response.status+")."),{code:"WORKER_HEARTBEAT_WRITE_FAILED"});
+   return raw?JSON.parse(raw):null;
+  }
+ });
+ const heartbeatState={status:"starting",lastCycleAt:null,lastErrorCode:null};
+ const writeHeartbeat=()=>heartbeat.record(heartbeatState).catch(error=>{
+  process.stderr.write(JSON.stringify({kind:"worker_heartbeat_error",code:error?.code||"WORKER_HEARTBEAT_WRITE_FAILED"})+"\\n");
+ });
+ await writeHeartbeat();
  const supervisor=createCloudWorkerSupervisor({
   workers,maintenanceTasks,maintenanceIntervalMs:config.cleanupIntervalMs,
   leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
-  onLog:event=>process.stdout.write(JSON.stringify(event)+"\n"),
-  onError:error=>process.stderr.write(JSON.stringify({kind:"worker_error",code:error?.code||"WORKER_ERROR",message:String(error?.message||"Worker cycle failed.").slice(0,500)})+"\n")
+  onLog:event=>{
+   if(event?.kind==="cycle"||event?.kind==="maintenance"){
+    heartbeatState.status="healthy";heartbeatState.lastCycleAt=new Date().toISOString();heartbeatState.lastErrorCode=null;
+   }
+   process.stdout.write(JSON.stringify(event)+"\\n");
+  },
+  onError:error=>{
+   heartbeatState.status="degraded";
+   heartbeatState.lastErrorCode=String(error?.code||"WORKER_ERROR").toUpperCase().replace(/[^A-Z0-9_]/g,"_").slice(0,80);
+   process.stderr.write(JSON.stringify({kind:"worker_error",code:heartbeatState.lastErrorCode,message:String(error?.message||"Worker cycle failed.").slice(0,500)})+"\\n");
+  }
  });
+ const heartbeatTimer=setInterval(writeHeartbeat,30000);
+ heartbeatTimer.unref?.();
  await supervisor.start();
- const shutdown=async()=>{await supervisor.stop();process.exit(0);};
+ const shutdown=async()=>{
+  clearInterval(heartbeatTimer);
+  heartbeatState.status="stopping";await writeHeartbeat();
+  await supervisor.stop();
+  heartbeatState.status="stopped";await writeHeartbeat();
+  process.exit(0);
+ };
  process.once("SIGINT",shutdown);process.once("SIGTERM",shutdown);
  return supervisor;
 }
