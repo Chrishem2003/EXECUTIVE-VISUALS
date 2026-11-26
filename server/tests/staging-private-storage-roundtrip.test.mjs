@@ -87,3 +87,9 @@ test("reports cleanup failure instead of claiming a successful round-trip",async
   const f=fixture({cleanupFails:true});
   await assert.rejects(()=>runPrivateStorageRoundTrip({env,fetchImpl:f.fetchImpl,createId:()=>asset}),{code:"STAGING_STORAGE_CLEANUP_PENDING"});
 });
+
+test("rejects a signed URL for a different object path on the same staging host",async()=>{
+  const f=fixture({signedHost:"/storage/v1/object/sign/executive-visuals-media/another-owner/another-asset/original.txt?token=opaque"});
+  await assert.rejects(()=>runPrivateStorageRoundTrip({env,fetchImpl:f.fetchImpl,createId:()=>asset}),{code:"STAGING_STORAGE_SIGNED_URL_PATH_INVALID"});
+  assert.ok(f.calls.some(x=>x.method==="DELETE"));
+});
