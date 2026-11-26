@@ -1,0 +1,37 @@
+name: Private storage staging acceptance
+on:
+  pull_request:
+    paths:
+      - "scripts/verify-private-storage-staging.mjs"
+      - ".github/workflows/private-storage-staging-acceptance.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - run: node --check scripts/verify-private-storage-staging.mjs
+  staging-roundtrip:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - name: Verify private upload, download, isolation and signed URL
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_STAGING_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_STAGING_ANON_KEY }}
+          STORAGE_TEST_OWNER_JWT: ${{ secrets.STORAGE_TEST_OWNER_JWT }}
+          STORAGE_TEST_OTHER_JWT: ${{ secrets.STORAGE_TEST_OTHER_JWT }}
+          STORAGE_TEST_OWNER_ID: ${{ vars.STORAGE_TEST_OWNER_ID }}
+          STORAGE_TEST_BUCKET: executive-visuals-media
+        run: node scripts/verify-private-storage-staging.mjs
