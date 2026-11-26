@@ -216,14 +216,27 @@ export function createProviderSubscriptionBilling({
       if(inserted.status===409){
         const prior=await dbRequest("payment_webhook_events?select=processing_status,payload_hash&provider=eq."+provider+"&event_key=eq."+eventKey+"&limit=1");
         const priorRow=Array.isArray(prior.data)?prior.data[0]:null;
-        const state=priorRow?.processing_status||null;
         if(priorRow?.payload_hash&&priorRow.payload_hash!==payloadHash)
           throw Object.assign(new Error("A provider event ID was replayed with different event content."),{code:"PROVIDER_EVENT_ID_PAYLOAD_CONFLICT",status:409});
-        if(state==="processed"||state==="ignored"||state==="needs_review")return {duplicate:true,processingStatus:state};
       }
-      const updateEvent=async(body)=>dbRequest("payment_webhook_events?provider=eq."+provider+"&event_key=eq."+eventKey,{
-        method:"PATCH",body,prefer:"return=minimal"
+
+      // Claim under a database row lock. A duplicate delivery cannot process
+      // concurrently; an abandoned lease becomes retryable after its TTL.
+      const claim=await rpc("claim_payment_webhook_event",{
+        p_provider:provider,p_event_key:eventKey,p_payload_hash:payloadHash,p_lease_seconds:300
       });
+      if(claim?.claimed!==true)return {duplicate:true,processingStatus:text(claim?.processingStatus)||"unknown"};
+      const leaseId=text(claim.leaseId);
+      if(!/^[0-9a-f-]{36}$/i.test(leaseId))
+        throw Object.assign(new Error("Webhook event claim did not return a valid lease token."),{code:"PROVIDER_EVENT_LEASE_INVALID",status:503});
+
+      const updateEvent=async(body)=>{
+        const terminal=["processed","ignored","needs_review","failed"].includes(body.processing_status);
+        const patch=terminal?{...body,processing_lease_id:null,processing_started_at:null}:body;
+        return dbRequest("payment_webhook_events?provider=eq."+provider+"&event_key=eq."+eventKey+"&processing_lease_id=eq."+encodeURIComponent(leaseId),{
+          method:"PATCH",body:patch,prefer:"return=minimal"
+        });
+      };
       await updateEvent({processing_status:"processing",error_message:null});
       try{
         if(provider==="paddle"&&String(event.eventType||"").startsWith("subscription.")){
