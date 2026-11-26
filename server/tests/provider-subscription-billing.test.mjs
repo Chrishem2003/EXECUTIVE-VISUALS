@@ -156,7 +156,7 @@ test("Paddle refund and chargeback adjustments are durably quarantined without c
     assert.equal(result.body.adjustment.reason,"customer request");
     assert.equal(result.body.adjustment.subtotal,"4500");
     assert.equal(result.body.adjustment.items[0].transactionItemId,"txnitm-1");
-    assert.equal(calls.filter(call=>call.method==="POST").length,1);
+    assert.equal(calls.filter(call=>call.method==="POST"&&call.path.endsWith("/payment_webhook_events")).length,1);
     const stored=calls.find(call=>call.method==="POST").body.payload;
     assert.equal(stored.adjustmentId,"adj-"+adjustmentAction);
     assert.equal(stored.adjustmentItems[0].total,"5000");
@@ -335,6 +335,7 @@ test("provider webhook claims a persisted event before any settlement side effec
     if(target.pathname.endsWith("/rpc/claim_payment_webhook_event"))return json({claimed:true,processingStatus:"processing",attempt:1});
     if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([payment]);
     if(target.pathname.endsWith("/rpc/finalize_subscription_purchase_for_provider"))return json({status:"active",subscriptionId});
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="GET")return json([]);
     if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
     throw new Error("unexpected database request "+target.pathname);
   };
