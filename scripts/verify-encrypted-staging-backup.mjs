@@ -31,6 +31,8 @@ try{
  const manifest=JSON.parse(await readFile(join(source,"manifest.json"),"utf8"));
  assert.equal(manifest.format,"executive-visuals-backup-v1");
  assert.equal(manifest.database?.file,"database.dump","Unexpected database dump path.");
+ assert.equal(manifest.database?.schema,"executive_visuals","Backup must contain only the Executive Visuals schema.");
+ assert.equal(manifest.database?.includesSupabaseAuthUsers,false,"Backup must not include shared Supabase Auth identities.");
  assert.ok(Array.isArray(manifest.objects),"Backup manifest object list is invalid.");
  const db=await readFile(join(source,manifest.database.file));
  assert.equal(db.length,manifest.database.bytes,"Database dump size mismatch.");
