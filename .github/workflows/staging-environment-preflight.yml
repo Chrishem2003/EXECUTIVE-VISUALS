@@ -1,5 +1,12 @@
 name: Staging environment configuration preflight
 on:
+  push:
+    branches:
+      - feat/batch-137-staging-preflight-readiness-2026-11-26
+    paths:
+      - "scripts/check-staging-environment-readiness.mjs"
+      - "scripts/check-staging-environment-readiness.test.mjs"
+      - ".github/workflows/staging-environment-preflight.yml"
   pull_request:
     paths:
       - "scripts/check-staging-environment-readiness.mjs"
