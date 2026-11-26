@@ -13,6 +13,7 @@ Secrets:
 
 Variable:
 - `PESAPAL_IPN_ID` (registered sandbox IPN GUID)
+- `PESAPAL_CALLBACK_URL` (the exact HTTPS staging callback URL registered with Pesapal)
 
 ## What it verifies
 - Supabase URL is the approved staging project.
