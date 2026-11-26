@@ -8,7 +8,7 @@ const script=fileURLToPath(new URL("../../scripts/verify-cloud-worker-heartbeat-
 test("worker liveness acceptance refuses to run without an explicit staging project",()=>{
  const result=spawnSync(process.execPath,[script],{encoding:"utf8",env:{PATH:process.env.PATH||"",HOME:process.env.HOME||""}});
  assert.notEqual(result.status,0);
- assert.match(result.stderr,/STAGING_WORKER_PROJECT_INVALID/);
+ assert.match(result.stderr,/approved staging Supabase project/);
 });
 
 test("worker liveness acceptance rejects production or unrelated Supabase project URLs",()=>{
@@ -18,6 +18,6 @@ test("worker liveness acceptance rejects production or unrelated Supabase projec
   SUPABASE_STAGING_SECRET_KEY:"placeholder-never-used"
  }});
  assert.notEqual(result.status,0);
- assert.match(result.stderr,/STAGING_WORKER_PROJECT_INVALID/);
+ assert.match(result.stderr,/approved staging Supabase project/);
  assert.equal(result.stdout.includes("placeholder-never-used"),false);
 });
