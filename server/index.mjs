@@ -29,6 +29,7 @@ import { getProviderCatalog } from "./provider-registry.mjs";
 import { buildAdminProviderReadiness, buildAdminProviderReadinessSummary } from "./admin-operations.mjs";
 import { getProviderCapabilityAtlas } from "./provider-capability-atlas.mjs";
 import { estimateVideoGenerationCost, estimateVideoProductionCost, parseVideoPricingCatalog } from "./video-cost-estimator.mjs";
+import { compareCommercialProductionCandidates, parseVideoModelQualityEvidence, quoteCustomerCredits, resolveCustomerCreditPolicy } from "./customer-credit-economics.mjs";
 import { preflightVideoProduction } from "./video-shot-preflight.mjs";
 import { buildVideoGenerationApproval } from "./video-generation-approval.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
@@ -1227,14 +1228,43 @@ export function createAppServer() {
         const body=await readJson(req,16*1024);
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const quote=estimateVideoGenerationCost(body,pricing);
-        send(res,200,quote,cors);return;
+        const configured=resolveCustomerCreditPolicy(process.env);
+        const customerCreditQuote=quoteCustomerCredits(quote,configured.configured?configured.policy:null);
+        send(res,200,{...quote,customerCreditQuote},cors);return;
       }
       if(path==="/api/video-production-quote"&&req.method==="POST"){
         if(!rateAllowed("video-production-quote:"+user.id,20,60000)){fail(res,429,"RATE_LIMITED","Too many production quote requests. Try again shortly.");return;}
         const body=await readJson(req,32*1024);
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const quote=estimateVideoProductionCost(body,pricing);
-        send(res,200,quote,cors);return;
+        const configured=resolveCustomerCreditPolicy(process.env);
+        const customerCreditQuote=quoteCustomerCredits(quote,configured.configured?configured.policy:null);
+        send(res,200,{...quote,customerCreditQuote},cors);return;
+      }
+      if(path==="/api/video-model-recommendations"&&req.method==="POST"){
+        if(!rateAllowed("video-model-recommendations:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many model recommendation requests. Try again shortly.");return;}
+        const body=await readJson(req,16*1024);
+        const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
+        const configured=resolveCustomerCreditPolicy(process.env);
+        const evidence=parseVideoModelQualityEvidence(process.env.VIDEO_MODEL_QUALITY_EVIDENCE_JSON||"");
+        const candidates=pricing.records.map(record=>{
+          const quote=estimateVideoGenerationCost({...body,provider:record.provider,model:record.model},pricing);
+          const creditQuote=quoteCustomerCredits(quote,configured.configured?configured.policy:null);
+          const qualityEvidence=evidence.records.find(item=>item.provider===record.provider&&item.model===record.model)||null;
+          return {id:record.provider+":"+record.model,provider:record.provider,model:record.model,creditQuote,qualityEvidence};
+        });
+        if(candidates.length<2||candidates.length>20){
+          send(res,200,{recommendation:{mode:"recommendation_only",automaticRouting:false,recommended:null,candidates:[],reason:"Configure between two and twenty current provider rate cards for a model comparison."},evidenceConfigured:evidence.configured},cors);return;
+        }
+        const parseNumberThreshold=(raw,fallback,min,max)=>{const value=raw==null||String(raw).trim()===""?fallback:Number(raw);return Number.isFinite(value)&&value>=min&&value<=max?value:fallback;};
+        const parseIntegerThreshold=(raw,fallback,min,max)=>{const value=raw==null||String(raw).trim()===""?fallback:Number(raw);return Number.isSafeInteger(value)&&value>=min&&value<=max?value:fallback;};
+        const recommendation=compareCommercialProductionCandidates({
+          candidates,
+          minQualityScore:parseNumberThreshold(process.env.VIDEO_MODEL_MIN_QUALITY_SCORE,0.9,0,1),
+          minSamples:parseIntegerThreshold(process.env.VIDEO_MODEL_MIN_EVALUATION_SAMPLES,25,25,100000),
+          maxLatencyMs:parseIntegerThreshold(process.env.VIDEO_MODEL_MAX_P95_LATENCY_MS,30000,1,86400000)
+        });
+        send(res,200,{recommendation,evidenceConfigured:evidence.configured,rejectedEvidenceRecords:evidence.rejectedCount,automaticRouting:false},cors);return;
       }
       if(path==="/api/video-production-approvals"&&req.method==="POST"){
         if(!rateAllowed("video-production-approval:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many production approval requests. Try again shortly.");return;}

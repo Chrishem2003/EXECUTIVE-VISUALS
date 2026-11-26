@@ -15,6 +15,7 @@
     "verify:workload-economics": "node --test server/tests/ai-workload-economics.test.mjs",
     "verify:workload-variance": "node --test server/tests/workload-cost-variance.test.mjs",
     "verify:provider-rate-cards": "node --test server/tests/provider-rate-cards.test.mjs",
+    "verify:commercial-economics": "node --test server/tests/customer-credit-economics.test.mjs server/tests/customer-credit-economics-api.test.mjs server/tests/subscription-pricing-hypotheses.test.mjs server/tests/provider-rate-cards.test.mjs server/tests/unified-subscription-billing.test.mjs server/tests/provider-subscription-billing.test.mjs",
     "verify:workload-telemetry": "node --test server/tests/ai-workload-telemetry.test.mjs",
     "verify:subscription-economics": "node --test server/tests/subscription-customer-economics.test.mjs",
     "verify:financial-reconciliation": "node --test server/tests/financial-reconciliation.test.mjs",

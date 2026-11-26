@@ -42,6 +42,8 @@ jobs:
           ffprobe -version
       - name: Run complete product verification and production build
         run: npm run build
+      - name: Verify commercial pricing, customer credits, entitlements and model recommendations
+        run: npm run verify:commercial-economics
 
   # Live D1 acceptance is intentionally kept in the separately confirmed
   # workflow_dispatch workflow. Pull-request checks must not mutate shared
