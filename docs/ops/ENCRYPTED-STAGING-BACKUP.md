@@ -16,3 +16,6 @@ Important limitations:
 - This job does not perform a restore. A restore drill into an isolated Supabase-compatible environment remains mandatory before production launch.
 - Database dump and Storage object data are separate; both are included because Supabase database backups do not contain Storage object bytes.
 - Never run against production until a separately approved production backup destination, encryption-key custody, retention, and restore procedure exist.
+
+
+The exporter traverses nested Storage folders (not just bucket-root objects), paginates each prefix, enforces a 100,000-object/folder safety ceiling, and stores each object under a generated numeric archive filename while preserving its original Storage key in the manifest. The verifier checks archive paths before extraction and validates manifest file names before reading objects. This export is not a transactionally consistent point-in-time snapshot while uploads are changing; quiesce writes or schedule a maintenance window for a restore-grade backup.
