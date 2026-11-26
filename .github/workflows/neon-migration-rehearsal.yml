@@ -69,7 +69,10 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f scripts/verify-neon-queued-cancellation-postgres.sql
       - name: Create disposable payment webhook ledger fixture
         run: |
-          psql -v ON_ERROR_STOP=1 -c "DO \\$\\$ BEGIN CREATE ROLE anon; EXCEPTION WHEN duplicate_object THEN NULL; END \\$\\$; DO \\$\\$ BEGIN CREATE ROLE authenticated; EXCEPTION WHEN duplicate_object THEN NULL; END \\$\\$; DO \\$\\$ BEGIN CREATE ROLE service_role; EXCEPTION WHEN duplicate_object THEN NULL; END \\$\\$; CREATE TABLE IF NOT EXISTS executive_visuals.payment_webhook_events (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), provider text NOT NULL, event_key text NOT NULL, event_type text NOT NULL, payload_hash text NOT NULL, signature_verified boolean NOT NULL, processing_status text NOT NULL DEFAULT 'received', payload jsonb NOT NULL DEFAULT '{}'::jsonb, error_message text, received_at timestamptz NOT NULL DEFAULT now(), processed_at timestamptz, UNIQUE(provider,event_key))"
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE anon"
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE authenticated"
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE service_role"
+          psql -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS executive_visuals.payment_webhook_events (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), provider text NOT NULL, event_key text NOT NULL, event_type text NOT NULL, payload_hash text NOT NULL, signature_verified boolean NOT NULL, processing_status text NOT NULL DEFAULT 'received', payload jsonb NOT NULL DEFAULT '{}'::jsonb, error_message text, received_at timestamptz NOT NULL DEFAULT now(), processed_at timestamptz, UNIQUE(provider,event_key))"
       - name: Apply webhook processing lease migration
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261126120000_webhook_event_processing_leases_batch139.sql
       - name: Verify webhook concurrency, replay and crash recovery
