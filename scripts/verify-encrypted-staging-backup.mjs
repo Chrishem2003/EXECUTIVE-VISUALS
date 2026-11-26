@@ -19,17 +19,29 @@ try{
  const archive=Buffer.concat([decipher.update(ciphertext),decipher.final()]);
  const archivePath=join(temp,"backup.tar.gz");
  await writeFile(archivePath,archive,{mode:0o600});
- const extract=spawnSync("tar",["-xzf",archivePath,"-C",temp],{encoding:"utf8"});
- if(extract.status!==0)throw new Error("Encrypted archive failed tar integrity validation.");
+ const listing=spawnSync("tar",["-tzf",archivePath],{encoding:"utf8",maxBuffer:8*1024*1024});
+ if(listing.status!==0)throw new Error("Encrypted archive failed tar integrity validation.");
+ for(const entry of listing.stdout.split("\n").filter(Boolean)){
+  const normalized=entry.replace(/^\.\//,"").replace(/\/+$/,"");
+  if(normalized && (normalized.startsWith("/")||normalized.split("/").some(part=>part===".."||part==="")))throw new Error("Backup archive contains an unsafe path.");
+ }
+ const extract=spawnSync("tar",["--no-same-owner","--no-same-permissions","-xzf",archivePath,"-C",temp],{encoding:"utf8"});
+ if(extract.status!==0)throw new Error("Encrypted archive extraction failed.");
  const source=temp;
  const manifest=JSON.parse(await readFile(join(source,"manifest.json"),"utf8"));
  assert.equal(manifest.format,"executive-visuals-backup-v1");
+ assert.equal(manifest.database?.file,"database.dump","Unexpected database dump path.");
+ assert.ok(Array.isArray(manifest.objects),"Backup manifest object list is invalid.");
  const db=await readFile(join(source,manifest.database.file));
  assert.equal(db.length,manifest.database.bytes,"Database dump size mismatch.");
  assert.equal(hash(db),manifest.database.sha256,"Database dump SHA-256 mismatch.");
  const pg=spawnSync("pg_restore",["--list",join(source,manifest.database.file)],{encoding:"utf8",maxBuffer:8*1024*1024});
  if(pg.status!==0)throw new Error("pg_restore could not parse the database archive.");
+ const seenFiles=new Set();
  for(const item of manifest.objects){
+  assert.match(item.file,/^\d{8}\.bin$/,"Unsafe storage object filename in manifest.");
+  assert.ok(!seenFiles.has(item.file),"Duplicate storage object filename in manifest.");
+  seenFiles.add(item.file);
   const bytes=await readFile(join(source,"objects",item.file));
   assert.equal(bytes.length,item.bytes,"Storage object size mismatch for "+item.file);
   assert.equal(hash(bytes),item.sha256,"Storage object SHA-256 mismatch for "+item.file);
