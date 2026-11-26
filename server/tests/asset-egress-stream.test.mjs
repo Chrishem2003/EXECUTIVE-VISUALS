@@ -44,7 +44,8 @@ test("does not record a zero-byte or unsuccessful upstream response",async()=>{
 });
 test("rejects a response that would transfer more bytes than the asset metadata permits",async()=>{
  const out=output(),events=[];
- await assert.rejects(()=>pipeMeasuredPrivateAssetDownload({upstream:response(200,Buffer.from("123456789")),response:out.res,asset,record:async event=>events.push(event)}),e=>e.code==="PRIVATE_ASSET_DOWNLOAD_SIZE_MISMATCH");
+ const result=await pipeMeasuredPrivateAssetDownload({upstream:response(200,Buffer.from("123456789")),response:out.res,asset,record:async event=>events.push(event)});
+ assert.equal(result.error.code,"PRIVATE_ASSET_DOWNLOAD_SIZE_MISMATCH");
  assert.equal(events.length,1);
  assert.equal(events[0].measurement.dimensions.transferredBytes,8);
  assert.equal(events[0].measurement.dimensions.partial,true);
