@@ -36,14 +36,20 @@ export async function pipeMeasuredPrivateAssetDownload({
       if(transferredBytes+chunk.length>assetSize)
         throw Object.assign(new Error("Private download exceeded the persisted asset size."),{code:"PRIVATE_ASSET_DOWNLOAD_SIZE_MISMATCH"});
       await new Promise((resolve,reject)=>{
-        try{response.write(chunk,error=>error?reject(error):resolve());}
-        catch(error){reject(error);}
+        const onError=error=>reject(error);
+        const cleanup=()=>{if(typeof response.off==="function")response.off("error",onError);};
+        if(typeof response.once==="function")response.once("error",onError);
+        try{response.write(chunk,error=>{cleanup();error?reject(error):resolve();});}
+        catch(error){cleanup();reject(error);}
       });
       transferredBytes+=chunk.length;
     }
     await new Promise((resolve,reject)=>{
-      try{response.end(error=>error?reject(error):resolve());}
-      catch(error){reject(error);}
+      const onError=error=>reject(error);
+      const cleanup=()=>{if(typeof response.off==="function")response.off("error",onError);};
+      if(typeof response.once==="function")response.once("error",onError);
+      try{response.end(error=>{cleanup();error?reject(error):resolve();});}
+      catch(error){cleanup();reject(error);}
     });
   }catch(error){
     streamError=error;
