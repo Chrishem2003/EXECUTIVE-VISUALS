@@ -48,5 +48,7 @@ jobs:
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'health-check')
         env:
           EXECUTIVE_VISUALS_HEALTH_URL: ${{ vars.EXECUTIVE_VISUALS_HEALTH_URL }}
+          EXECUTIVE_VISUALS_REQUIRE_POSTGRES: ${{ vars.EXECUTIVE_VISUALS_REQUIRE_POSTGRES }}
+          EXECUTIVE_VISUALS_REQUIRE_CLOUD_MEDIA: ${{ vars.EXECUTIVE_VISUALS_REQUIRE_CLOUD_MEDIA }}
           OPS_ALERT_WEBHOOK_URL: ${{ secrets.OPS_ALERT_WEBHOOK_URL }}
         run: node scripts/monitor-executive-visuals.mjs
