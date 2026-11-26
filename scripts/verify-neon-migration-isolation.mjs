@@ -22,7 +22,7 @@ for (const name of migrations) {
   const sql = readFileSync(path, "utf8");
   const normalized = sql.trim().toLowerCase();
 
-  assert.match(normalized, /(?:^|\\n)\\s*begin\\s*;/, `${name} must start a transaction`);
+  assert.match(normalized, /(?:^|\n)\s*begin\s*;/, `${name} must start a transaction`);
   assert.match(normalized, /commit;$/, `${name} must commit its transaction`);
   assert.doesNotMatch(sql, /\b(?:auth|public|storage)\s*\./i, `${name} must not depend on shared Supabase schemas`);
 
