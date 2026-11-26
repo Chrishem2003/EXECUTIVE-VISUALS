@@ -12,3 +12,7 @@ The SQL verifies:
 - no provider prices are active or configured and no Paddle/Pesapal subscriptions exist.
 
 This does not create provider price rows, activate checkout, make a provider API request, charge a customer, or enable live mode. Real sandbox merchant credentials, price configuration, checkout, webhook/IPN replay and reconciliation still need separate acceptance. Keep `PADDLE_ALLOW_LIVE=false`, `PESAPAL_ALLOW_LIVE=false`, and `PADDLE_PESAPAL_BILLING_ENABLED=false` until the full sandbox test matrix is signed off.
+
+
+## Workflow availability and deployment safety
+These workflows currently live on a review branch. GitHub manual `workflow_dispatch` and scheduled `schedule` runs require the workflow file to be present on the repository's default branch. Do not merge this PR to `main` solely to unlock testing: the Executive Visuals Render web service automatically deploys commits to `main`. First establish a safe staging execution path or explicitly approve a controlled deployment/configuration change. Until then, the PR-triggered static checks are the only GitHub Actions evidence; the manual runtime acceptance is pending.
