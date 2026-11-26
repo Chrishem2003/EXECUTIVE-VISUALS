@@ -60,3 +60,7 @@ The production Render service auto-deploys `main`. Keep all PRs review-only unti
 
 ## Neon inspection note
 Read-only schema inspection caused the existing Neon `production` and `staging-base` compute endpoints to wake at their configured 0.25–2 CU limits. No new endpoint, branch, database, role or schema was created; no SQL migration was applied. Because the organization is on the Free plan, this used existing included compute allowance rather than upgrading or provisioning paid infrastructure. Allow the endpoints to autosuspend after inactivity.
+
+
+## Qualification: connected Supabase staging is shared
+The connected `Chrishem Platform Staging` project is not a dedicated isolated Executive Visuals database. Its migration history includes NEMA/shared-AI/platform records. In this work sequence, additive Executive Visuals migrations for Batch 128, Batch 129, Batch 130 (hardening and FK indexes), and Paddle/Pesapal billing were applied only inside the `executive_visuals` schema. The public NEMA tables, Auth users, customer assets and production project were not modified by those migrations. This does not satisfy the isolated-database release gate. Do not apply additional migrations to this shared project, repair its migration history, or treat it as the future production database until a reviewed isolation/baseline decision is made. Do not attempt to roll back these additive migrations automatically; review their dependency chain and keep the current schema intact.
