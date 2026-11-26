@@ -80,3 +80,15 @@ test("blocks when no active provider price mappings exist",async()=>{
  const f=mockFetch({paddlePrices:[]});
  await assert.rejects(()=>verifyPaymentProviderSandbox({env,fetchImpl:f.fetchImpl}),{code:"PADDLE_PRICE_CONFIGURATION_MISSING"});
 });
+
+test("blocks when the registered Pesapal IPN ID points to a different callback URL",async()=>{
+ const calls=[];
+ const f=mockFetch();
+ const wrapped=async(url,options)=>{
+  const target=new URL(url);
+  if(target.pathname==="/pesapalv3/api/URLSetup/GetIpnList")
+   return Response.json([{ipn_id:env.PESAPAL_IPN_ID,url:"https://wrong.example.test/ipn"}]);
+  return f.fetchImpl(url,options);
+ };
+ await assert.rejects(()=>verifyPaymentProviderSandbox({env,fetchImpl:wrapped}),{code:"PESAPAL_IPN_NOT_REGISTERED"});
+});
