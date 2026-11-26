@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - "scripts/monitor-executive-visuals.mjs"
+      - "server/tests/operational-monitoring.test.mjs"
       - ".github/workflows/executive-visuals-monitoring.yml"
   workflow_dispatch:
     inputs:
@@ -30,6 +31,7 @@ jobs:
         with:
           node-version: "22.23.4"
       - run: node --check scripts/monitor-executive-visuals.mjs
+      - run: node --test server/tests/operational-monitoring.test.mjs
   monitor:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
