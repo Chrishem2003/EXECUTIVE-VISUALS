@@ -21,7 +21,7 @@ try{
  await writeFile(archivePath,archive,{mode:0o600});
  const extract=spawnSync("tar",["-xzf",archivePath,"-C",temp],{encoding:"utf8"});
  if(extract.status!==0)throw new Error("Encrypted archive failed tar integrity validation.");
- const source=join(temp,"source");
+ const source=temp;
  const manifest=JSON.parse(await readFile(join(source,"manifest.json"),"utf8"));
  assert.equal(manifest.format,"executive-visuals-backup-v1");
  const db=await readFile(join(source,manifest.database.file));
