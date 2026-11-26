@@ -3,7 +3,9 @@ import {createHash,randomUUID} from "node:crypto";
 
 const required=["SUPABASE_URL","SUPABASE_ANON_KEY","STORAGE_TEST_OWNER_JWT","STORAGE_TEST_OTHER_JWT","STORAGE_TEST_OWNER_ID"];
 for(const key of required) if(!process.env[key]) throw new Error("Missing required staging acceptance secret: "+key);
+const EXPECTED_STAGING_PROJECT_REF="bokxljngydmqrmktofwm";
 const base=process.env.SUPABASE_URL.replace(/\/$/,"");
+if(new URL(base).hostname!==`\${EXPECTED_STAGING_PROJECT_REF}.supabase.co`)throw new Error("Refusing Storage test against a non-approved Supabase staging project.");
 const bucket=process.env.STORAGE_TEST_BUCKET||"executive-visuals-media";
 const ownerId=process.env.STORAGE_TEST_OWNER_ID;
 const ownerJwt=process.env.STORAGE_TEST_OWNER_JWT;
