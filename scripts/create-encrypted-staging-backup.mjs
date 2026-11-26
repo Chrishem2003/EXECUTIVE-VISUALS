@@ -23,7 +23,7 @@ const headers={apikey:key,authorization:"Bearer "+key,"content-type":"applicatio
 const hash=data=>createHash("sha256").update(data).digest("hex");
 try{
  const dump=join(source,"database.dump");
- run("pg_dump",["--format=custom","--no-owner","--no-acl","--file",dump,databaseUrl]);
+ run("pg_dump",["--format=custom","--schema=executive_visuals","--no-owner","--no-acl","--file",dump,databaseUrl]);
  const entries=[];const pendingPrefixes=[""];const visitedPrefixes=new Set();
  while(pendingPrefixes.length){
   const prefix=pendingPrefixes.shift();
@@ -59,7 +59,7 @@ try{
   }
  }
  const dbBytes=await readFile(dump);
- const manifest={format:"executive-visuals-backup-v1",createdAt:new Date().toISOString(),bucket,database:{file:"database.dump",bytes:dbBytes.length,sha256:hash(dbBytes)},objects:entries};
+ const manifest={format:"executive-visuals-backup-v1",createdAt:new Date().toISOString(),bucket,database:{file:"database.dump",schema:"executive_visuals",includesSupabaseAuthUsers:false,bytes:dbBytes.length,sha256:hash(dbBytes)},objects:entries};
  await writeFile(join(source,"manifest.json"),JSON.stringify(manifest,null,2));
  const archive=join(work,"backup.tar.gz");
  run("tar",["-czf",archive,"-C",source,"."]);
