@@ -3,30 +3,40 @@ name: Asset resource metering PostgreSQL integration
 on:
   pull_request:
     paths:
+      - "server/index.mjs"
       - "server/asset-resource-measurements.mjs"
       - "server/asset-resource-event-recorder.mjs"
       - "server/asset-egress-stream.mjs"
+      - "server/asset-egress-attempt-journal.mjs"
       - "server/tests/asset-egress-stream.test.mjs"
+      - "server/tests/asset-egress-attempt-journal.test.mjs"
       - "server/tests/asset-resource-*.test.mjs"
-      - "server/tests/asset-egress-stream.test.mjs"
-      - "server/tests/asset-egress-stream.test.mjs"
       - "supabase/migrations/*asset_resource_event_ledger*"
       - "supabase/migrations/*asset_upload_checkpoint_autoinit*"
+      - "supabase/migrations/*asset_egress_attempt_journal*"
       - "scripts/asset-resource-event-postgres-*.sql"
       - "scripts/asset-resource-checkpoint-autoinit-postgres-integration.sql"
+      - "scripts/asset-egress-attempt-journal-postgres-integration.sql"
       - ".github/workflows/asset-resource-metering.yml"
   push:
     branches:
       - feat/asset-resource-event-ledger-batch-123-2026-11-25
       - feat/private-download-egress-metering-batch-125-2026-11-26
     paths:
+      - "server/index.mjs"
       - "server/asset-resource-measurements.mjs"
       - "server/asset-resource-event-recorder.mjs"
       - "server/asset-egress-stream.mjs"
+      - "server/asset-egress-attempt-journal.mjs"
       - "server/tests/asset-egress-stream.test.mjs"
+      - "server/tests/asset-egress-attempt-journal.test.mjs"
       - "server/tests/asset-resource-*.test.mjs"
       - "supabase/migrations/*asset_resource_event_ledger*"
+      - "supabase/migrations/*asset_upload_checkpoint_autoinit*"
+      - "supabase/migrations/*asset_egress_attempt_journal*"
       - "scripts/asset-resource-event-postgres-*.sql"
+      - "scripts/asset-resource-checkpoint-autoinit-postgres-integration.sql"
+      - "scripts/asset-egress-attempt-journal-postgres-integration.sql"
       - ".github/workflows/asset-resource-metering.yml"
 
 permissions:
@@ -75,5 +85,9 @@ jobs:
         run: psql "$ASSET_RESOURCE_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-resource-event-postgres-integration.sql
       - name: Verify asset publication initializes retention checkpoints without cost events
         run: psql "$ASSET_RESOURCE_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-resource-checkpoint-autoinit-postgres-integration.sql
-      - name: Run asset measurement, recorder and egress stream unit tests
-        run: node --test server/tests/asset-resource-measurements.test.mjs server/tests/asset-resource-event-recorder.test.mjs server/tests/asset-egress-stream.test.mjs
+      - name: Apply Batch 128 durable egress attempt journal
+        run: psql "$ASSET_RESOURCE_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261126150000_asset_egress_attempt_journal_batch_128.sql
+      - name: Verify egress attempt intent, outcome, replay and access controls
+        run: psql "$ASSET_RESOURCE_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-egress-attempt-journal-postgres-integration.sql
+      - name: Run asset measurement, recorder, egress stream and attempt journal unit tests
+        run: node --test server/tests/asset-resource-measurements.test.mjs server/tests/asset-resource-event-recorder.test.mjs server/tests/asset-egress-stream.test.mjs server/tests/asset-egress-attempt-journal.test.mjs
