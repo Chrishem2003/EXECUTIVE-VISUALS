@@ -48,7 +48,7 @@ export async function pipeMeasuredPrivateAssetDownload({
   }catch(error){
     streamError=error;
     source.destroy?.();
-    if(response.headersSent&&!response.destroyed)response.destroy(error);
+    if(response.headersSent&&!response.destroyed)response.destroy();
     else if(!response.destroyed){response.statusCode=502;response.end();}
   }finally{
     if(transferredBytes>0){
