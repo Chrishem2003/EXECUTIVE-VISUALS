@@ -15,7 +15,6 @@ const PAGE_SIZE=100;
 const MAX_OBJECTS=100000;
 const MAX_OBJECT_BYTES=1024*1024*1024;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const sha256=data=>createHash("sha256").update(data).digest("hex");
 
 function config(env){
  const required=["SUPABASE_STAGING_URL","SUPABASE_STAGING_SECRET_KEY","SUPABASE_STAGING_DB_URL","STAGING_BACKUP_ENCRYPTION_PASSPHRASE"];
@@ -46,6 +45,12 @@ function config(env){
 function run(command,args,{env=process.env}={}){
  const result=spawnSync(command,args,{encoding:"utf8",maxBuffer:16*1024*1024,env,stdio:["ignore","ignore","pipe"]});
  if(result.error||result.status!==0)throw Object.assign(new Error(command+" failed during staging backup export."),{code:"STAGING_BACKUP_COMMAND_FAILED"});
+}
+
+async function hashFile(filePath){
+ const hash=createHash("sha256");let size=0;
+ for await(const chunk of createReadStream(filePath)){size+=chunk.length;hash.update(chunk);}
+ return{bytes:size,sha256:hash.digest("hex")};
 }
 
 function safeObjectPath(value){
@@ -114,7 +119,7 @@ async function downloadObject(origin,key,bucket,objectPath,filePath,fetchImpl){
  return {bytes:size,sha256:hash.digest("hex")};
 }
 
-async function hashFile(filePath){\n const hash=createHash("sha256");let size=0;\n for await(const chunk of createReadStream(filePath)){size+=chunk.length;hash.update(chunk);}\n return{bytes:size,sha256:hash.digest("hex")};\n}\n\nexport async function createEncryptedStagingBackup({env=process.env,fetchImpl=globalThis.fetch,runCommand=run}={}){
+export async function createEncryptedStagingBackup({env=process.env,fetchImpl=globalThis.fetch,runCommand=run}={}){
  const c=config(env);
  const work=join(tmpdir(),"executive-visuals-backup-"+randomUUID());
  const source=join(work,"source"),objectsDir=join(source,"objects");
@@ -140,20 +145,23 @@ async function hashFile(filePath){\n const hash=createHash("sha256");let size=0;
    const result=await downloadObject(c.origin,c.key,c.bucket,entry.name,join(objectsDir,file),fetchImpl);
    manifestEntries.push({name:entry.name,file,bytes:result.bytes,sha256:result.sha256});
   }
-  const dbBytes=await readFile(dump);
+  const dbDigest=await hashFile(dump);
   const manifest={format:"executive-visuals-backup-v1",createdAt:new Date().toISOString(),bucket:c.bucket,
-   database:{file:"database.dump",bytes:dbBytes.length,sha256:sha256(dbBytes)},objects:manifestEntries};
+   database:{file:"database.dump",bytes:dbDigest.bytes,sha256:dbDigest.sha256},objects:manifestEntries};
   await writeFile(join(source,"manifest.json"),JSON.stringify(manifest,null,2),{mode:0o600,flag:"wx"});
   const archive=join(work,"backup.tar.gz");
   runCommand("tar",["-czf",archive,"-C",source,"."],{env:process.env});
-  const plain=await readFile(archive),salt=randomBytes(16),nonce=randomBytes(12),derived=scryptSync(c.passphrase,salt,32);
+
+  const salt=randomBytes(16),nonce=randomBytes(12),derived=scryptSync(c.passphrase,salt,32);
   const cipher=createCipheriv("aes-256-gcm",derived,nonce);
-  const encrypted=Buffer.concat([cipher.update(plain),cipher.final()]);
-  const result=Buffer.concat([Buffer.from("EVB1"),salt,nonce,cipher.getAuthTag(),encrypted]);
+  const payloadFile=join(work,"backup.payload.enc");
+  await pipeline(createReadStream(archive),cipher,createWriteStream(payloadFile,{flags:"wx",mode:0o600}));
   const file=join(c.output,"executive-visuals-staging-backup-"+new Date().toISOString().replace(/[:.]/g,"-")+".evb");
-  await writeFile(file,result,{mode:0o600,flag:"wx"});
-  return {result:"encrypted_export_created",file:file.split(/[\\/]/).pop(),databaseBytes:dbBytes.length,
-   storageObjects:manifestEntries.length,encryptedBytes:result.length,algorithm:"AES-256-GCM",credentialValuesExposed:false};
+  await writeFile(file,Buffer.concat([Buffer.from("EVB1"),salt,nonce,cipher.getAuthTag()]),{mode:0o600,flag:"wx"});
+  await pipeline(createReadStream(payloadFile),createWriteStream(file,{flags:"a",mode:0o600}));
+  const encryptedBytes=(await stat(file)).size;
+  return {result:"encrypted_export_created",file:file.split(/[\\/]/).pop(),databaseBytes:dbDigest.bytes,
+   storageObjects:manifestEntries.length,encryptedBytes,algorithm:"AES-256-GCM",credentialValuesExposed:false};
  }finally{await rm(work,{recursive:true,force:true});}
 }
 
