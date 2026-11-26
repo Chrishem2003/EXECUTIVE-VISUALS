@@ -25,6 +25,12 @@ create index if not exists asset_egress_attempts_owner_time_idx
   on executive_visuals.asset_egress_transfer_attempts(owner_id,started_at desc);
 create index if not exists asset_egress_attempts_status_time_idx
   on executive_visuals.asset_egress_transfer_attempts(status,started_at);
+create index if not exists asset_egress_attempts_asset_idx
+  on executive_visuals.asset_egress_transfer_attempts(asset_id);
+create index if not exists asset_egress_attempts_project_idx
+  on executive_visuals.asset_egress_transfer_attempts(project_id);
+create index if not exists asset_egress_attempts_initiated_by_idx
+  on executive_visuals.asset_egress_transfer_attempts(initiated_by);
 alter table executive_visuals.asset_egress_transfer_attempts enable row level security;
 alter table executive_visuals.asset_egress_transfer_attempts force row level security;
 revoke all on table executive_visuals.asset_egress_transfer_attempts from public,anon,authenticated,service_role;
