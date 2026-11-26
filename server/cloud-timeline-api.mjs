@@ -997,7 +997,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
   const signed=await service.assets.createSignedUrl({ownerId,assetId,expiresIn});
   if(!signed?.asset||signed.asset.id!==assetId||signed.asset.ownerId!==ownerId||
      !Number.isSafeInteger(signed.asset.size)||signed.asset.size<1||
-     !/^https:\\/\\//i.test(String(signed.url||"")))throw Object.assign(new Error("Private asset download authorization returned invalid metadata."),{code:"CLOUD_ASSET_DOWNLOAD_INVALID"});
+     !/^https:\/\//i.test(String(signed.url||"")))throw Object.assign(new Error("Private asset download authorization returned invalid metadata."),{code:"CLOUD_ASSET_DOWNLOAD_INVALID"});
   return{asset:signed.asset,url:signed.url};
  }
  return Object.freeze({handle,uploadAsset,checkReadiness,getPrivateAssetDownload});
