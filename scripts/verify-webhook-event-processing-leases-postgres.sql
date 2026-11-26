@@ -5,7 +5,8 @@ insert into executive_visuals.payment_webhook_events
   (provider,event_key,event_type,payload_hash,signature_verified,processing_status,payload)
 values
   ('paddle',repeat('a',64),'transaction.completed',repeat('b',64),true,'received','{}'::jsonb),
-  ('pesapal',repeat('c',64),'payment.completed',repeat('d',64),true,'failed','{}'::jsonb);
+  ('pesapal',repeat('c',64),'payment.completed',repeat('d',64),true,'failed','{}'::jsonb),
+  ('flutterwave',repeat('e',64),'payment.completed',repeat('f',64),false,'received','{}'::jsonb);
 
 do $$
 declare
@@ -23,6 +24,20 @@ begin
     raise exception 'First webhook claim did not acquire attempt 1';
   end if;
   first_lease:=(first_claim->>'leaseId')::uuid;
+
+  begin
+    perform executive_visuals.claim_payment_webhook_event('paddle',repeat('a',64),repeat('9',64),300);
+    raise exception 'Payload hash conflict was accepted';
+  exception when unique_violation then
+    null;
+  end;
+
+  begin
+    perform executive_visuals.claim_payment_webhook_event('flutterwave',repeat('e',64),repeat('f',64),300);
+    raise exception 'Unverified provider event was accepted';
+  exception when insufficient_privilege then
+    null;
+  end;
 
   concurrent_claim:=executive_visuals.claim_payment_webhook_event('paddle',repeat('a',64),repeat('b',64),300);
   if (concurrent_claim->>'claimed')::boolean is not false
