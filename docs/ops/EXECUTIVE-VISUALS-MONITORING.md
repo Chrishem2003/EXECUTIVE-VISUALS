@@ -9,3 +9,7 @@ The workflow runs every 15 minutes and can be manually dispatched to send a synt
 Initial setup must use the staging app and staging webhook. After a successful real delivery test, an operator may separately approve production monitoring by changing the environment variable. GitHub Actions schedule is best-effort, not a guaranteed uptime monitor or paging SLA; a production service should eventually have an independent external monitor.
 
 No alert delivery is claimed until the manual test-alert workflow reports HTTP 2xx from the configured endpoint.
+
+
+## Workflow availability and deployment safety
+These workflows currently live on a review branch. GitHub manual `workflow_dispatch` and scheduled `schedule` runs require the workflow file to be present on the repository's default branch. Do not merge this PR to `main` solely to unlock testing: the Executive Visuals Render web service automatically deploys commits to `main`. First establish a safe staging execution path or explicitly approve a controlled deployment/configuration change. Until then, the PR-triggered static checks are the only GitHub Actions evidence; the manual runtime acceptance is pending.
