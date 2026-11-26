@@ -115,8 +115,11 @@ export async function runPrivateStorageRoundTrip({
     const signedValue=String(signedBody?.signedURL||signedBody?.signedUrl||"");
     if(!signedValue)throw safeFailure("STAGING_STORAGE_SIGNED_URL_INVALID","The staging signed-URL response did not contain a URL.",502);
     const signedUrl=new URL(signedValue,config.origin);
+    const expectedSignedPath="/storage/v1/object/sign/"+encodeURIComponent(config.bucket)+"/"+encodedPath;
     if(signedUrl.protocol!=="https:"||signedUrl.origin!==config.origin)
       throw safeFailure("STAGING_STORAGE_SIGNED_URL_HOST_INVALID","The staging signed URL escaped the approved project origin.",502);
+    if(signedUrl.pathname!==expectedSignedPath)
+      throw safeFailure("STAGING_STORAGE_SIGNED_URL_PATH_INVALID","The staging signed URL does not identify the temporary object.",502);
     const signedDownload=await fetchImpl(signedUrl.toString(),{method:"GET",redirect:"error"});
     await expectBytes(signedDownload,"STAGING_STORAGE_SIGNED_DOWNLOAD_FAILED");
 
