@@ -1,0 +1,52 @@
+name: Executive Visuals operational monitoring
+on:
+  pull_request:
+    paths:
+      - "scripts/monitor-executive-visuals.mjs"
+      - ".github/workflows/executive-visuals-monitoring.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Choose a real alert delivery test or a health probe"
+        required: true
+        type: choice
+        options:
+          - test-alert
+          - health-check
+  schedule:
+    - cron: "*/15 * * * *"
+permissions:
+  contents: read
+concurrency:
+  group: executive-visuals-operational-monitoring
+  cancel-in-progress: false
+jobs:
+  static-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - run: node --check scripts/monitor-executive-visuals.mjs
+  monitor:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - name: Send synthetic alert delivery test
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'test-alert'
+        env:
+          OPS_ALERT_WEBHOOK_URL: ${{ secrets.OPS_ALERT_WEBHOOK_URL }}
+        run: node scripts/monitor-executive-visuals.mjs --test-alert
+      - name: Probe application health and alert on failure
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'health-check')
+        env:
+          EXECUTIVE_VISUALS_HEALTH_URL: ${{ vars.EXECUTIVE_VISUALS_HEALTH_URL }}
+          OPS_ALERT_WEBHOOK_URL: ${{ secrets.OPS_ALERT_WEBHOOK_URL }}
+        run: node scripts/monitor-executive-visuals.mjs
