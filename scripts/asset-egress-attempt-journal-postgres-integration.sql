@@ -1,4 +1,4 @@
-\\set ON_ERROR_STOP on
+\set ON_ERROR_STOP on
 set role service_role;
 do $egress_attempt_journal$
 declare
