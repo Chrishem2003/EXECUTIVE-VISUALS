@@ -1,18 +1,28 @@
-# Encrypted staging backup export
+# Encrypted staging backup and integrity rehearsal
 
-Run `Encrypted staging backup export` manually against the GitHub `staging` environment.
+Run `Encrypted staging backup export` manually against the protected GitHub `staging` environment.
 
-Required secrets:
+## Required secrets
 - `SUPABASE_STAGING_URL`
-- `SUPABASE_STAGING_SECRET_KEY` (staging-only Storage API inventory/download access)
-- `SUPABASE_STAGING_DB_URL` (staging-only PostgreSQL connection string)
+- `SUPABASE_STAGING_SECRET_KEY`
+- `SUPABASE_STAGING_DB_URL`
 - `STAGING_BACKUP_ENCRYPTION_PASSPHRASE` (at least 24 characters; keep separately from the artifact)
 
-The job runs `pg_dump` in custom format, inventories and downloads every object from the configured private bucket, creates a manifest with byte counts and SHA-256 hashes, packages the files, and encrypts the archive using AES-256-GCM with a key derived by scrypt. Plaintext work files are removed in a finally block. The encrypted artifact is retained for seven days.
+## Export safety and coverage
+- The exporter refuses every Supabase project except `bokxljngydmqrmktofwm`.
+- The database URL must identify that exact project via its direct database host or Supabase pooler username/host combination; SSL mode is forced to require.
+- The Storage bucket must exist and report `public=false` before export begins.
+- Supabase modern secret keys are sent only in the `apikey` header; legacy service-role JWTs retain Bearer compatibility.
+- The object inventory walks nested folder prefixes recursively and validates every object path against the owner/asset namespace.
+- Database and object files are hashed as streams. Object bytes and database dump bytes are not loaded wholesale into memory.
+- The archive uses AES-256-GCM with an scrypt-derived key. Plaintext temporary work files are removed in a finally block.
 
-Important limitations:
-- This is an encrypted staging export and integrity manifest, not an independent disaster-recovery system.
-- GitHub Actions artifacts are temporary (seven-day retention) and are not a substitute for a separately controlled off-site backup destination.
-- This job does not perform a restore. A restore drill into an isolated Supabase-compatible environment remains mandatory before production launch.
-- Database dump and Storage object data are separate; both are included because Supabase database backups do not contain Storage object bytes.
-- Never run against production until a separately approved production backup destination, encryption-key custody, retention, and restore procedure exist.
+## Automatic artifact integrity rehearsal
+Before artifact retention, the workflow decrypts the new archive into a disposable temporary directory, verifies the GCM authentication tag, checks every database/object byte count and SHA-256 hash against the manifest, and runs `pg_restore --list` against the custom-format database dump. The temporary plaintext extraction is removed after verification.
+
+The encrypted artifact is retained for seven days only.
+
+## Important limitation
+This is **not yet a full database restore drill**. It proves authenticated decryption, archive extraction, manifest integrity, object-file recovery and that PostgreSQL recognizes the custom dump format. It does not restore the dump into a disposable Supabase-compatible database or prove application-level recovery. A full restore into an isolated Supabase-compatible environment remains mandatory before paid production launch.
+
+GitHub Actions artifacts are temporary and are not a separately controlled off-site backup destination. Do not run this workflow against production until a separately approved production backup destination, encryption-key custody, retention policy and full restore procedure exist.
