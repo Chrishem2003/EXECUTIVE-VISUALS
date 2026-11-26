@@ -21,6 +21,7 @@ const REQUIRED_VARIABLES = [
   "STORAGE_TEST_OWNER_ID",
   "EXECUTIVE_VISUALS_HEALTH_URL",
   "PESAPAL_IPN_ID",
+  "PESAPAL_CALLBACK_URL",
 ];
 
 function isHttpsUrl(value) {
@@ -73,7 +74,7 @@ export function assessStagingConfig(env = process.env) {
   const passphrase = String(env.STAGING_BACKUP_ENCRYPTION_PASSPHRASE || "");
   if (passphrase && passphrase.length < 24) invalid.push("STAGING_BACKUP_ENCRYPTION_PASSPHRASE");
 
-  for (const name of ["OPS_ALERT_WEBHOOK_URL", "EXECUTIVE_VISUALS_HEALTH_URL"]) {
+  for (const name of ["OPS_ALERT_WEBHOOK_URL", "EXECUTIVE_VISUALS_HEALTH_URL", "PESAPAL_CALLBACK_URL"]) {
     const value = String(env[name] || "").trim();
     if (value && !isHttpsUrl(value)) invalid.push(name);
   }
