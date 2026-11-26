@@ -216,13 +216,25 @@ export function createProviderSubscriptionBilling({
       if(inserted.status===409){
         const prior=await dbRequest("payment_webhook_events?select=processing_status,payload_hash&provider=eq."+provider+"&event_key=eq."+eventKey+"&limit=1");
         const priorRow=Array.isArray(prior.data)?prior.data[0]:null;
-        const state=priorRow?.processing_status||null;
-        if(priorRow?.payload_hash&&priorRow.payload_hash!==payloadHash)
+        if(!priorRow)throw Object.assign(new Error("Conflicting provider event could not be loaded for reconciliation."),{code:"PROVIDER_EVENT_REPLAY_UNRESOLVED",status:503});
+        if(priorRow.payload_hash!==payloadHash)
           throw Object.assign(new Error("A provider event ID was replayed with different event content."),{code:"PROVIDER_EVENT_ID_PAYLOAD_CONFLICT",status:409});
-        if(state==="processed"||state==="ignored"||state==="needs_review")return {duplicate:true,processingStatus:state};
+      }
+
+      // Claim is a row-locked database operation. A live lease means another
+      // delivery is already processing this event; acknowledge without settling twice.
+      const claim=await rpc("claim_payment_webhook_event",{
+        p_provider:provider,p_event_key:eventKey,p_payload_hash:payloadHash,p_lease_seconds:300
+      });
+      if(!claim?.claimed){
+        const state=String(claim?.processingStatus||"unknown");
+        return {duplicate:true,processingStatus:state,inProgress:claim?.inProgress===true};
       }
       const updateEvent=async(body)=>dbRequest("payment_webhook_events?provider=eq."+provider+"&event_key=eq."+eventKey,{
-        method:"PATCH",body,prefer:"return=minimal"
+        method:"PATCH",body:{
+          ...body,
+          ...(body.processing_status&&body.processing_status!=="processing"?{processing_started_at:null}:{})
+        },prefer:"return=minimal"
       });
       await updateEvent({processing_status:"processing",error_message:null});
       try{

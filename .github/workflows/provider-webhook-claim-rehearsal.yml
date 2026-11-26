@@ -1,0 +1,54 @@
+name: Provider webhook claim lease rehearsal
+on:
+  push:
+    branches:
+      - feat/batch-139-payment-webhook-claim-leases-2026-11-26
+    paths:
+      - "supabase/migrations/20261126140000_provider_webhook_claim_leases.sql"
+      - "scripts/provider-webhook-claim-postgres-bootstrap.sql"
+      - "scripts/provider-webhook-claim-postgres-integration.sql"
+      - ".github/workflows/provider-webhook-claim-rehearsal.yml"
+  pull_request:
+    paths:
+      - "supabase/migrations/20261126140000_provider_webhook_claim_leases.sql"
+      - "scripts/provider-webhook-claim-postgres-bootstrap.sql"
+      - "scripts/provider-webhook-claim-postgres-integration.sql"
+      - ".github/workflows/provider-webhook-claim-rehearsal.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  disposable-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: webhook_claim_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d webhook_claim_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: webhook_claim_ci
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Create isolated minimal ledger fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/provider-webhook-claim-postgres-bootstrap.sql
+      - name: Apply additive webhook claim migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261126140000_provider_webhook_claim_leases.sql
+      - name: Verify atomic claims, concurrent delivery, lease expiry and payload conflict
+        run: psql -v ON_ERROR_STOP=1 -f scripts/provider-webhook-claim-postgres-integration.sql
