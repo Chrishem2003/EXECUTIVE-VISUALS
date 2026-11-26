@@ -1244,22 +1244,10 @@ export function createAppServer() {
           const measured=await pipeMeasuredPrivateAssetDownload({
             upstream,response:res,asset:authorized.asset,transferId,
             record:async event=>{
+              let result;
               try{
-                const result=await assetResourceRecorder.record(event);
+                result=await assetResourceRecorder.record(event);
                 if(result?.recorded!==true)throw Object.assign(new Error("Private download measurement was not durably recorded."),{code:"ASSET_RESOURCE_RECORD_NOT_CONFIRMED"});
-                await assetEgressAttemptJournal.finish({
-                  transferId,status:event.measurement.dimensions.partial?"partial":"completed",
-                  transferredBytes:event.measurement.dimensions.transferredBytes,
-                  upstreamStatus:event.measurement.dimensions.upstreamStatus,
-                  measurementId:event.measurement.measurementId
-                });
-                attemptFinalized=true;
-                audit(db,user.id,"asset.private_download_measured","asset",authorized.asset.id,{
-                transferId:event.measurement.dimensions.transferId,
-                transferredBytes:event.measurement.dimensions.transferredBytes,
-                partial:event.measurement.dimensions.partial
-                },authorized.asset.projectId||null);
-                return result;
               }catch(error){
                 if(attemptStarted&&!attemptFinalized){
                   await assetEgressAttemptJournal.finish({
@@ -1272,6 +1260,21 @@ export function createAppServer() {
                 }
                 throw error;
               }
+              // If the accounting event succeeded but this journal update fails,
+              // leave the attempt started for reconciliation; never mislabel it as unbilled.
+              attemptFinalized=true;
+              await assetEgressAttemptJournal.finish({
+                transferId,status:event.measurement.dimensions.partial?"partial":"completed",
+                transferredBytes:event.measurement.dimensions.transferredBytes,
+                upstreamStatus:event.measurement.dimensions.upstreamStatus,
+                measurementId:event.measurement.measurementId
+              });
+              audit(db,user.id,"asset.private_download_measured","asset",authorized.asset.id,{
+                transferId:event.measurement.dimensions.transferId,
+                transferredBytes:event.measurement.dimensions.transferredBytes,
+                partial:event.measurement.dimensions.partial
+              },authorized.asset.projectId||null);
+              return result;
             }
           });
           if(measured.error)audit(db,user.id,"asset.private_download_interrupted","asset",authorized.asset.id,{
