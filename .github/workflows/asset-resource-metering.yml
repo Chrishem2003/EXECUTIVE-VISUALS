@@ -4,8 +4,12 @@ on:
   pull_request:
     paths:
       - "server/asset-resource-measurements.mjs"
-      - "server/asset-resource-event-recorder.mjs"\n      - "server/asset-egress-stream.mjs"\n      - "server/tests/asset-egress-stream.test.mjs"
-      - "server/tests/asset-resource-*.test.mjs"\n      - "server/tests/asset-egress-stream.test.mjs"
+      - "server/asset-resource-event-recorder.mjs"
+      - "server/asset-egress-stream.mjs"
+      - "server/tests/asset-egress-stream.test.mjs"
+      - "server/tests/asset-resource-*.test.mjs"
+      - "server/tests/asset-egress-stream.test.mjs"
+      - "server/tests/asset-egress-stream.test.mjs"
       - "supabase/migrations/*asset_resource_event_ledger*"
       - "supabase/migrations/*asset_upload_checkpoint_autoinit*"
       - "scripts/asset-resource-event-postgres-*.sql"
@@ -17,6 +21,8 @@ on:
     paths:
       - "server/asset-resource-measurements.mjs"
       - "server/asset-resource-event-recorder.mjs"
+      - "server/asset-egress-stream.mjs"
+      - "server/tests/asset-egress-stream.test.mjs"
       - "server/tests/asset-resource-*.test.mjs"
       - "supabase/migrations/*asset_resource_event_ledger*"
       - "scripts/asset-resource-event-postgres-*.sql"
@@ -68,5 +74,5 @@ jobs:
         run: psql "$ASSET_RESOURCE_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-resource-event-postgres-integration.sql
       - name: Verify asset publication initializes retention checkpoints without cost events
         run: psql "$ASSET_RESOURCE_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-resource-checkpoint-autoinit-postgres-integration.sql
-      - name: Run asset measurement and recorder unit tests
+      - name: Run asset measurement, recorder and egress stream unit tests
         run: node --test server/tests/asset-resource-measurements.test.mjs server/tests/asset-resource-event-recorder.test.mjs server/tests/asset-egress-stream.test.mjs
