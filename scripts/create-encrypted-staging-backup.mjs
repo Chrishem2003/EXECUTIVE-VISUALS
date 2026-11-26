@@ -1,61 +1,166 @@
-import assert from "node:assert/strict";
-import {createCipheriv,createHash,randomBytes,scryptSync} from "node:crypto";
+import {createCipheriv,createHash,randomBytes,scryptSync,randomUUID} from "node:crypto";
 import {spawnSync} from "node:child_process";
-import {mkdir,readFile,rm,writeFile} from "node:fs/promises";
-import {join,resolve} from "node:path";
+import {mkdir,readFile,rm,stat,writeFile} from "node:fs/promises";
+import {createWriteStream} from "node:fs";
 import {tmpdir} from "node:os";
-import {randomUUID} from "node:crypto";
+import {join,resolve} from "node:path";
+import {Readable,Transform} from "node:stream";
+import {pipeline} from "node:stream/promises";
+import {supabaseServerAuthHeaders} from "../server/supabase-server-credentials.mjs";
 
-const url=String(process.env.SUPABASE_URL||"").replace(/\/$/,"");
-const key=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY||"";
-const databaseUrl=process.env.SUPABASE_DB_URL||"";
-const passphrase=process.env.BACKUP_ENCRYPTION_PASSPHRASE||"";
-for(const [name,value] of Object.entries({SUPABASE_URL:url,SUPABASE_SECRET_KEY:key,SUPABASE_DB_URL:databaseUrl,BACKUP_ENCRYPTION_PASSPHRASE:passphrase}))if(!value)throw new Error("Missing required staging backup secret: "+name);
-if(passphrase.length<24)throw new Error("Backup encryption passphrase must contain at least 24 characters.");
-const bucket=process.env.STORAGE_BACKUP_BUCKET||"executive-visuals-media";
-const output=resolve(process.env.BACKUP_OUTPUT_DIR||"artifacts");
-const work=join(tmpdir(),"executive-visuals-backup-"+randomUUID());
-const source=join(work,"source");
-const objectsDir=join(source,"objects");
-await mkdir(objectsDir,{recursive:true});await mkdir(output,{recursive:true});
-const run=(command,args)=>{const result=spawnSync(command,args,{encoding:"utf8",maxBuffer:16*1024*1024});if(result.status!==0)throw new Error(command+" failed: "+String(result.stderr||result.stdout).slice(0,1200));};
-const headers={apikey:key,authorization:"Bearer "+key,"content-type":"application/json"};
-const hash=data=>createHash("sha256").update(data).digest("hex");
-try{
- const dump=join(source,"database.dump");
- run("pg_dump",["--format=custom","--no-owner","--no-acl","--file",dump,databaseUrl]);
- const entries=[];let offset=0;const pageSize=100;
- while(true){
-  const response=await fetch(url+"/storage/v1/object/list/"+encodeURIComponent(bucket),{
-   method:"POST",headers,body:JSON.stringify({prefix:"",limit:pageSize,offset,sortBy:{column:"name",order:"asc"}})
-  });
-  const raw=await response.text();if(!response.ok)throw new Error("Storage inventory failed HTTP "+response.status+": "+raw.slice(0,300));
-  const page=JSON.parse(raw);if(!Array.isArray(page))throw new Error("Unexpected Storage inventory response.");
-  for(const item of page){
-   if(!item?.name||item.name.includes("\0"))throw new Error("Storage inventory returned an invalid object name.");
-   const objectPath=item.name;
-   const downloadPath=objectPath.split("/").map(encodeURIComponent).join("/");
-   const get=await fetch(url+"/storage/v1/object/authenticated/"+encodeURIComponent(bucket)+"/"+downloadPath,{headers:{apikey:key,authorization:"Bearer "+key}});
-   if(!get.ok)throw new Error("Storage object download failed HTTP "+get.status+" for an object in the backup set.");
-   const bytes=Buffer.from(await get.arrayBuffer());
-   const fileName=String(entries.length+1).padStart(8,"0")+".bin";
-   await writeFile(join(objectsDir,fileName),bytes,{flag:"wx"});
-   entries.push({name:objectPath,file:fileName,bytes:bytes.length,sha256:hash(bytes)});
+export const APPROVED_STAGING_PROJECT_REF="bokxljngydmqrmktofwm";
+const DEFAULT_BUCKET="executive-visuals-media";
+const PAGE_SIZE=100;
+const MAX_OBJECTS=100000;
+const MAX_OBJECT_BYTES=1024*1024*1024;
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const sha256=data=>createHash("sha256").update(data).digest("hex");
+
+function config(env){
+ const required=["SUPABASE_STAGING_URL","SUPABASE_STAGING_SECRET_KEY","SUPABASE_STAGING_DB_URL","STAGING_BACKUP_ENCRYPTION_PASSPHRASE"];
+ const missing=required.filter(name=>!String(env[name]||"").trim());
+ if(missing.length)throw Object.assign(new Error("Required staging backup configuration is incomplete."),{code:"STAGING_BACKUP_CONFIG_MISSING",missing});
+ const api=new URL(env.SUPABASE_STAGING_URL);
+ if(api.protocol!=="https:"||api.hostname!==APPROVED_STAGING_PROJECT_REF+".supabase.co"||api.username||api.password||api.search||api.hash)
+  throw Object.assign(new Error("Backup export is restricted to the approved staging Supabase project."),{code:"STAGING_BACKUP_PROJECT_INVALID"});
+ const database=new URL(env.SUPABASE_STAGING_DB_URL);
+ const dbUser=decodeURIComponent(database.username);
+ const dbMatches=database.protocol.startsWith("postgres")&&(
+  database.hostname==="db."+APPROVED_STAGING_PROJECT_REF+".supabase.co"||
+  dbUser.endsWith("."+APPROVED_STAGING_PROJECT_REF)
+ );
+ if(!dbMatches||!database.password)
+  throw Object.assign(new Error("Backup database connection does not identify the approved staging project."),{code:"STAGING_BACKUP_DATABASE_INVALID"});
+ const passphrase=String(env.STAGING_BACKUP_ENCRYPTION_PASSPHRASE);
+ if(passphrase.length<24)throw Object.assign(new Error("Staging backup encryption passphrase is too short."),{code:"STAGING_BACKUP_PASSPHRASE_WEAK"});
+ const bucket=String(env.STORAGE_BACKUP_BUCKET||DEFAULT_BUCKET);
+ if(!/^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$/.test(bucket)||bucket.includes(".."))
+  throw Object.assign(new Error("Staging backup bucket identifier is invalid."),{code:"STAGING_BACKUP_BUCKET_INVALID"});
+ database.searchParams.set("sslmode","require");
+ const password=decodeURIComponent(database.password);
+ database.password="";
+ return {origin:api.origin,key:env.SUPABASE_STAGING_SECRET_KEY,databaseUrl:database.toString(),databasePassword:password,
+  passphrase,bucket,output:resolve(env.BACKUP_OUTPUT_DIR||"artifacts")};
+}
+
+function run(command,args,{env=process.env}={}){
+ const result=spawnSync(command,args,{encoding:"utf8",maxBuffer:16*1024*1024,env,stdio:["ignore","ignore","pipe"]});
+ if(result.error||result.status!==0)throw Object.assign(new Error(command+" failed during staging backup export."),{code:"STAGING_BACKUP_COMMAND_FAILED"});
+}
+
+function safeObjectPath(value){
+ if(typeof value!=="string"||value.length>1024||value.startsWith("/")||value.includes("\\")||value.includes("\0"))
+  throw new Error("Storage inventory returned an unsafe object path.");
+ const parts=value.split("/");
+ if(parts.length<3||parts.length>12||!UUID.test(parts[0])||!UUID.test(parts[1])||
+   parts.some(part=>!part||part==="."||part===".."||!/^[A-Za-z0-9._-]{1,180}$/.test(part)))
+  throw new Error("Storage inventory returned an object outside the owner/asset path contract.");
+ return parts.join("/");
+}
+
+async function listPrivateObjects(origin,key,bucket){
+ const headers={...supabaseServerAuthHeaders(key),"content-type":"application/json",accept:"application/json"};
+ const entries=[];const visited=new Set();
+ async function walk(prefix,depth){
+  if(depth>12)throw new Error("Storage inventory exceeded the supported folder depth.");
+  if(visited.has(prefix))throw new Error("Storage inventory returned a recursive folder cycle.");
+  visited.add(prefix);
+  let offset=0;
+  while(true){
+   const response=await fetch(origin+"/storage/v1/object/list/"+encodeURIComponent(bucket),{
+    method:"POST",headers,body:JSON.stringify({prefix,limit:PAGE_SIZE,offset,sortBy:{column:"name",order:"asc"}}),redirect:"error"
+   });
+   if(!response.ok)throw Object.assign(new Error("Private storage inventory failed (HTTP "+response.status+")."),{code:"STAGING_BACKUP_STORAGE_LIST_FAILED"});
+   let page;try{page=await response.json();}catch{throw new Error("Private storage inventory returned invalid JSON.");}
+   if(!Array.isArray(page))throw new Error("Private storage inventory returned an invalid page.");
+   for(const item of page){
+    const name=String(item?.name||"");
+    if(!name||name.includes("/")||name.includes("\\")||name==="."||name===".."||/[\u0000-\u001f\u007f]/.test(name))
+     throw new Error("Private storage inventory returned an unsafe path segment.");
+    const objectPath=prefix+name;
+    if(item.id===null||item.id===undefined){
+     await walk(objectPath+"/",depth+1);
+    }else{
+     safeObjectPath(objectPath);
+     entries.push({name:objectPath});
+     if(entries.length>MAX_OBJECTS)throw new Error("Storage inventory exceeded the 100,000-object safety limit.");
+    }
+   }
+   if(page.length<PAGE_SIZE)break;
+   offset+=page.length;
   }
-  if(page.length<pageSize)break;
-  offset+=page.length;
-  if(offset>100000)throw new Error("Storage inventory exceeded the 100,000-object safety limit.");
+  visited.delete(prefix);
  }
- const dbBytes=await readFile(dump);
- const manifest={format:"executive-visuals-backup-v1",createdAt:new Date().toISOString(),bucket,database:{file:"database.dump",bytes:dbBytes.length,sha256:hash(dbBytes)},objects:entries};
- await writeFile(join(source,"manifest.json"),JSON.stringify(manifest,null,2));
- const archive=join(work,"backup.tar.gz");
- run("tar",["-czf",archive,"-C",source,"."]);
- const plain=await readFile(archive),salt=randomBytes(16),nonce=randomBytes(12),derived=scryptSync(passphrase,salt,32);
- const cipher=createCipheriv("aes-256-gcm",derived,nonce);
- const encrypted=Buffer.concat([cipher.update(plain),cipher.final()]);
- const result=Buffer.concat([Buffer.from("EVB1"),salt,nonce,cipher.getAuthTag(),encrypted]);
- const file=join(output,"executive-visuals-staging-backup-"+new Date().toISOString().replace(/[:.]/g,"-")+".evb");
- await writeFile(file,result,{mode:0o600,flag:"wx"});
- console.log(JSON.stringify({result:"encrypted_export_created",file:file.split(/[\\/]/).pop(),databaseBytes:dbBytes.length,storageObjects:entries.length,encryptedBytes:result.length,algorithm:"AES-256-GCM",manifestSha256:hash(Buffer.from(JSON.stringify(manifest)))}));
-}finally{await rm(work,{recursive:true,force:true});}
+ await walk("",0);
+ entries.sort((a,b)=>a.name.localeCompare(b.name));
+ return entries;
+}
+
+async function downloadObject(origin,key,bucket,objectPath,filePath){
+ const encoded=objectPath.split("/").map(encodeURIComponent).join("/");
+ const response=await fetch(origin+"/storage/v1/object/authenticated/"+encodeURIComponent(bucket)+"/"+encoded,{
+  method:"GET",headers:supabaseServerAuthHeaders(key),redirect:"error"
+ });
+ if(!response.ok||!response.body)throw Object.assign(new Error("A private storage object could not be downloaded for backup (HTTP "+response.status+")."),{code:"STAGING_BACKUP_OBJECT_DOWNLOAD_FAILED"});
+ const declared=Number(response.headers.get("content-length"));
+ if(Number.isFinite(declared)&&declared>MAX_OBJECT_BYTES)throw new Error("A private storage object exceeds the backup safety limit.");
+ const hash=createHash("sha256");let size=0;
+ const meter=new Transform({transform(chunk,encoding,callback){
+  size+=chunk.length;
+  if(size>MAX_OBJECT_BYTES){callback(Object.assign(new Error("A private storage object exceeds the backup safety limit."),{code:"STAGING_BACKUP_OBJECT_TOO_LARGE"}));return;}
+  hash.update(chunk);callback(null,chunk);
+ }});
+ await pipeline(Readable.fromWeb(response.body),meter,createWriteStream(filePath,{flags:"wx",mode:0o600}));
+ return {bytes:size,sha256:hash.digest("hex")};
+}
+
+export async function createEncryptedStagingBackup({env=process.env,fetchImpl=globalThis.fetch,runCommand=run}={}){
+ const c=config(env);
+ const work=join(tmpdir(),"executive-visuals-backup-"+randomUUID());
+ const source=join(work,"source"),objectsDir=join(source,"objects");
+ await mkdir(objectsDir,{recursive:true});await mkdir(c.output,{recursive:true});
+ try{
+  const serverHeaders={...supabaseServerAuthHeaders(c.key),accept:"application/json"};
+  const bucketResponse=await fetchImpl(c.origin+"/storage/v1/bucket/"+encodeURIComponent(c.bucket),{
+   method:"GET",headers:serverHeaders,redirect:"error"
+  });
+  if(!bucketResponse.ok)throw Object.assign(new Error("The staging backup bucket could not be inspected."),{code:"STAGING_BACKUP_BUCKET_LOOKUP_FAILED"});
+  let bucketInfo;try{bucketInfo=await bucketResponse.json();}catch{throw new Error("The staging backup bucket response was invalid.");}
+  if(bucketInfo?.id!==c.bucket||bucketInfo?.public!==false)
+   throw Object.assign(new Error("Backup export requires the configured staging bucket to be private."),{code:"STAGING_BACKUP_BUCKET_NOT_PRIVATE"});
+
+  const dump=join(source,"database.dump");
+  const childEnv={...process.env,PGPASSWORD:c.databasePassword,PGSSLMODE:"require"};
+  runCommand("pg_dump",["--format=custom","--no-owner","--no-acl","--file",dump,"--dbname",c.databaseUrl],{env:childEnv});
+  const objectEntries=await listPrivateObjects(c.origin,c.key,c.bucket);
+  const manifestEntries=[];
+  for(let index=0;index<objectEntries.length;index++){
+   const entry=objectEntries[index];
+   const file=String(index+1).padStart(8,"0")+".bin";
+   const result=await downloadObject(c.origin,c.key,c.bucket,entry.name,join(objectsDir,file));
+   manifestEntries.push({name:entry.name,file,bytes:result.bytes,sha256:result.sha256});
+  }
+  const dbBytes=await readFile(dump);
+  const manifest={format:"executive-visuals-backup-v1",createdAt:new Date().toISOString(),bucket:c.bucket,
+   database:{file:"database.dump",bytes:dbBytes.length,sha256:sha256(dbBytes)},objects:manifestEntries};
+  await writeFile(join(source,"manifest.json"),JSON.stringify(manifest,null,2),{mode:0o600,flag:"wx"});
+  const archive=join(work,"backup.tar.gz");
+  runCommand("tar",["-czf",archive,"-C",source,"."],{env:process.env});
+  const plain=await readFile(archive),salt=randomBytes(16),nonce=randomBytes(12),derived=scryptSync(c.passphrase,salt,32);
+  const cipher=createCipheriv("aes-256-gcm",derived,nonce);
+  const encrypted=Buffer.concat([cipher.update(plain),cipher.final()]);
+  const result=Buffer.concat([Buffer.from("EVB1"),salt,nonce,cipher.getAuthTag(),encrypted]);
+  const file=join(c.output,"executive-visuals-staging-backup-"+new Date().toISOString().replace(/[:.]/g,"-")+".evb");
+  await writeFile(file,result,{mode:0o600,flag:"wx"});
+  return {result:"encrypted_export_created",file:file.split(/[\\/]/).pop(),databaseBytes:dbBytes.length,
+   storageObjects:manifestEntries.length,encryptedBytes:result.length,algorithm:"AES-256-GCM",credentialValuesExposed:false};
+ }finally{await rm(work,{recursive:true,force:true});}
+}
+
+if(process.argv[1]&&import.meta.url===new URL("file://"+process.argv[1]).href){
+ createEncryptedStagingBackup().then(report=>console.log(JSON.stringify(report))).catch(error=>{
+  console.log(JSON.stringify({result:"failed",code:error?.code||"STAGING_BACKUP_FAILED",
+   missing:error?.missing||undefined,credentialValuesExposed:false}));
+  process.exitCode=1;
+ });
+}
