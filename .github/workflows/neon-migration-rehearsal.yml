@@ -2,11 +2,13 @@ name: Isolated Neon PostgreSQL migration rehearsal
 on:
   push:
     branches:
-      - feat/batch-138-isolated-postgres-migration-rehearsal-2026-11-26
+      - feat/batch-139-webhook-event-leases-2026-11-26
     paths:
       - "database/neon/migrations/**"
       - "scripts/verify-neon-*-postgres.sql"
       - "scripts/verify-neon-migration-isolation.mjs"
+      - "scripts/verify-webhook-event-processing-leases-postgres.sql"
+      - "supabase/migrations/20261126120000_webhook_event_processing_leases_batch139.sql"
       - ".github/workflows/neon-migration-rehearsal.yml"
   pull_request:
     paths:
@@ -65,3 +67,10 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f scripts/verify-neon-video-approval-bridge-postgres.sql
       - name: Verify safe queued cancellation and idempotent refund
         run: psql -v ON_ERROR_STOP=1 -f scripts/verify-neon-queued-cancellation-postgres.sql
+      - name: Create disposable payment webhook ledger fixture
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS executive_visuals.payment_webhook_events (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), provider text NOT NULL, event_key text NOT NULL, event_type text NOT NULL, payload_hash text NOT NULL, signature_verified boolean NOT NULL, processing_status text NOT NULL DEFAULT 'received', payload jsonb NOT NULL DEFAULT '{}'::jsonb, error_message text, received_at timestamptz NOT NULL DEFAULT now(), processed_at timestamptz, UNIQUE(provider,event_key))"
+      - name: Apply webhook processing lease migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261126120000_webhook_event_processing_leases_batch139.sql
+      - name: Verify webhook concurrency, replay and crash recovery
+        run: psql -v ON_ERROR_STOP=1 -f scripts/verify-webhook-event-processing-leases-postgres.sql
