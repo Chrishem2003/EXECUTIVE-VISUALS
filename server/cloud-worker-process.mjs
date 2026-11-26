@@ -301,9 +301,11 @@ export async function startCloudWorkerProcess(env=process.env){
   }
  });
  const heartbeatState={status:"starting",lastCycleAt:null,lastErrorCode:null};
- const writeHeartbeat=()=>heartbeat.record(heartbeatState).catch(error=>{
+ const writeHeartbeat=()=>heartbeat.record(heartbeatState);
+ const safeWriteHeartbeat=()=>writeHeartbeat().catch(error=>{
   process.stderr.write(JSON.stringify({kind:"worker_heartbeat_error",code:error?.code||"WORKER_HEARTBEAT_WRITE_FAILED"})+"\\n");
  });
+ // A worker cannot begin consuming queue work until its liveness record is durable.
  await writeHeartbeat();
  const supervisor=createCloudWorkerSupervisor({
   workers,maintenanceTasks,maintenanceIntervalMs:config.cleanupIntervalMs,
@@ -320,14 +322,14 @@ export async function startCloudWorkerProcess(env=process.env){
    process.stderr.write(JSON.stringify({kind:"worker_error",code:heartbeatState.lastErrorCode,message:String(error?.message||"Worker cycle failed.").slice(0,500)})+"\\n");
   }
  });
- const heartbeatTimer=setInterval(writeHeartbeat,30000);
+ const heartbeatTimer=setInterval(safeWriteHeartbeat,30000);
  heartbeatTimer.unref?.();
  await supervisor.start();
  const shutdown=async()=>{
   clearInterval(heartbeatTimer);
-  heartbeatState.status="stopping";await writeHeartbeat();
+  heartbeatState.status="stopping";await safeWriteHeartbeat();
   await supervisor.stop();
-  heartbeatState.status="stopped";await writeHeartbeat();
+  heartbeatState.status="stopped";await safeWriteHeartbeat();
   process.exit(0);
  };
  process.once("SIGINT",shutdown);process.once("SIGTERM",shutdown);
