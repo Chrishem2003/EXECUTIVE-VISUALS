@@ -1,0 +1,19 @@
+name: Production runtime readiness contract
+on:
+  pull_request:
+    paths:
+      - "scripts/verify-production-runtime-readiness.mjs"
+      - "scripts/tests/production-runtime-readiness.test.mjs"
+      - ".github/workflows/production-runtime-readiness.yml"
+permissions:
+  contents: read
+jobs:
+  readiness-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - run: node --check scripts/verify-production-runtime-readiness.mjs
+      - run: node --test scripts/tests/production-runtime-readiness.test.mjs
