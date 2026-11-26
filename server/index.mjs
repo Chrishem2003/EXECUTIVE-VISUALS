@@ -311,6 +311,15 @@ const assetResourceFinanceActorId=String(process.env.ASSET_RESOURCE_FINANCE_ACTO
 if(privateAssetEgressProxyEnabled&&(!cloudTimelineApi||AUTH_MODE!=="supabase"||!/^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(assetResourceFinanceActorId))){
  throw new Error("Private asset egress proxy requires the verified cloud timeline API, Supabase authentication and ASSET_RESOURCE_FINANCE_ACTOR_ID.");
 }
+if(privateAssetEgressProxyEnabled){
+ const adminHeaders={apikey:SUPABASE_SERVER_KEY,accept:"application/json","accept-profile":"executive_visuals"};
+ if(!String(SUPABASE_SERVER_KEY).startsWith("sb_secret_"))adminHeaders.authorization="Bearer "+SUPABASE_SERVER_KEY;
+ const adminResponse=await fetch(process.env.SUPABASE_URL+"/rest/v1/platform_admins?select=user_id&user_id=eq."+encodeURIComponent(assetResourceFinanceActorId)+"&role=in.(owner,platform_admin,billing_admin)&limit=1",{headers:adminHeaders});
+ if(!adminResponse.ok)throw new Error("Private asset egress proxy cannot verify the configured financial administrator.");
+ const adminRows=await adminResponse.json();
+ if(!Array.isArray(adminRows)||adminRows.length!==1||adminRows[0].user_id!==assetResourceFinanceActorId)
+  throw new Error("Private asset egress proxy requires ASSET_RESOURCE_FINANCE_ACTOR_ID to identify an active financial administrator.");
+}
 const assetResourceRecorder=privateAssetEgressProxyEnabled?createAssetResourceEventRecorder({
  actorId:assetResourceFinanceActorId,enabled:true,
  rpc:async(name,args)=>{
