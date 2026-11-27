@@ -1,3 +1,15 @@
+## Mainline implementation checkpoint — 18 November 2026
+
+**Latest inspected main commit:** `1cc4ecc5e16b8358272cca42daf9c754604a402d` (PR #709). PRs #700–#709 are merged. This is a code-integration checkpoint, not a public-release approval.
+
+The 18 November batch adds: read-only cloud-staging runtime acceptance (#700); an application-level durability gate (#701); automatic generation progress and asset refresh (#702); dedicated D1 staging identity/CORS alignment (#703); private signed-URL media resolution in the Gemini worker (#704); accurate blocked-versus-failed workflow states (#705); bounded-memory, SHA-256-verified source-media streaming (#706); bounded-memory generated-video ingestion with byte-count, SHA-256, MP4-signature and atomic-publication checks (#707); immutable project-scoped Creative Director/storyboard revision persistence (#708); and authenticated Studio revision browsing/restoration with stale-storyboard protection (#709).
+
+The corresponding PRs are merged. Do not infer that the latest main SHA has a fresh passing CI suite from merge state alone: the available status-check lookup returned no status records for `1cc4ecc`. Verify exact-head build, typecheck, focused creative-artifact tests, server shards and deployed staging acceptance before calling the batch fully accepted.
+
+**Release decision remains NOT APPROVED for public customer workloads.** Hosted durability, isolated application identity/database, private media storage, durable worker recovery, backup/restore, billing acceptance and operational monitoring remain separate release gates. Keep paid provider execution disabled by default, preserve shared Supabase/NEMA resources, and do not repair shared migration history or change production infrastructure as part of this checkpoint. See [P0 cloud staging and end-to-end pipeline acceptance](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/issues/663) and [Public release gates](docs/PUBLIC-RELEASE-GATES.md).
+
+---
+
 # Current release status — 18 November 2026
 
 GitHub `main` now includes the verified 17 November production-editor and media-reliability batch through PR #696, merge commit `f5131d1b6635cc995a2b6202a3c38db3659c575c`. Merged work includes: PR #691 bounded cleanup of abandoned B2 multipart sessions (worker disabled by default); PR #692 bounded browser part-upload retries with fresh signed URLs; PR #693 eight validated directional wipe/slide transitions in local/cloud FFmpeg rendering; PR #694 accurate browser preview composition for those transitions; PR #695 live storyboard-to-timeline attachment status; and PR #696 validated attachment of authorized, probed project videos to exact storyboard shots as editable clips with lineage and undo/history support.
