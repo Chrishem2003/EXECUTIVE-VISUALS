@@ -22,6 +22,7 @@ const REQUIRED_VARIABLES = [
   "EXECUTIVE_VISUALS_HEALTH_URL",
   "PESAPAL_IPN_ID",
   "PESAPAL_CALLBACK_URL",
+  "PADDLE_RETURN_URL",
 ];
 
 function isHttpsUrl(value) {
@@ -33,6 +34,39 @@ function isPesapalCallbackUrl(value) {
     const url = new URL(value);
     return isHttpsUrl(value) && url.hostname === "executive-visuals-cloud-staging.onrender.com" && url.pathname === "/api/webhooks/pesapal" && !url.search;
   } catch { return false; }
+}
+
+function isApprovedStagingHealthUrl(value) {
+  try {
+    const url = new URL(value);
+    return isHttpsUrl(value) && url.hostname === "executive-visuals-cloud-staging.onrender.com" && url.pathname === "/api/health" && !url.search;
+  } catch { return false; }
+}
+
+function isApprovedPaddleReturnUrl(value) {
+  try {
+    const url = new URL(value);
+    return isHttpsUrl(value) && url.hostname === "executive-visuals-cloud-staging.onrender.com" && url.pathname === "/" && !url.search;
+  } catch { return false; }
+}
+
+function jwtPayload(value) {
+  try {
+    const parts = String(value || "").split(".");
+    if (parts.length !== 3) return null;
+    return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch { return null; }
+}
+
+function hasLegacyKeyRole(value, role) {
+  return jwtPayload(value)?.role === role;
+}
+
+function isSupabaseAuthAccessToken(value, expectedSubject) {
+  const payload = jwtPayload(value);
+  return Boolean(payload && payload.sub === expectedSubject && payload.role === "authenticated" &&
+    payload.aud === "authenticated" && payload.iss === `https://${APPROVED_STAGING_PROJECT_REF}.supabase.co/auth/v1` &&
+    Number.isFinite(Number(payload.exp)) && Number(payload.exp) * 1000 > Date.now());
 }
 
 function databaseMatchesApprovedProject(value) {
@@ -54,6 +88,12 @@ export function assessStagingConfig(env = process.env) {
     .filter((name) => !String(env[name] || "").trim());
   const invalid = [];
 
+  const anonKey = String(env.SUPABASE_STAGING_ANON_KEY || "").trim();
+  if (anonKey && !anonKey.startsWith("sb_publishable_") && !hasLegacyKeyRole(anonKey, "anon")) invalid.push("SUPABASE_STAGING_ANON_KEY");
+  const secretKey = String(env.SUPABASE_STAGING_SECRET_KEY || "").trim();
+  if (secretKey && !secretKey.startsWith("sb_secret_") && !hasLegacyKeyRole(secretKey, "service_role")) invalid.push("SUPABASE_STAGING_SECRET_KEY");
+  if (anonKey && secretKey && anonKey === secretKey) invalid.push("SUPABASE_STAGING_SECRET_KEY");
+
   const supabaseUrl = String(env.SUPABASE_STAGING_URL || "").trim();
   if (supabaseUrl) {
     try {
@@ -73,7 +113,7 @@ export function assessStagingConfig(env = process.env) {
   }
 
   const webhookSecret = String(env.PADDLE_WEBHOOK_SECRET || "");
-  if (webhookSecret && webhookSecret.length < 16) invalid.push("PADDLE_WEBHOOK_SECRET");
+  if (webhookSecret && (!webhookSecret.startsWith("pdl_ntfset_") || webhookSecret.length < 24)) invalid.push("PADDLE_WEBHOOK_SECRET");
 
   const pesapalIpnId = String(env.PESAPAL_IPN_ID || "");
   if (pesapalIpnId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pesapalIpnId)) invalid.push("PESAPAL_IPN_ID");
@@ -81,10 +121,14 @@ export function assessStagingConfig(env = process.env) {
   const passphrase = String(env.STAGING_BACKUP_ENCRYPTION_PASSPHRASE || "");
   if (passphrase && passphrase.length < 24) invalid.push("STAGING_BACKUP_ENCRYPTION_PASSPHRASE");
 
-  for (const name of ["OPS_ALERT_WEBHOOK_URL", "EXECUTIVE_VISUALS_HEALTH_URL"]) {
-    const value = String(env[name] || "").trim();
-    if (value && !isHttpsUrl(value)) invalid.push(name);
-  }
+  const alertUrl = String(env.OPS_ALERT_WEBHOOK_URL || "").trim();
+  if (alertUrl && !isHttpsUrl(alertUrl)) invalid.push("OPS_ALERT_WEBHOOK_URL");
+
+  const healthUrl = String(env.EXECUTIVE_VISUALS_HEALTH_URL || "").trim();
+  if (healthUrl && !isApprovedStagingHealthUrl(healthUrl)) invalid.push("EXECUTIVE_VISUALS_HEALTH_URL");
+
+  const paddleReturnUrl = String(env.PADDLE_RETURN_URL || "").trim();
+  if (paddleReturnUrl && !isApprovedPaddleReturnUrl(paddleReturnUrl)) invalid.push("PADDLE_RETURN_URL");
 
   const pesapalCallbackUrl = String(env.PESAPAL_CALLBACK_URL || "").trim();
   if (pesapalCallbackUrl && !isPesapalCallbackUrl(pesapalCallbackUrl)) invalid.push("PESAPAL_CALLBACK_URL");
@@ -93,6 +137,11 @@ export function assessStagingConfig(env = process.env) {
   if (ownerId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerId)) {
     invalid.push("STORAGE_TEST_OWNER_ID");
   }
+  const ownerJwt = String(env.STORAGE_TEST_OWNER_JWT || "").trim();
+  const otherJwt = String(env.STORAGE_TEST_OTHER_JWT || "").trim();
+  if (ownerJwt && ownerId && !isSupabaseAuthAccessToken(ownerJwt, ownerId)) invalid.push("STORAGE_TEST_OWNER_JWT");
+  const otherSubject = jwtPayload(otherJwt)?.sub;
+  if (otherJwt && (!isSupabaseAuthAccessToken(otherJwt, otherSubject) || otherSubject === ownerId)) invalid.push("STORAGE_TEST_OTHER_JWT");
 
   const uniqueInvalid = [...new Set(invalid)];
   return {
