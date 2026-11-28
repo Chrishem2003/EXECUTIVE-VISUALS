@@ -2,11 +2,12 @@
 
 ## Objective
 
-Make subscription/payment drift visible and auditable before paid launch. The reconciliation RPC is read-only with respect to customer payment, subscription, entitlement and credit ledgers. It records a durable report run, but never silently repairs financial records or grants credits.
+Make Paddle/Pesapal subscription-payment drift visible and auditable before paid launch. Historical Flutterwave records remain outside this new provider-specific report and are not rewritten. The reconciliation RPC is read-only with respect to customer payment, subscription, entitlement and credit ledgers. It records a durable report run, but never silently repairs financial records or grants credits.
 
 ## Implemented
 
 - `executive_visuals.run_subscription_financial_reconciliation(integer)` performs bounded, read-only checks and persists each report in `subscription_financial_reconciliation_runs`.
+- The payment checks are scoped to Paddle and Pesapal, the selected subscription providers. Historical Flutterwave billing rows are intentionally excluded from this provider-specific report.
 - Report history is protected by RLS. Direct client access is revoked; only the server-side `service_role` can read history and execute the RPC.
 - The default report returns up to 100 findings; accepted limit is 1–500.
 - Findings include:
