@@ -21,7 +21,7 @@ const complete = () => ({
   STORAGE_TEST_OWNER_ID: "123e4567-e89b-42d3-a456-426614174000",
   STAGING_BACKUP_ENCRYPTION_PASSPHRASE: "a-test-only-passphrase-with-32-chars",
   PADDLE_SANDBOX_API_KEY: "pdl_sdbx_test_placeholder",
-  PADDLE_WEBHOOK_SECRET: "pdl_ntfset_test_webhook_secret_placeholder",
+  PADDLE_WEBHOOK_SECRET: "pdl_ntfset_" + "a".repeat(26) + "_" + "b".repeat(32),
   PESAPAL_SANDBOX_CONSUMER_KEY: "test-pesapal-key",
   PESAPAL_SANDBOX_CONSUMER_SECRET: "test-pesapal-secret",
   PESAPAL_IPN_ID: "223e4567-e89b-42d3-a456-426614174000",
