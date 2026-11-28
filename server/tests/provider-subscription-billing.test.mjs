@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
 import {createProviderSubscriptionBilling,getProviderSubscriptionBillingReadiness} from "../provider-subscription-billing.mjs";
-import {createPaddleSubscriptionProvider} from "../subscription-payment-providers.mjs";
+import {createPaddleSubscriptionProvider,createPesapalSubscriptionProvider} from "../subscription-payment-providers.mjs";
 
 const owner="11111111-1111-4111-8111-111111111111";
 const paymentId="22222222-2222-4222-8222-222222222222";
@@ -620,4 +620,77 @@ test("Batch 145 defers an early Paddle subscription event and reconciles it afte
   assert.equal(lifecycleCalls,2,"deferred lifecycle event must be replayed after the internal subscription exists");
   assert.equal(deferred.processing_status,"processed");
   assert.ok(calls.some(call=>call.path.endsWith("/rpc/finalize_subscription_purchase_for_provider")));
+});
+
+
+test("Batch 145 end-to-end: Pesapal IPN is verified against provider status and the reserved UGX payment before settlement",async()=>{
+  const fixedNow=Date.parse("2026-11-28T10:00:00.000Z");
+  const calls=[],providerCalls=[];
+  let persistedEvent=null,settlements=0;
+  const pesapalPayment={...payment,provider:"pesapal",provider_transaction_id:"pesapal-track-145",
+    tx_ref:"EVP-order-1",amount_minor:50000,currency:"UGX"};
+  const paddle=createPaddleSubscriptionProvider({
+    apiKey:"sandbox-api-key",webhookSecret:"paddle-secret",
+    baseUrl:"https://sandbox-api.paddle.com",priceIds:{creator:"pri_01creator123"},
+    now:()=>fixedNow,fetchImpl:async()=>{throw new Error("Paddle API must not be called");}
+  });
+  const pesapal=createPesapalSubscriptionProvider({
+    consumerKey:"pesapal-sandbox-key",consumerSecret:"pesapal-sandbox-secret",
+    baseUrl:"https://cybqa.pesapal.com/pesapalv3",now:()=>fixedNow,
+    fetchImpl:async(url,options)=>{
+      const target=new URL(url);
+      providerCalls.push({method:options.method,url:target.toString(),body:options.body?JSON.parse(options.body):null});
+      if(target.pathname.endsWith("/api/Auth/RequestToken"))
+        return json({token:"pesapal-access-token",expiryDate:"2026-11-28T10:10:00.000Z"});
+      if(target.pathname.endsWith("/api/Transactions/GetTransactionStatus")){
+        assert.equal(target.searchParams.get("orderTrackingId"),"pesapal-track-145");
+        assert.equal(options.headers.authorization,"Bearer pesapal-access-token");
+        return json({merchant_reference:"EVP-order-1",status_code:1,
+          payment_status_description:"Completed",amount:50000,currency:"UGX",
+          payment_method:"Mobile Money",confirmation_code:"PESAPAL-TEST-145"});
+      }
+      throw new Error("Unexpected Pesapal provider request "+target.pathname);
+    }
+  });
+  const providers={paddle,pesapal};
+  const fetchImpl=async(url,options)=>{
+    const target=new URL(url),body=options.body?JSON.parse(options.body):null;
+    calls.push({method:options.method,path:target.pathname,search:target.search,body});
+    if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([pesapalPayment]);
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST"){
+      persistedEvent=body;
+      return empty(201);
+    }
+    if(target.pathname.endsWith("/rpc/claim_payment_webhook_event"))
+      return json({claimed:true,processingStatus:"processing",attempt:1});
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
+    if(target.pathname.endsWith("/rpc/finalize_subscription_purchase_for_provider")){
+      settlements++;
+      assert.equal(body.p_payment_id,paymentId);
+      assert.equal(body.p_provider_transaction_id,"pesapal-track-145");
+      assert.equal(body.p_provider_payload.amount_minor,50000);
+      assert.equal(body.p_provider_payload.currency,"UGX");
+      assert.equal(body.p_provider_payload.reference,"EVP-order-1");
+      return json({status:"active",subscriptionId});
+    }
+    throw new Error("Unexpected Pesapal acceptance database request "+options.method+" "+target.pathname+target.search);
+  };
+  const billing=createProviderSubscriptionBilling({
+    supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+    paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,
+    pesapalNotificationId:env.PESAPAL_IPN_ID,providers,fetchImpl,now:()=>fixedNow
+  });
+  const result=await billing.handlePesapalIpn({
+    OrderNotificationType:"IPNCHANGE",OrderTrackingId:"pesapal-track-145",
+    OrderMerchantReference:"EVP-order-1"
+  });
+  assert.equal(result.status,200);
+  assert.equal(result.body.status,200);
+  assert.equal(result.body.result.applied,true);
+  assert.equal(settlements,1);
+  assert.equal(providerCalls.length,2,"Pesapal must authenticate and fetch authoritative transaction status");
+  assert.ok(providerCalls[1].url.includes("/api/Transactions/GetTransactionStatus"));
+  assert.equal(persistedEvent.payload.signature_verified,true);
+  assert.equal(persistedEvent.payload.currency,"UGX");
+  assert.equal(persistedEvent.payload.amountMinor,50000);
 });
