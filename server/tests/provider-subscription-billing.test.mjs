@@ -25,6 +25,9 @@ test("provider billing readiness requires both sandbox credentials, callbacks an
   assert.equal(getProviderSubscriptionBillingReadiness(env).ready,true);
   assert.equal(getProviderSubscriptionBillingReadiness({...env,PESAPAL_IPN_ID:""}).ready,false);
   assert.equal(getProviderSubscriptionBillingReadiness({...env,SUPABASE_SERVICE_ROLE_KEY:""}).ready,false);
+  assert.equal(getProviderSubscriptionBillingReadiness({
+    ...env,SUPABASE_SERVICE_ROLE_KEY:"",SUPABASE_SECRET_KEY:"sb_secret_test_placeholder"
+  }).ready,true);
   assert.equal(getProviderSubscriptionBillingReadiness({...env,PADDLE_PESAPAL_BILLING_ENABLED:"false"}).ready,false);
   assert.equal(getProviderSubscriptionBillingReadiness({...env,PADDLE_API_BASE_URL:"https://api.paddle.com",PADDLE_ALLOW_LIVE:"false"}).ready,false);
   assert.equal(getProviderSubscriptionBillingReadiness({...env,PESAPAL_API_BASE_URL:"https://pay.pesapal.com/v3",PESAPAL_ALLOW_LIVE:"false"}).ready,false);
