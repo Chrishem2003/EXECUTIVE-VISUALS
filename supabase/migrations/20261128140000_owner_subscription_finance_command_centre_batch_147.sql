@@ -208,14 +208,15 @@ set search_path=pg_catalog,executive_visuals
 as $get_subscription_financial_liability_summary$
   with subscription_summary as (
     select currency,
-      count(*) filter(where status in ('active','trialing'))::integer as active_subscriptions,
+      count(*) filter(where status='active')::integer as active_subscriptions,
+      count(*) filter(where status='trialing')::integer as trialing_subscriptions,
       count(*) filter(where status='past_due')::integer as past_due_subscriptions,
-      coalesce(sum(case when status in ('active','trialing') then
+      coalesce(sum(case when status='active' then
         case billing_interval when 'monthly' then amount_minor
           when 'yearly' then round(amount_minor::numeric/12)::bigint else 0 end
         else 0 end),0)::bigint as mrr_minor,
       coalesce(sum(case when status='past_due' then amount_minor else 0 end),0)::bigint as past_due_amount_minor,
-      coalesce(sum(case when status in ('active','trialing') then included_credits else 0 end),0)::bigint as included_credit_units_per_cycle
+      coalesce(sum(case when status='active' then included_credits else 0 end),0)::bigint as included_credit_units_per_cycle
     from customer_subscriptions
     group by currency
   ), cash_summary as (
@@ -244,6 +245,7 @@ as $get_subscription_financial_liability_summary$
   ), currency_rows as (
     select c.currency,
       coalesce(s.active_subscriptions,0) as active_subscriptions,
+      coalesce(s.trialing_subscriptions,0) as trialing_subscriptions,
       coalesce(s.past_due_subscriptions,0) as past_due_subscriptions,
       coalesce(s.mrr_minor,0) as mrr_minor,
       coalesce(s.past_due_amount_minor,0) as past_due_amount_minor,
