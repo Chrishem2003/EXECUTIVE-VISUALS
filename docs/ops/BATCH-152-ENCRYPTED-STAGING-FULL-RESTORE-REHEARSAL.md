@@ -14,7 +14,7 @@ The backup verifier now optionally performs a full restore when both `RESTORE_DA
 - A post-restore SQL assertion checks that application tables exist, auth-user foreign keys were restored, and no foreign key remains unvalidated.
 - Private object files are copied to a temporary local restore directory under their original owner/asset paths and checksummed again.
 - The workflow removes restored plaintext objects in an `always()` cleanup step.
-- The manual backup workflow now starts an ephemeral PostgreSQL 16 service and completes the restore rehearsal before retaining the encrypted artifact.
+- The manual backup workflow now starts an ephemeral PostgreSQL 17 service and completes the restore rehearsal before retaining the encrypted artifact.
 
 ## Tests
 
@@ -26,14 +26,14 @@ Unit tests cover:
 - Rejection of remote restore targets and incomplete restore configuration.
 - Existing wrong-passphrase, tamper, path traversal, duplicate entry, checksum and private-bucket checks.
 
-Pull-request CI additionally runs a synthetic encrypted snapshot through a real PostgreSQL 16 service container. It verifies restored application rows, UUID-only placeholder identities, validated auth foreign keys and private object bytes without staging secrets or customer data.
+Pull-request CI additionally runs a synthetic encrypted snapshot through a real PostgreSQL 17 service container. It verifies restored application rows, UUID-only placeholder identities, validated auth foreign keys and private object bytes without staging secrets or customer data.
 
 The full staging restore runs only when an owner manually starts the encrypted staging backup workflow after configuring the protected staging environment.
 
 ## Safety
 
 - The source must be the approved Supabase staging project and private bucket.
-- The target is an ephemeral local PostgreSQL 16 container, never Supabase, Neon, Render or production.
+- The target is an ephemeral local PostgreSQL 17 container, never Supabase, Neon, Render or production.
 - Only UUID placeholders needed to satisfy application foreign keys are inserted into the disposable restore target.
 - No real auth user records, customer passwords, payment credentials or tokens are exported.
 - No live billing, provider calls, credit changes, production migration or deployment occurs.
