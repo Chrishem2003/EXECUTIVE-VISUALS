@@ -17,6 +17,14 @@ create table if not exists executive_visuals.subscription_financial_reconciliati
 
 create index if not exists subscription_financial_reconciliation_runs_started_idx
   on executive_visuals.subscription_financial_reconciliation_runs(started_at desc);
+create index if not exists payment_transactions_subscription_reconciliation_idx
+  on executive_visuals.payment_transactions((metadata->>'payment_purpose'),status,created_at desc)
+  where metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal');
+create index if not exists payment_transactions_subscription_link_reconciliation_idx
+  on executive_visuals.payment_transactions(owner_id,(metadata->>'subscription_id'))
+  where metadata ? 'subscription_id';
+create index if not exists customer_subscriptions_reconciliation_status_idx
+  on executive_visuals.customer_subscriptions(status,current_period_end,created_at);
 
 alter table executive_visuals.subscription_financial_reconciliation_runs enable row level security;
 revoke all on executive_visuals.subscription_financial_reconciliation_runs from public, anon, authenticated;
@@ -58,7 +66,7 @@ begin
     from payment_transactions p
     where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
       and p.status='successful'
-      and coalesce((p.metadata->>'subscription_applied')::boolean,false) is not true
+      and p.metadata->'subscription_applied' is distinct from 'true'::jsonb
 
     union all
 
@@ -67,7 +75,7 @@ begin
         'reference',p.tx_ref,'paymentStatus',p.status,'subscriptionApplied',true)
     from payment_transactions p
     where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
-      and coalesce((p.metadata->>'subscription_applied')::boolean,false) is true
+      and p.metadata->'subscription_applied' = 'true'::jsonb
       and p.status<>'successful'
 
     union all
@@ -79,7 +87,7 @@ begin
     left join customer_subscriptions s
       on s.id::text=p.metadata->>'subscription_id' and s.owner_id=p.owner_id
     where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
-      and coalesce((p.metadata->>'subscription_applied')::boolean,false) is true
+      and p.metadata->'subscription_applied' = 'true'::jsonb
       and s.id is null
 
     union all
@@ -92,7 +100,7 @@ begin
       on s.id::text=p.metadata->>'subscription_id' and s.owner_id=p.owner_id
     where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
       and p.status='successful'
-      and coalesce((p.metadata->>'subscription_applied')::boolean,false) is true
+      and p.metadata->'subscription_applied' = 'true'::jsonb
       and s.provider is distinct from p.provider
 
     union all
@@ -105,7 +113,7 @@ begin
       on s.id::text=p.metadata->>'subscription_id' and s.owner_id=p.owner_id
     where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
       and p.status='successful'
-      and coalesce((p.metadata->>'subscription_applied')::boolean,false) is true
+      and p.metadata->'subscription_applied' = 'true'::jsonb
       and s.included_credits>0
       and not exists (
         select 1 from credit_ledger l
@@ -128,7 +136,7 @@ begin
      and l.entry_type='purchase_grant' and l.credit_delta=s.included_credits
     where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
       and p.status='successful'
-      and coalesce((p.metadata->>'subscription_applied')::boolean,false) is true
+      and p.metadata->'subscription_applied' = 'true'::jsonb
       and s.included_credits>0
       and not exists (
         select 1 from billing_credit_revenue_sources rs
