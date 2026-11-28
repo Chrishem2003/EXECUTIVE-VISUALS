@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
-import {createProviderSubscriptionBilling,getProviderSubscriptionBillingReadiness} from "../provider-subscription-billing.mjs";
+import {createProviderSubscriptionBilling,getProviderSubscriptionBillingReadiness,verifyProviderSubscriptionBillingDatabase} from "../provider-subscription-billing.mjs";
 import {createPaddleSubscriptionProvider,createPesapalSubscriptionProvider} from "../subscription-payment-providers.mjs";
 
 const owner="11111111-1111-4111-8111-111111111111";
@@ -33,6 +33,63 @@ test("provider billing readiness requires both sandbox credentials, callbacks an
   assert.equal(getProviderSubscriptionBillingReadiness({...env,PADDLE_PESAPAL_BILLING_ENABLED:"false"}).ready,false);
   assert.equal(getProviderSubscriptionBillingReadiness({...env,PADDLE_API_BASE_URL:"https://api.paddle.com",PADDLE_ALLOW_LIVE:"false"}).ready,false);
   assert.equal(getProviderSubscriptionBillingReadiness({...env,PESAPAL_API_BASE_URL:"https://pay.pesapal.com/v3",PESAPAL_ALLOW_LIVE:"false"}).ready,false);
+});
+
+test("provider billing runtime schema gate requires the Batch 150 database capability report",async()=>{
+  const calls=[];
+  const result=await verifyProviderSubscriptionBillingDatabase({
+    supabaseUrl:env.SUPABASE_URL,
+    serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+    fetchImpl:async(url,options)=>{
+      calls.push({url,options});
+      return json({ready:true,schema:"executive_visuals",schemaVersion:"batch-150",missing:[]});
+    }
+  });
+  assert.equal(result.state,"READY");
+  assert.equal(result.ready,true);
+  assert.deepEqual(result.missing,[]);
+  assert.equal(calls.length,1);
+  assert.ok(calls[0].url.endsWith("/rest/v1/rpc/check_subscription_billing_runtime_schema"));
+  assert.equal(calls[0].options.method,"POST");
+  assert.equal(calls[0].options.headers["content-profile"],"executive_visuals");
+  assert.equal(calls[0].options.headers["accept-profile"],"executive_visuals");
+  assert.equal(calls[0].options.body,"{}");
+});
+
+test("provider billing runtime schema gate blocks when the Batch 150 RPC is absent",async()=>{
+  const result=await verifyProviderSubscriptionBillingDatabase({
+    supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+    fetchImpl:async()=>json({message:"function not found"},404)
+  });
+  assert.equal(result.ready,false);
+  assert.equal(result.state,"BLOCKED");
+  assert.equal(result.reason,"schema_probe_unavailable");
+  assert.equal(result.httpStatus,404);
+});
+
+test("provider billing runtime schema gate blocks missing tables, functions or grants",async()=>{
+  const result=await verifyProviderSubscriptionBillingDatabase({
+    supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+    fetchImpl:async()=>json({
+      ready:false,schema:"executive_visuals",schemaVersion:"batch-150",
+      missing:["table_missing:payment_transactions","client_table_grant:customer_subscriptions"]
+    })
+  });
+  assert.equal(result.ready,false);
+  assert.equal(result.state,"BLOCKED");
+  assert.deepEqual(result.missing,["table_missing:payment_transactions","client_table_grant:customer_subscriptions"]);
+});
+
+test("provider billing runtime schema gate never probes without server credentials or exposes them",async()=>{
+  let calls=0;
+  const result=await verifyProviderSubscriptionBillingDatabase({
+    supabaseUrl:env.SUPABASE_URL,serviceRoleKey:"",
+    fetchImpl:async()=>{calls++;throw new Error("must not call");}
+  });
+  assert.equal(calls,0);
+  assert.equal(result.ready,false);
+  assert.equal(result.state,"BLOCKED");
+  assert.equal(JSON.stringify(result).includes("service-role"),false);
 });
 
 test("Paddle customer portal route checks subscription ownership before creating a portal session",async()=>{

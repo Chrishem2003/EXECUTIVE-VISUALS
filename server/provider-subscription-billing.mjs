@@ -55,6 +55,72 @@ export function getProviderSubscriptionBillingReadiness(env=process.env){
   };
 }
 
+export async function verifyProviderSubscriptionBillingDatabase({
+  supabaseUrl=process.env.SUPABASE_URL,
+  serviceRoleKey=resolveSupabaseServerKey(process.env),
+  fetchImpl=globalThis.fetch,
+  timeoutMs=5000
+}={}) {
+  if(!supabaseUrl||!serviceRoleKey||typeof fetchImpl!=="function")
+    return {ready:false,state:"BLOCKED",reason:"database_credentials_missing",missing:[]};
+
+  let origin;
+  try{
+    const url=new URL(supabaseUrl);
+    if(url.protocol!=="https:"||url.username||url.password||url.search||url.hash)
+      return {ready:false,state:"BLOCKED",reason:"database_url_invalid",missing:[]};
+    origin=url.origin;
+  }catch{
+    return {ready:false,state:"BLOCKED",reason:"database_url_invalid",missing:[]};
+  }
+
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),Math.max(1000,Math.min(10000,Number(timeoutMs)||5000)));
+  try{
+    const response=await fetchImpl(origin+"/rest/v1/rpc/check_subscription_billing_runtime_schema",{
+      method:"POST",
+      headers:{
+        ...supabaseServerAuthHeaders(serviceRoleKey),
+        "accept-profile":"executive_visuals",
+        "content-profile":"executive_visuals",
+        "content-type":"application/json",
+        accept:"application/json"
+      },
+      body:"{}",
+      signal:controller.signal,
+      redirect:"error"
+    });
+    if(!response.ok){
+      await response.body?.cancel?.().catch(()=>{});
+      return {ready:false,state:"BLOCKED",reason:"schema_probe_unavailable",httpStatus:response.status,missing:[]};
+    }
+    let result;
+    try{
+      const raw=await readBoundedDatabaseResponseText(response,16*1024);
+      result=raw?JSON.parse(raw):null;
+    }catch{
+      return {ready:false,state:"BLOCKED",reason:"schema_probe_invalid_response",missing:[]};
+    }
+    const missing=Array.isArray(result?.missing)
+      ?result.missing.filter(value=>typeof value==="string").slice(0,100)
+      :[];
+    const ready=result?.ready===true&&result?.schema==="executive_visuals"
+      &&result?.schemaVersion==="batch-150"&&missing.length===0;
+    return {
+      ready,
+      state:ready?"READY":"BLOCKED",
+      reason:ready?null:"schema_contract_not_ready",
+      schema:"executive_visuals",
+      schemaVersion:typeof result?.schemaVersion==="string"?result.schemaVersion:null,
+      missing
+    };
+  }catch{
+    return {ready:false,state:"BLOCKED",reason:"schema_probe_failed",missing:[]};
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
 export function createProviderSubscriptionBilling({
   supabaseUrl=process.env.SUPABASE_URL,
   serviceRoleKey=resolveSupabaseServerKey(process.env),
