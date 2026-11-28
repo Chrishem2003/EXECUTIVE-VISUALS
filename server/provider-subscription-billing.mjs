@@ -1,4 +1,5 @@
 import {createHash,randomUUID} from "node:crypto";
+import {resolveSupabaseServerKey,supabaseServerAuthHeaders} from "./supabase-server-credentials.mjs";
 import {createSubscriptionPaymentProviders} from "./subscription-payment-providers.mjs";
 import {createUnifiedSubscriptionBilling} from "./unified-subscription-billing.mjs";
 
@@ -44,7 +45,7 @@ export function getProviderSubscriptionBillingReadiness(env=process.env){
   const pesapalHostValid=pesapalBase==="https://cybqa.pesapal.com/pesapalv3"||pesapalLive;
   const paddle=Boolean(paddleHostValid&&env.PADDLE_API_KEY&&env.PADDLE_WEBHOOK_SECRET&&env.PADDLE_RETURN_URL&&(!paddleLive||env.PADDLE_ALLOW_LIVE==="true"));
   const pesapal=Boolean(pesapalHostValid&&env.PESAPAL_CONSUMER_KEY&&env.PESAPAL_CONSUMER_SECRET&&env.PESAPAL_IPN_ID&&env.PESAPAL_CALLBACK_URL&&(!pesapalLive||env.PESAPAL_ALLOW_LIVE==="true"));
-  const databaseConfigured=Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY);
+  const databaseConfigured=Boolean(env.SUPABASE_URL&&resolveSupabaseServerKey(env));
   return {
     enabled:env.PADDLE_PESAPAL_BILLING_ENABLED==="true",
     paddle:{configured:paddle,environment:paddleLive?"live":"sandbox"},
@@ -56,7 +57,7 @@ export function getProviderSubscriptionBillingReadiness(env=process.env){
 
 export function createProviderSubscriptionBilling({
   supabaseUrl=process.env.SUPABASE_URL,
-  serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey=resolveSupabaseServerKey(process.env),
   paddleReturnUrl=process.env.PADDLE_RETURN_URL,
   pesapalCallbackUrl=process.env.PESAPAL_CALLBACK_URL,
   pesapalNotificationId=process.env.PESAPAL_IPN_ID,
@@ -74,7 +75,7 @@ export function createProviderSubscriptionBilling({
 
   async function dbRequest(path,{method="GET",body=null,prefer="return=representation",allowConflict=false}={}){
     const headers={
-      apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,
+      ...supabaseServerAuthHeaders(serviceRoleKey),
       "accept-profile":"executive_visuals","content-profile":"executive_visuals",
       accept:"application/json",prefer
     };

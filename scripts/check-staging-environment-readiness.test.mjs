@@ -12,8 +12,11 @@ const complete = () => ({
   STORAGE_TEST_OWNER_ID: "123e4567-e89b-42d3-a456-426614174000",
   STAGING_BACKUP_ENCRYPTION_PASSPHRASE: "a-test-only-passphrase-with-32-chars",
   PADDLE_SANDBOX_API_KEY: "pdl_sdbx_test_placeholder",
+  PADDLE_WEBHOOK_SECRET: "webhook-secret-test-placeholder",
   PESAPAL_SANDBOX_CONSUMER_KEY: "test-pesapal-key",
   PESAPAL_SANDBOX_CONSUMER_SECRET: "test-pesapal-secret",
+  PESAPAL_IPN_ID: "223e4567-e89b-42d3-a456-426614174000",
+  PESAPAL_CALLBACK_URL: "https://executive-visuals-cloud-staging.onrender.com/api/webhooks/pesapal",
   OPS_ALERT_WEBHOOK_URL: "https://alerts.example.test/webhook",
   EXECUTIVE_VISUALS_HEALTH_URL: "https://staging.example.test/api/health",
 });
@@ -61,4 +64,34 @@ test("rejects non-HTTPS operational endpoints and malformed owner identity", () 
   const report = assessStagingConfig(env);
   assert.ok(report.invalid.includes("OPS_ALERT_WEBHOOK_URL"));
   assert.ok(report.invalid.includes("STORAGE_TEST_OWNER_ID"));
+});
+
+test("rejects a database URL with a forged project-scoped username on an unrelated host", () => {
+  const env = complete();
+  env.SUPABASE_STAGING_DB_URL = "postgresql://postgres.bokxljngydmqrmktofwm:placeholder@attacker.example:5432/postgres";
+  assert.ok(assessStagingConfig(env).invalid.includes("SUPABASE_STAGING_DB_URL"));
+});
+
+test("requires a valid Paddle webhook secret and Pesapal IPN identity", () => {
+  const env = complete();
+  env.PADDLE_WEBHOOK_SECRET = "short";
+  env.PESAPAL_IPN_ID = "not-a-uuid";
+  const report = assessStagingConfig(env);
+  assert.ok(report.invalid.includes("PADDLE_WEBHOOK_SECRET"));
+  assert.ok(report.invalid.includes("PESAPAL_IPN_ID"));
+});
+
+test("requires the actual GET Pesapal IPN route on the staging callback URL", () => {
+  const env = complete();
+  assert.equal(assessStagingConfig(env).state, "READY");
+  env.PESAPAL_CALLBACK_URL = "https://executive-visuals-cloud-staging.onrender.com/api/billing/pesapal/ipn";
+  assert.ok(assessStagingConfig(env).invalid.includes("PESAPAL_CALLBACK_URL"));
+  env.PESAPAL_CALLBACK_URL = "http://executive-visuals-cloud-staging.onrender.com/api/webhooks/pesapal";
+  assert.ok(assessStagingConfig(env).invalid.includes("PESAPAL_CALLBACK_URL"));
+});
+
+test("rejects a Pesapal IPN callback hosted outside the approved Render staging service", () => {
+  const env = complete();
+  env.PESAPAL_CALLBACK_URL = "https://attacker.example/api/webhooks/pesapal";
+  assert.ok(assessStagingConfig(env).invalid.includes("PESAPAL_CALLBACK_URL"));
 });
