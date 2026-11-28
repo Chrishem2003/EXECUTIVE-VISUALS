@@ -1,6 +1,15 @@
 -- Batch 150: fail-closed runtime schema capability check for Paddle/Pesapal billing.
 -- Read-only diagnostics; no payment, subscription, entitlement or credit mutations.
 
+-- Keep subscription and payment records behind the verified server-side API.
+-- The browser does not need direct table grants; server routes use service_role.
+alter table executive_visuals.customer_subscriptions enable row level security;
+alter table executive_visuals.payment_transactions enable row level security;
+revoke all on executive_visuals.customer_subscriptions,
+  executive_visuals.payment_transactions from public, anon, authenticated;
+grant all privileges on executive_visuals.customer_subscriptions,
+  executive_visuals.payment_transactions to service_role;
+
 create or replace function executive_visuals.check_subscription_billing_runtime_schema()
 returns jsonb
 language plpgsql
