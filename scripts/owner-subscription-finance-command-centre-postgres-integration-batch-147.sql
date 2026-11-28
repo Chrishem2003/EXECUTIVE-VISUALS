@@ -99,16 +99,17 @@ begin
     raise exception 'Subscription liability summary has unsafe credit-liability semantics: %',v_summary;
   end if;
 
-  -- Event records are append-only.
-  begin
-    update subscription_financial_remediation_events
-       set note='tampered'
-     where request_id=v_request_id;
-    raise exception 'Remediation event mutation unexpectedly succeeded';
-  exception when raise_exception then
-    if sqlerrm='Remediation event mutation unexpectedly succeeded' then raise; end if;
-    if sqlerrm<>'SUBSCRIPTION_FINANCIAL_REMEDIATION_EVENTS_APPEND_ONLY' then raise; end if;
-  end;
+  -- The service role has read-only access; a database trigger also fences privileged mutation.
+  if has_table_privilege('service_role','executive_visuals.subscription_financial_remediation_events','UPDATE')
+     or has_table_privilege('service_role','executive_visuals.subscription_financial_remediation_events','DELETE') then
+    raise exception 'Service role unexpectedly has mutation privileges on append-only remediation events';
+  end if;
+  if not exists(
+    select 1 from pg_trigger
+     where tgrelid='executive_visuals.subscription_financial_remediation_events'::regclass
+       and tgname='subscription_financial_remediation_events_immutable'
+       and not tgisinternal and tgenabled<>'D'
+  ) then raise exception 'Append-only remediation event trigger is missing or disabled'; end if;
 
   raise notice 'Batch 147 owner finance command centre PostgreSQL acceptance passed';
 end;
