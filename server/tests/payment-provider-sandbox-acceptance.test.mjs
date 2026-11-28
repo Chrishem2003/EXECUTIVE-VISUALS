@@ -101,3 +101,12 @@ test("rejects a Pesapal callback URL that is not the application's registered GE
  }),{code:"PESAPAL_CALLBACK_URL_INVALID"});
  assert.equal(calls,0);
 });
+
+test("rejects a Pesapal IPN callback hosted outside the approved Render staging service",async()=>{
+ let calls=0;
+ await assert.rejects(()=>verifyPaymentProviderSandbox({
+  env:{...env,PESAPAL_CALLBACK_URL:"https://attacker.example/api/webhooks/pesapal"},
+  fetchImpl:async()=>{calls++;}
+ }),{code:"PESAPAL_CALLBACK_URL_INVALID"});
+ assert.equal(calls,0);
+});
