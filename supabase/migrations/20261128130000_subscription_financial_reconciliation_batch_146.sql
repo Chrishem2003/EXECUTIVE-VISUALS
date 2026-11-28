@@ -64,7 +64,8 @@ begin
         'reference',p.tx_ref,'subscriptionId',p.metadata->>'subscription_id',
         'paymentStatus',p.status,'subscriptionApplied',false) as details
     from payment_transactions p
-    where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
+    where p.provider in ('paddle','pesapal')
+      and p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
       and p.status='successful'
       and p.metadata->'subscription_applied' is distinct from 'true'::jsonb
 
@@ -74,7 +75,8 @@ begin
       jsonb_build_object('paymentId',p.id,'ownerId',p.owner_id,'provider',p.provider,
         'reference',p.tx_ref,'paymentStatus',p.status,'subscriptionApplied',true)
     from payment_transactions p
-    where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
+    where p.provider in ('paddle','pesapal')
+      and p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
       and p.metadata->'subscription_applied' = 'true'::jsonb
       and p.status<>'successful'
 
@@ -86,7 +88,9 @@ begin
     from payment_transactions p
     left join customer_subscriptions s
       on s.id::text=p.metadata->>'subscription_id' and s.owner_id=p.owner_id
-    where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
+    where p.provider in ('paddle','pesapal')
+      and p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
+      and p.metadata->>'subscription_id' is not null
       and p.metadata->'subscription_applied' = 'true'::jsonb
       and s.id is null
 
@@ -98,7 +102,8 @@ begin
     from payment_transactions p
     join customer_subscriptions s
       on s.id::text=p.metadata->>'subscription_id' and s.owner_id=p.owner_id
-    where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
+    where p.provider in ('paddle','pesapal')
+      and p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
       and p.status='successful'
       and p.metadata->'subscription_applied' = 'true'::jsonb
       and s.provider is distinct from p.provider
@@ -111,7 +116,8 @@ begin
     from payment_transactions p
     join customer_subscriptions s
       on s.id::text=p.metadata->>'subscription_id' and s.owner_id=p.owner_id
-    where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
+    where p.provider in ('paddle','pesapal')
+      and p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
       and p.status='successful'
       and p.metadata->'subscription_applied' = 'true'::jsonb
       and s.included_credits>0
@@ -134,7 +140,8 @@ begin
     join credit_ledger l
       on l.owner_id=p.owner_id and l.payment_transaction_id=p.id
      and l.entry_type='purchase_grant' and l.credit_delta=s.included_credits
-    where p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
+    where p.provider in ('paddle','pesapal')
+      and p.metadata->>'payment_purpose' in ('subscription_purchase','subscription_renewal')
       and p.status='successful'
       and p.metadata->'subscription_applied' = 'true'::jsonb
       and s.included_credits>0
