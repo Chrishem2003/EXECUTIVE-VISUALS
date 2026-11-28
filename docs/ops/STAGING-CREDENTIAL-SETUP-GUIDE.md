@@ -58,6 +58,8 @@ The preflight verifies that the Supabase project URL and database URL match the 
 
 JWT checks inspect token claims only; the real storage acceptance test must still let Supabase verify the signature and prove tenant isolation.
 
+Official references: [Paddle notification destinations](https://developer.paddle.com/webhooks/about/notification-destinations/) and [Paddle signature verification](https://developer.paddle.com/webhooks/about/signature-verification/).
+
 ## Create the Paddle sandbox notification destination
 
 In Paddle Sandbox:
@@ -92,6 +94,8 @@ In Paddle Sandbox:
 9. Save the destination. Copy the returned `endpoint_secret_key` into GitHub environment secret `PADDLE_WEBHOOK_SECRET`. If you miss it during creation, retrieve it from the destination's edit view or the Get Notification Setting API with appropriate permission. Do not copy it into source files or a PR.
 
 The application verifies the `Paddle-Signature` header and only applies the supported transaction-completed and subscription lifecycle events. Adjustment events are retained for financial review; they do not automatically issue refunds or mutate entitlements.
+
+Official reference: [Pesapal API 3.0 RegisterIPNURL](https://developer.pesapal.com/how-to-integrate/e-commerce/api-30-json/registeripnurl).
 
 ## Register the Pesapal sandbox IPN
 
