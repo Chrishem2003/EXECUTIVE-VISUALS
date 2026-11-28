@@ -28,6 +28,7 @@ function fetchFor({ payload = health(), heartbeats = [{ status: "healthy", heart
     const parsed = new URL(url);
     calls.push({ url: parsed.toString(), headers: options.headers || {} });
     if (parsed.pathname === "/api/health") return new Response(JSON.stringify(payload), { status: 200 });
+    if (parsed.pathname === "/rest/v1/platform_admins") return new Response(JSON.stringify([{ role: "owner" }]), { status: 200 });
     if (parsed.pathname === "/rest/v1/cloud_worker_heartbeats") return new Response(JSON.stringify(heartbeats), { status: 200 });
     return new Response("not found", { status: 404 });
   };
@@ -88,4 +89,17 @@ test("missing runtime secrets are reported by name only", async () => {
   assert.ok(result.missing.includes("SUPABASE_STAGING_SECRET_KEY"));
   assert.equal(result.secretValuesExposed, false);
   assert.equal(JSON.stringify(result).includes("sb_secret"), false);
+});
+
+test("missing platform owner allowlist blocks owner finance runtime readiness", async () => {
+  const mock = fetchFor();
+  const fetchImpl = async (url, options = {}) => {
+    const parsed = new URL(url);
+    if (parsed.pathname === "/rest/v1/platform_admins") return new Response("[]", { status: 200 });
+    return mock.fetchImpl(url, options);
+  };
+  const result = await verifyStagingRuntime({ env: env(), fetchImpl, now: () => now });
+  assert.equal(result.state, "BLOCKED");
+  assert.equal(result.ownerAdminCount, 0);
+  assert.ok(result.blockers.includes("PLATFORM_FINANCE_OWNER_CONFIGURED"));
 });
