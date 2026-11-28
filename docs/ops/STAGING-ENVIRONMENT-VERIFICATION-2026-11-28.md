@@ -25,6 +25,7 @@ The Supabase migration history now records all three. No production project was 
 - Credit units remain separate from monetary liability; `monetaryLiabilityCalculated=false`.
 - No subscription remediation requests or decisions have been created.
 - The credit revenue source table is empty; there are no historical grants in this staging project to backfill.
+- Staging currently has zero subscription rows, payment transactions, refunds, credit ledger entries and credit reservations. The reconciliation run therefore validates schema and read-only execution, not live revenue history.
 - The optional `pg_cron` schema/extension is absent. No extension was installed and no recurring schedule was created. Manual reconciliation remains available.
 
 ### Owner authorization blocker
@@ -67,6 +68,7 @@ Service: `executive-visuals-cloud-staging`.
 - Auto-deploy: enabled on commit
 - Render health-check path: empty
 - Separate Executive Visuals background worker: not present in the inspected service list
+- Staging heartbeat table currently has zero worker heartbeat rows.
 
 This service is named staging but currently follows `main`; it is not isolated to the feature/staging branch. Its branch and auto-deploy policy were not changed. Before using it for release acceptance, explicitly approve the intended staging branch and deployment policy, then configure `/api/health` as the health-check path.
 
