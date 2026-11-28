@@ -72,6 +72,21 @@ This service is named staging but currently follows `main`; it is not isolated t
 
 The current server health implementation reports its application database as SQLite. Durable PostgreSQL application persistence is still a paid-launch blocker; applying the Supabase finance migrations does not itself replace the application's SQLite repository.
 
+## Deployed runtime acceptance gate
+
+A separate manual workflow, `.github/workflows/staging-runtime-readiness.yml`, now performs a read-only probe after the staging variables/secrets and Render service have been configured. It requires an explicit `confirm_staging_runtime_probe=true` input and checks:
+
+- Render health endpoint returns valid HTTP 200 health JSON.
+- Application persistence reports PostgreSQL rather than SQLite.
+- Supabase authentication and encrypted server sessions are ready.
+- Cloud media reports private storage ready.
+- Private asset egress accounting and verified actor context are enabled.
+- Paddle and Pesapal are both configured for sandbox.
+- Cloud video worker is enabled as a separate process.
+- At least one healthy worker heartbeat is no older than 120 seconds.
+
+The workflow reads the health endpoint and the staging heartbeat table only. It does not mutate customer records, create provider charges, deploy services or apply migrations. It is expected to remain blocked until the actual runtime is corrected.
+
 ## Provider and operations acceptance
 
 The fail-closed preflight currently reports 17 missing staging environment values. No values were printed. The complete source/setup guide is `docs/ops/STAGING-CREDENTIAL-SETUP-GUIDE.md`.
