@@ -48,6 +48,16 @@ on conflict (user_id) do nothing;
 
 This is intentionally not automated. It only inserts the first owner when the allowlist is empty, does not alter an existing role, and requires a real Auth user. Verify the resulting row and keep the UUID out of source code and public CI logs.
 
+## Supabase security advisor follow-up
+
+After the migrations, the Supabase advisors reported:
+
+- One warning: leaked-password protection is disabled. Supabase documents this feature as available on Pro and above. Do not upgrade the project without an explicit cost decision. If remaining on Free, keep strong password requirements, email verification, rate limits and bot protection in place, and record leaked-password screening as a residual risk.
+- 98 informational `rls_enabled_no_policy` findings. These are internal `executive_visuals` tables with RLS enabled and no client policies; the intended default-deny posture is appropriate where access is restricted to server-side `service_role` functions. Do not add broad client policies merely to silence the linter.
+- One duplicate-index performance warning on `ai_model_price_catalog`. It is pre-existing and was not changed; review query plans before removing either index.
+
+References: [Supabase password security](https://supabase.com/docs/guides/auth/password-security) and [Supabase API key privilege model](https://supabase.com/docs/guides/getting-started/api-keys).
+
 ## Private storage
 
 - Bucket `executive-visuals-media` exists.
