@@ -104,6 +104,7 @@ export function compileCampaignFormatVariants({
     throw new Error("Select between one and four campaign formats.");
   }
   if (new Set(formats).size !== formats.length) throw new Error("Campaign formats must be unique.");
+  if (idFactory !== undefined && typeof idFactory !== "function") throw new Error("Campaign format ID factory must be a function.");
 
   const makeId = idFactory ?? (() => {
     if (typeof globalThis.crypto?.randomUUID !== "function") {
