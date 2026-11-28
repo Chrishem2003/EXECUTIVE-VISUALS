@@ -26,7 +26,9 @@ Unit tests cover:
 - Rejection of remote restore targets and incomplete restore configuration.
 - Existing wrong-passphrase, tamper, path traversal, duplicate entry, checksum and private-bucket checks.
 
-The CI static-contract workflow does not access staging or create a backup. The full restore runs only when an owner manually starts the encrypted staging backup workflow after configuring the protected staging environment.
+Pull-request CI additionally runs a synthetic encrypted snapshot through a real PostgreSQL 16 service container. It verifies restored application rows, UUID-only placeholder identities, validated auth foreign keys and private object bytes without staging secrets or customer data.
+
+The full staging restore runs only when an owner manually starts the encrypted staging backup workflow after configuring the protected staging environment.
 
 ## Safety
 
