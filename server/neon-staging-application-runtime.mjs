@@ -1,4 +1,5 @@
 import { createNeonStagingRuntime } from "./neon-staging-runtime.mjs";
+import { resolveNeonStagingIdentity } from "./neon-staging-identity.mjs";
 import { createNeonStagingApplicationDispatch } from "./neon-staging-application-dispatch.mjs";
 import { createNeonCustomerCreditQuotePolicy } from "./neon-customer-credit-policy.mjs";
 
@@ -15,10 +16,10 @@ export async function createNeonStagingApprovalDispatch({
   if(env.NEON_STAGING_APPLICATION_DISPATCH_ENABLED!=="true"){
     return Object.freeze({enabled:false,dispatch:null,runtime:null,close:async()=>{}});
   }
-  if(env.NEON_STAGING_RUNTIME_ENABLED!=="true"||
-     env.NEON_STAGING_BRANCH_NAME!=="executive-visuals-staging"){
-    throw new Error("Neon application dispatch requires the explicitly enabled executive-visuals-staging runtime.");
+  if(env.NEON_STAGING_RUNTIME_ENABLED!=="true"){
+    throw new Error("Neon application dispatch requires the explicitly enabled staging runtime.");
   }
+  const stagingIdentity=resolveNeonStagingIdentity({env});
   if(env.AUTH_MODE!=="supabase"||!env.SUPABASE_URL||!env.SUPABASE_PUBLISHABLE_KEY){
     throw new Error("Neon application dispatch requires the existing verified Supabase authentication boundary.");
   }
@@ -35,7 +36,7 @@ export async function createNeonStagingApprovalDispatch({
       quoteCustomerCredits,
       enableVideoApprovals: true
     });
-    if(runtime?.backend!=="neon-postgres"||runtime?.branch!=="executive-visuals-staging"){
+    if(runtime?.backend!=="neon-postgres"||runtime?.branch!==stagingIdentity.branchName){
       throw new Error("Neon runtime identity does not match the approved staging branch.");
     }
     const readiness=await runtime.checkReadiness();
