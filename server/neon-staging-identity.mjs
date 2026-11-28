@@ -10,7 +10,7 @@ const RESOURCE_ID = /^[a-z0-9-]{1,60}$/;
 export function resolveNeonStagingIdentity({ env = process.env, requireEndpointBinding = false } = {}) {
   const branchName = String(env.NEON_STAGING_BRANCH_NAME || "").trim();
   if (!ALLOWED_BRANCH_NAMES.has(branchName)) {
-    throw new Error("Neon runtime requires an explicitly approved staging branch name.");
+    throw new Error("Neon runtime requires the explicitly enabled, explicitly named staging branch; an approved staging branch name is required.");
   }
   if (!requireEndpointBinding) return Object.freeze({ branchName });
 
