@@ -9,8 +9,10 @@ const env={
   SUPABASE_STAGING_URL:`https://${APPROVED_STAGING_PROJECT_REF}.supabase.co`,
   SUPABASE_STAGING_ANON_KEY:"test-anon-placeholder",
   SUPABASE_STAGING_SECRET_KEY:"sb_secret_test-placeholder",
-  STORAGE_TEST_OWNER_JWT:"owner-jwt-placeholder",
-  STORAGE_TEST_OTHER_JWT:"other-jwt-placeholder",
+  STORAGE_TEST_OWNER_EMAIL:"owner@example.test",
+  STORAGE_TEST_OWNER_PASSWORD:"owner-test-password",
+  STORAGE_TEST_OTHER_EMAIL:"other@example.test",
+  STORAGE_TEST_OTHER_PASSWORD:"other-test-password",
   STORAGE_TEST_OWNER_ID:owner
 };
 const body=Buffer.from("private test bytes");
@@ -18,13 +20,17 @@ function fixture({bucketPublic=false,otherCanRead=false,ownerCanRead=true,signed
   const calls=[],objects=new Map();
   const fetchImpl=async(url,options={})=>{
     const target=new URL(url);calls.push({url:target.toString(),method:options.method,headers:options.headers});
-    if(target.pathname==="/auth/v1/user")return Response.json({id:options.headers.authorization.endsWith("owner-jwt-placeholder")?owner:other});
+    if(target.pathname==="/auth/v1/token"&&target.searchParams.get("grant_type")==="password"){
+      const credentials=JSON.parse(options.body);
+      const isOwner=credentials.email==="owner@example.test";
+      return Response.json({user:{id:isOwner?owner:other},access_token:isOwner?"owner-access-token":"other-access-token"});
+    }
     if(target.pathname==="/storage/v1/bucket/executive-visuals-media")return Response.json({id:"executive-visuals-media",public:bucketPublic});
     if(target.pathname.startsWith("/storage/v1/object/executive-visuals-media/")&&options.method==="POST"){
       objects.set(target.pathname,Buffer.from(options.body));return new Response(null,{status:200});
     }
     if(target.pathname.startsWith("/storage/v1/object/authenticated/executive-visuals-media/")){
-      const isOwner=options.headers.authorization.endsWith("owner-jwt-placeholder");
+      const isOwner=options.headers.authorization.endsWith("owner-access-token");
       if(!isOwner&&otherCanRead)return new Response(objects.values().next().value||body,{status:200});
       if(!isOwner||!ownerCanRead)return new Response(null,{status:403});
       return new Response(objects.values().next().value||body,{status:200});

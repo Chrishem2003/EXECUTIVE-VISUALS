@@ -30,8 +30,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_STAGING_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_STAGING_ANON_KEY }}
-          STORAGE_TEST_OWNER_JWT: ${{ secrets.STORAGE_TEST_OWNER_JWT }}
-          STORAGE_TEST_OTHER_JWT: ${{ secrets.STORAGE_TEST_OTHER_JWT }}
+          STORAGE_TEST_OWNER_EMAIL: ${{ secrets.STORAGE_TEST_OWNER_EMAIL }}
+          STORAGE_TEST_OWNER_PASSWORD: ${{ secrets.STORAGE_TEST_OWNER_PASSWORD }}
+          STORAGE_TEST_OTHER_EMAIL: ${{ secrets.STORAGE_TEST_OTHER_EMAIL }}
+          STORAGE_TEST_OTHER_PASSWORD: ${{ secrets.STORAGE_TEST_OTHER_PASSWORD }}
           STORAGE_TEST_OWNER_ID: ${{ vars.STORAGE_TEST_OWNER_ID }}
           STORAGE_TEST_BUCKET: executive-visuals-media
         run: node scripts/verify-private-storage-staging.mjs

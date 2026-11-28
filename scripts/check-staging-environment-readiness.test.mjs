@@ -7,8 +7,10 @@ const complete = () => ({
   SUPABASE_STAGING_ANON_KEY: "test-anon-placeholder",
   SUPABASE_STAGING_SECRET_KEY: "test-server-placeholder",
   SUPABASE_STAGING_DB_URL: `postgresql://postgres:placeholder@db.${APPROVED_STAGING_PROJECT_REF}.supabase.co:5432/postgres`,
-  STORAGE_TEST_OWNER_JWT: "test-owner-jwt-placeholder",
-  STORAGE_TEST_OTHER_JWT: "test-other-jwt-placeholder",
+  STORAGE_TEST_OWNER_EMAIL: "owner@example.test",
+  STORAGE_TEST_OWNER_PASSWORD: "owner-test-password",
+  STORAGE_TEST_OTHER_EMAIL: "other@example.test",
+  STORAGE_TEST_OTHER_PASSWORD: "other-test-password",
   STORAGE_TEST_OWNER_ID: "123e4567-e89b-42d3-a456-426614174000",
   STAGING_BACKUP_ENCRYPTION_PASSPHRASE: "a-test-only-passphrase-with-32-chars",
   PADDLE_SANDBOX_API_KEY: "pdl_sdbx_test_placeholder",
@@ -25,8 +27,11 @@ test("missing secrets are BLOCKED, and the strict launch gate fails closed witho
   const report = assessStagingConfig({});
   assert.equal(report.state, "BLOCKED");
   assert.ok(report.missing.includes("SUPABASE_STAGING_URL"));
+  assert.ok(report.missing.includes("STORAGE_TEST_OWNER_PASSWORD"));
+  assert.ok(report.missing.includes("STORAGE_TEST_OTHER_PASSWORD"));
   assert.equal(report.credentialValuesExposed, false);
   assert.equal(JSON.stringify(report).includes("placeholder"), false);
+  assert.equal(JSON.stringify(report).includes("owner-test-password"), false);
   assert.equal(stagingReadinessExitCode(report), 0, "report-only mode remains usable during setup");
   assert.equal(stagingReadinessExitCode(report, { requireReady: true }), 1, "launch gate must fail closed");
 });

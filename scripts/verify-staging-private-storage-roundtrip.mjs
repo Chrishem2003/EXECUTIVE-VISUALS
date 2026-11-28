@@ -10,7 +10,8 @@ const bytesEqual = (a,b) => Buffer.from(a).equals(Buffer.from(b));
 function configuration(env) {
   const required = [
     "SUPABASE_STAGING_URL","SUPABASE_STAGING_ANON_KEY","SUPABASE_STAGING_SECRET_KEY",
-    "STORAGE_TEST_OWNER_JWT","STORAGE_TEST_OTHER_JWT","STORAGE_TEST_OWNER_ID"
+    "STORAGE_TEST_OWNER_EMAIL","STORAGE_TEST_OWNER_PASSWORD",
+    "STORAGE_TEST_OTHER_EMAIL","STORAGE_TEST_OTHER_PASSWORD","STORAGE_TEST_OWNER_ID"
   ];
   const missing = required.filter(name => !String(env[name] || "").trim());
   if (missing.length) throw Object.assign(new Error("Staging private-storage test configuration is incomplete."), {
@@ -28,7 +29,9 @@ function configuration(env) {
     throw Object.assign(new Error("Staging storage bucket identifier is invalid."), {code:"STAGING_STORAGE_BUCKET_INVALID"});
   }
   return {origin:url.origin,ownerId,bucket,anonKey:env.SUPABASE_STAGING_ANON_KEY,
-    secretKey:env.SUPABASE_STAGING_SECRET_KEY,ownerJwt:env.STORAGE_TEST_OWNER_JWT,otherJwt:env.STORAGE_TEST_OTHER_JWT};
+    secretKey:env.SUPABASE_STAGING_SECRET_KEY,
+    ownerEmail:env.STORAGE_TEST_OWNER_EMAIL,ownerPassword:env.STORAGE_TEST_OWNER_PASSWORD,
+    otherEmail:env.STORAGE_TEST_OTHER_EMAIL,otherPassword:env.STORAGE_TEST_OTHER_PASSWORD};
 }
 
 async function readBytes(response, maxBytes=MAX_RESPONSE_BYTES) {
@@ -49,21 +52,23 @@ export async function runPrivateStorageRoundTrip({
   if(typeof fetchImpl!=="function")throw new Error("A fetch implementation is required.");
   const config=configuration(env);
   const serverHeaders=supabaseServerAuthHeaders(config.secretKey);
-  const authUser=async jwt=>{
-    const response=await fetchImpl(config.origin+"/auth/v1/user",{
-      method:"GET",headers:{apikey:config.anonKey,authorization:"Bearer "+jwt,accept:"application/json"},
-      redirect:"error"
+  const authUser=async(email,password)=>{
+    const response=await fetchImpl(config.origin+"/auth/v1/token?grant_type=password",{
+      method:"POST",headers:{apikey:config.anonKey,"content-type":"application/json",accept:"application/json"},
+      body:JSON.stringify({email,password}),redirect:"error"
     });
-    if(!response.ok)throw safeFailure("STAGING_STORAGE_TEST_IDENTITY_INVALID","A staging storage test JWT could not be verified.",response.status);
-    let user;
-    try{user=await response.json();}catch{throw safeFailure("STAGING_STORAGE_AUTH_RESPONSE_INVALID","Staging Auth returned an invalid test identity.",502);}
-    if(!UUID.test(String(user?.id||"")))throw safeFailure("STAGING_STORAGE_AUTH_RESPONSE_INVALID","Staging Auth returned an invalid test identity.",502);
-    return String(user.id);
+    if(!response.ok)throw safeFailure("STAGING_STORAGE_TEST_IDENTITY_INVALID","A staging storage test account could not authenticate.",response.status);
+    let session;
+    try{session=await response.json();}catch{throw safeFailure("STAGING_STORAGE_AUTH_RESPONSE_INVALID","Staging Auth returned an invalid test session.",502);}
+    const id=String(session?.user?.id||""),jwt=String(session?.access_token||"");
+    if(!UUID.test(id)||!jwt)throw safeFailure("STAGING_STORAGE_AUTH_RESPONSE_INVALID","Staging Auth returned an invalid test session.",502);
+    return {id,jwt};
   };
-  const ownerId=await authUser(config.ownerJwt);
-  const otherId=await authUser(config.otherJwt);
+  const owner=await authUser(config.ownerEmail,config.ownerPassword);
+  const other=await authUser(config.otherEmail,config.otherPassword);
+  const ownerId=owner.id,otherId=other.id;
   if(ownerId!==config.ownerId||otherId===ownerId)
-    throw safeFailure("STAGING_STORAGE_TEST_IDENTITY_MISMATCH","The configured owner and other-user JWTs do not identify two distinct expected staging users.",409);
+    throw safeFailure("STAGING_STORAGE_TEST_IDENTITY_MISMATCH","The configured owner and other-user credentials must authenticate two distinct expected staging users.",409);
 
   const bucketResponse=await fetchImpl(config.origin+"/storage/v1/bucket/"+encodeURIComponent(config.bucket),{
     method:"GET",headers:{...serverHeaders,accept:"application/json"},redirect:"error"
@@ -95,12 +100,12 @@ export async function runPrivateStorageRoundTrip({
     uploaded=true;
 
     const ownerDownload=await fetchImpl(config.origin+"/storage/v1/object/authenticated/"+encodeURIComponent(config.bucket)+"/"+encodedPath,{
-      method:"GET",headers:{apikey:config.anonKey,authorization:"Bearer "+config.ownerJwt},redirect:"error"
+      method:"GET",headers:{apikey:config.anonKey,authorization:"Bearer "+owner.jwt},redirect:"error"
     });
     await expectBytes(ownerDownload,"STAGING_STORAGE_OWNER_READ_FAILED");
 
     const otherDownload=await fetchImpl(config.origin+"/storage/v1/object/authenticated/"+encodeURIComponent(config.bucket)+"/"+encodedPath,{
-      method:"GET",headers:{apikey:config.anonKey,authorization:"Bearer "+config.otherJwt},redirect:"error"
+      method:"GET",headers:{apikey:config.anonKey,authorization:"Bearer "+other.jwt},redirect:"error"
     });
     if(otherDownload.ok)throw safeFailure("STAGING_STORAGE_TENANT_ISOLATION_FAILED","A different staging user could read another user's private object.",500);
     if(![401,403,404].includes(otherDownload.status))
