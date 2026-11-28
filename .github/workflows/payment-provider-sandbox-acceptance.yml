@@ -4,6 +4,9 @@ on:
     paths:
       - "scripts/verify-payment-provider-sandbox.mjs"
       - "server/tests/payment-provider-sandbox-acceptance.test.mjs"
+      - "server/tests/provider-subscription-billing.test.mjs"
+      - "server/provider-subscription-billing.mjs"
+      - "server/subscription-payment-providers.mjs"
       - ".github/workflows/payment-provider-sandbox-acceptance.yml"
   workflow_dispatch:
 permissions:
@@ -19,6 +22,8 @@ jobs:
           node-version: "22.23.4"
       - run: node --check scripts/verify-payment-provider-sandbox.mjs
       - run: node --test server/tests/payment-provider-sandbox-acceptance.test.mjs
+      - name: Verify signed Paddle and provider-status-verified Pesapal end-to-end acceptance
+        run: node --test --test-force-exit server/tests/provider-subscription-billing.test.mjs
   sandbox-acceptance:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
