@@ -28,12 +28,14 @@ Repository is public, so use the repository's **staging** environment:
 
 The workflow reads secrets and variables from the environment named `staging`. Repository-level secrets with the same names are not a substitute for the environment values if they are not made available to this job.
 
+Official reference: [Supabase API keys](https://supabase.com/docs/guides/getting-started/api-keys). Prefer the new `sb_publishable_` and `sb_secret_` keys. The preflight still accepts legacy `anon` and `service_role` JWT keys for compatibility, but do not revoke legacy keys until every application and worker caller has migrated.
+
 ## GitHub environment secrets
 
 | Secret name | Where to obtain it | Validation / handling |
 |---|---|---|
-| `SUPABASE_STAGING_ANON_KEY` | Supabase Dashboard → staging project → Settings → API Keys → publishable key (or legacy anon key) | Public-class key only; never substitute the secret/service-role key |
-| `SUPABASE_STAGING_SECRET_KEY` | Same API Keys page → secret key (or legacy service_role key) | Elevated backend key; never put in browser code |
+| `SUPABASE_STAGING_ANON_KEY` | Supabase Dashboard → staging project → Settings → API Keys → publishable key (or legacy anon key) | Public-class key only; never substitute the secret/service-role key. Safe for client use only when RLS is correctly configured |
+| `SUPABASE_STAGING_SECRET_KEY` | Same API Keys page → secret key (or legacy service_role key) | Elevated backend key bypasses RLS; CI/server only, never browser code or source control |
 | `SUPABASE_STAGING_DB_URL` | Supabase Dashboard → Connect → PostgreSQL connection string | Must point to project ref `bokxljngydmqrmktofwm`; use a secure database password and percent-encode reserved URL characters |
 | `STORAGE_TEST_OWNER_JWT` | Sign in a dedicated staging storage-owner test account through Supabase Auth | Access token, not an API key; its `sub` must equal `STORAGE_TEST_OWNER_ID` |
 | `STORAGE_TEST_OTHER_JWT` | Sign in a separate staging user account | Must belong to a different Auth user; used to prove cross-tenant access is denied |
