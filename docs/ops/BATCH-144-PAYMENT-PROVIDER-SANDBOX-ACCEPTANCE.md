@@ -51,6 +51,24 @@ The GitHub staging workflow intentionally uses sandbox-specific names for its re
 - `PESAPAL_CONSUMER_SECRET` (same sandbox secret stored in GitHub as `PESAPAL_SANDBOX_CONSUMER_SECRET`)
 - `PESAPAL_IPN_ID` and `PESAPAL_CALLBACK_URL`
 - `PESAPAL_ALLOW_LIVE=false`
-- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for the server-side subscription ledger
+- `SUPABASE_URL` and `SUPABASE_SECRET_KEY` (preferred) or legacy `SUPABASE_SERVICE_ROLE_KEY` for the server-side subscription ledger
 
 The application currently checks `SUPABASE_SERVICE_ROLE_KEY` for this billing integration. Do not assume that setting only `SUPABASE_SECRET_KEY` is sufficient. Keep all runtime values server-side in the staging service environment; never add them to Vite/browser variables or source control. Keep billing disabled until the isolated staging migration and all provider acceptance tests pass.
+
+## Paddle destination event selection
+
+The current adapter explicitly normalizes these event types:
+
+- `subscription.created`
+- `subscription.activated`
+- `subscription.updated`
+- `subscription.canceled`
+- `subscription.past_due`
+- `subscription.paused`
+- `subscription.resumed`
+- `transaction.completed`
+- `transaction.payment_failed`
+- `adjustment.created`
+- `adjustment.updated`
+
+Subscribe to these exact events for the staging destination. Events outside this list are treated as ignored by the current adapter and must not be relied upon for entitlement or financial state changes. In particular, do not substitute `transaction.paid` for `transaction.completed` in the current integration contract.
