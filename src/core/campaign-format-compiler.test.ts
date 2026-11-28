@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { addClip, addTrack, createTimeline, rational } from "./timeline.ts";
-import { CAMPAIGN_FORMATS, compileCampaignFormatVariants } from "./campaign-format-compiler.ts";
+import { CAMPAIGN_FORMATS, compileCampaignFormatVariants, type CampaignFormatId } from "./campaign-format-compiler.ts";
 
 function source() {
   let timeline = createTimeline("project-a", "timeline-master", "Summer campaign", { numerator: 24, denominator: 1 });
@@ -74,8 +74,9 @@ test("rejects invalid format selections, duplicate IDs, invalid dates and invali
   const timeline = source();
   assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, formats: [] }), /between one and four/);
   assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, formats: ["vertical_9_16", "vertical_9_16"] }), /unique/);
-  assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, formats: ["unknown" as keyof typeof import("./campaign-format-compiler.ts").CAMPAIGN_FORMATS] }), /Unsupported/);
+  assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, formats: ["unknown" as CampaignFormatId] }), /Unsupported/);
   assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, createdAt: "not-a-date" }), /valid timestamp/);
   assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, idFactory: () => "timeline-master" }), /unique/);
+  assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, idFactory: "not-a-function" as never }), /must be a function/);
   assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: { ...timeline, width: 0 } }), /invalid timeline/);
 });
