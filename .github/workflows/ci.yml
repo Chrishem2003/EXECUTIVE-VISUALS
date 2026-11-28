@@ -44,6 +44,8 @@ jobs:
       - run: npm run build
       - name: Verify isolated Neon storage round-trip acceptance contract
         run: npm run test:neon-storage-roundtrip
+      - name: Verify campaign format compiler
+        run: npm run test:campaign-format-compiler
 
   asset-publication-postgres:
     runs-on: ubuntu-latest
