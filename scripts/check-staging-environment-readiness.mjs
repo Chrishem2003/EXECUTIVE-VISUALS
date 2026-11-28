@@ -1,6 +1,10 @@
 import { pathToFileURL } from "node:url";
 
-export const APPROVED_STAGING_PROJECT_REF = "bokxljngydmqrmktofwm";
+export const PROHIBITED_SHARED_PROJECT_REFS = Object.freeze([
+  "bokxljngydmqrmktofwm",
+  "tymqdhwomggtnsjskxuk",
+]);
+const PROJECT_REF = /^[a-z0-9]{20}$/;
 
 const REQUIRED_SECRETS = [
   "SUPABASE_STAGING_URL",
@@ -20,6 +24,7 @@ const REQUIRED_SECRETS = [
 ];
 
 const REQUIRED_VARIABLES = [
+  "EXECUTIVE_VISUALS_STAGING_PROJECT_REF",
   "STORAGE_TEST_OWNER_ID",
   "EXECUTIVE_VISUALS_HEALTH_URL",
   "PESAPAL_IPN_ID",
@@ -37,37 +42,47 @@ function isPesapalCallbackUrl(value) {
   } catch { return false; }
 }
 
-function databaseMatchesApprovedProject(value) {
+function databaseMatchesProject(value, projectRef) {
   try {
     const url = new URL(value);
     const username = decodeURIComponent(url.username);
-    const direct = url.hostname === `db.${APPROVED_STAGING_PROJECT_REF}.supabase.co`;
-    const pooler = url.hostname.endsWith(".pooler.supabase.com") && username.endsWith(`.${APPROVED_STAGING_PROJECT_REF}`);
-    return url.protocol.startsWith("postgres") && (direct || pooler) && Boolean(url.password);
+    const direct = url.hostname === "db." + projectRef + ".supabase.co";
+    const pooler = url.hostname.endsWith(".pooler.supabase.com") && username.endsWith("." + projectRef);
+    return ["postgres:","postgresql:"].includes(url.protocol) && (direct || pooler) && Boolean(url.password);
   } catch { return false; }
 }
 
 /**
  * Reports only configuration names and states. Never returns or logs secret values.
- * Missing credentials are a BLOCKED readiness state, not a passing acceptance test.
+ * Shared NEMA/platform Supabase projects are explicitly prohibited. A separately
+ * designated isolated project ref must match both the API URL and DB connection.
  */
 export function assessStagingConfig(env = process.env) {
   const missing = [...REQUIRED_SECRETS, ...REQUIRED_VARIABLES]
     .filter((name) => !String(env[name] || "").trim());
   const invalid = [];
 
+  const projectRef = String(env.EXECUTIVE_VISUALS_STAGING_PROJECT_REF || "").trim();
+  if (projectRef && (!PROJECT_REF.test(projectRef) || PROHIBITED_SHARED_PROJECT_REFS.includes(projectRef))) {
+    invalid.push("EXECUTIVE_VISUALS_STAGING_PROJECT_REF");
+  }
+
   const supabaseUrl = String(env.SUPABASE_STAGING_URL || "").trim();
   if (supabaseUrl) {
     try {
       const url = new URL(supabaseUrl);
-      if (url.protocol !== "https:" || url.hostname !== `${APPROVED_STAGING_PROJECT_REF}.supabase.co` || url.username || url.password || url.search || url.hash) {
+      if (!projectRef || !PROJECT_REF.test(projectRef) || PROHIBITED_SHARED_PROJECT_REFS.includes(projectRef) ||
+          url.protocol !== "https:" || url.hostname !== projectRef + ".supabase.co" ||
+          url.username || url.password || url.search || url.hash) {
         invalid.push("SUPABASE_STAGING_URL");
       }
     } catch { invalid.push("SUPABASE_STAGING_URL"); }
   }
 
   const databaseUrl = String(env.SUPABASE_STAGING_DB_URL || "").trim();
-  if (databaseUrl && !databaseMatchesApprovedProject(databaseUrl)) invalid.push("SUPABASE_STAGING_DB_URL");
+  if (databaseUrl && (!projectRef || !databaseMatchesProject(databaseUrl, projectRef))) {
+    invalid.push("SUPABASE_STAGING_DB_URL");
+  }
 
   const paddleKey = String(env.PADDLE_SANDBOX_API_KEY || "");
   if (paddleKey && (!paddleKey.includes("_sdbx_") || paddleKey.includes("_live_"))) {
@@ -99,7 +114,8 @@ export function assessStagingConfig(env = process.env) {
   const uniqueInvalid = [...new Set(invalid)];
   return {
     state: uniqueInvalid.length ? "INVALID" : missing.length ? "BLOCKED" : "READY",
-    approvedProjectRef: APPROVED_STAGING_PROJECT_REF,
+    configuredProjectRef: projectRef || null,
+    prohibitedSharedProjectRefs: PROHIBITED_SHARED_PROJECT_REFS,
     missing,
     invalid: uniqueInvalid,
     credentialValuesExposed: false,
