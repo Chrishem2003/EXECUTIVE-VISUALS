@@ -11,7 +11,7 @@ const env={
  PESAPAL_SANDBOX_CONSUMER_KEY:"pesapal-test-consumer-key",
  PESAPAL_SANDBOX_CONSUMER_SECRET:"pesapal-test-consumer-secret",
  PESAPAL_IPN_ID:"123e4567-e89b-42d3-a456-426614174000",
- PESAPAL_CALLBACK_URL:"https://staging.example.test/api/billing/pesapal/ipn"
+ PESAPAL_CALLBACK_URL:"https://executive-visuals-cloud-staging.onrender.com/api/webhooks/pesapal"
 };
 const paddlePrice={provider_price_id:"pri_12345678901234567890123456",amount_minor:25000,currency:"USD",active:true};
 const pesapalPrice={amount_minor:75000,currency:"UGX",active:true};
@@ -91,4 +91,13 @@ test("blocks when the registered Pesapal IPN ID points to a different callback U
   return f.fetchImpl(url,options);
  };
  await assert.rejects(()=>verifyPaymentProviderSandbox({env,fetchImpl:wrapped}),{code:"PESAPAL_IPN_NOT_REGISTERED"});
+});
+
+test("rejects a Pesapal callback URL that is not the application's registered GET IPN route",async()=>{
+ let calls=0;
+ await assert.rejects(()=>verifyPaymentProviderSandbox({
+  env:{...env,PESAPAL_CALLBACK_URL:"https://executive-visuals-cloud-staging.onrender.com/api/billing/pesapal/ipn"},
+  fetchImpl:async()=>{calls++;}
+ }),{code:"PESAPAL_CALLBACK_URL_INVALID"});
+ assert.equal(calls,0);
 });
