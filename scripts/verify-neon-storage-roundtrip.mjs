@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createNeonObjectStorage } from "../server/neon-object-storage.mjs";
 
-const MIME = "application/octet-stream";
+const MIME = "text/plain";
 const FIXTURE = Buffer.from("Executive Visuals isolated Neon storage acceptance fixture v1\n");
 
 export async function runNeonStorageRoundtrip({
