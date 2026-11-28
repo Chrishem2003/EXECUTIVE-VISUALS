@@ -1,5 +1,10 @@
 name: Staging private storage round-trip acceptance
 on:
+  pull_request:
+    paths:
+      - "scripts/verify-staging-private-storage-roundtrip.mjs"
+      - "server/tests/staging-private-storage-roundtrip.test.mjs"
+      - ".github/workflows/staging-private-storage-roundtrip.yml"
   workflow_dispatch:
 permissions:
   contents: read
@@ -7,7 +12,18 @@ concurrency:
   group: executive-visuals-staging-private-storage-acceptance
   cancel-in-progress: false
 jobs:
+  static-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node --check scripts/verify-staging-private-storage-roundtrip.mjs
+      - run: node --test server/tests/staging-private-storage-roundtrip.test.mjs
   private-storage-roundtrip:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'Chrishem2003' && vars.STAGING_RUNTIME_TESTS_ENABLED == 'true')
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 5
