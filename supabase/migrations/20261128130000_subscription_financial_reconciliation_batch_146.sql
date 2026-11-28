@@ -225,3 +225,114 @@ revoke all on function executive_visuals.run_subscription_financial_reconciliati
   from public,anon,authenticated;
 grant execute on function executive_visuals.run_subscription_financial_reconciliation(integer)
   to service_role;
+
+
+-- Paddle past-due lifecycle notifications must start a bounded grace period.
+-- Use the provider's occurred_at timestamp (not webhook arrival time) so retries
+-- cannot extend the customer's grace window. A resumed event clears the deadline.
+create or replace function executive_visuals.apply_paddle_subscription_lifecycle(
+  p_provider_subscription_id text,
+  p_event_type text,
+  p_period_start timestamptz,
+  p_period_end timestamptz,
+  p_cancel_at_period_end boolean,
+  p_event_data jsonb
+) returns jsonb
+language plpgsql
+security definer
+set search_path=pg_catalog,executive_visuals
+as $apply_paddle_subscription_lifecycle_batch146$
+declare
+  subscription_row executive_visuals.customer_subscriptions%rowtype;
+  next_status text;
+  ledger_event_type text;
+  event_occurred_at timestamptz;
+begin
+  if p_provider_subscription_id !~ '^sub_[a-z0-9]{26}$'
+     or p_event_type not in ('subscription.created','subscription.activated','subscription.updated',
+       'subscription.canceled','subscription.past_due','subscription.paused','subscription.resumed')
+     or jsonb_typeof(coalesce(p_event_data,'{}'::jsonb))<>'object'
+     or (p_period_start is not null and p_period_end is not null and p_period_end<=p_period_start) then
+    raise exception 'Invalid Paddle subscription lifecycle event' using errcode='22023';
+  end if;
+
+  begin
+    event_occurred_at:=nullif(p_event_data->>'occurred_at','')::timestamptz;
+  exception when invalid_datetime_format or datetime_field_overflow then
+    raise exception 'Paddle lifecycle event timestamp is invalid' using errcode='22007';
+  end;
+  if event_occurred_at is null then
+    return jsonb_build_object('applied',false,'needsReview',true,'reason','event_timestamp_missing');
+  end if;
+
+  select * into subscription_row from customer_subscriptions
+   where provider='paddle' and provider_subscription_id=p_provider_subscription_id
+   for update;
+  if not found then
+    return jsonb_build_object('applied',false,'needsReview',true,'reason','subscription_not_mapped');
+  end if;
+
+  if subscription_row.provider_last_event_occurred_at is not null
+     and event_occurred_at < subscription_row.provider_last_event_occurred_at then
+    return jsonb_build_object('applied',false,'stale',true,
+      'subscriptionId',subscription_row.id,'status',subscription_row.status,
+      'lastEventOccurredAt',subscription_row.provider_last_event_occurred_at);
+  end if;
+
+  next_status:=case p_event_type
+    when 'subscription.canceled' then 'cancelled'
+    when 'subscription.past_due' then 'past_due'
+    when 'subscription.paused' then 'suspended'
+    when 'subscription.resumed' then 'active'
+    when 'subscription.activated' then 'active'
+    else subscription_row.status
+  end;
+
+  if subscription_row.status='pending' and p_event_type in ('subscription.created','subscription.activated','subscription.updated') then
+    next_status:='pending';
+  end if;
+
+  update customer_subscriptions set
+    status=next_status,
+    current_period_start=coalesce(p_period_start,current_period_start),
+    current_period_end=coalesce(p_period_end,current_period_end),
+    cancel_at_period_end=coalesce(p_cancel_at_period_end,cancel_at_period_end),
+    cancelled_at=case when p_event_type='subscription.canceled' then coalesce(cancelled_at,event_occurred_at) else cancelled_at end,
+    grace_until=case
+      when next_status='active' then null
+      when p_event_type='subscription.past_due'
+        then coalesce(grace_until,event_occurred_at+interval '72 hours')
+      else grace_until
+    end,
+    provider_last_event_occurred_at=event_occurred_at,
+    updated_at=now()
+   where id=subscription_row.id;
+
+  ledger_event_type:=case p_event_type
+    when 'subscription.canceled' then 'cancelled'
+    when 'subscription.past_due' then 'payment_failed'
+    when 'subscription.paused' then 'suspended'
+    when 'subscription.resumed' then 'activated'
+    when 'subscription.activated' then 'activated'
+    when 'subscription.created' then 'created'
+    else null end;
+  if ledger_event_type is not null then
+    insert into subscription_events(subscription_id,owner_id,event_type,source,reason,event_data)
+    values(subscription_row.id,subscription_row.owner_id,ledger_event_type,'paddle',
+      'Paddle subscription lifecycle event verified by signature',
+      coalesce(p_event_data,'{}'::jsonb)||jsonb_build_object(
+        'provider_subscription_id',p_provider_subscription_id,'provider_event_type',p_event_type));
+  end if;
+
+  return jsonb_build_object('applied',true,'subscriptionId',subscription_row.id,
+    'status',next_status,'lastEventOccurredAt',event_occurred_at,
+    'graceUntil',case when p_event_type='subscription.past_due'
+      then coalesce(subscription_row.grace_until,event_occurred_at+interval '72 hours')
+      else null end);
+end;
+$apply_paddle_subscription_lifecycle_batch146$;
+
+revoke all on function executive_visuals.apply_paddle_subscription_lifecycle(text,text,timestamptz,timestamptz,boolean,jsonb)
+  from public,anon,authenticated;
+grant execute on function executive_visuals.apply_paddle_subscription_lifecycle(text,text,timestamptz,timestamptz,boolean,jsonb)
+  to service_role;
