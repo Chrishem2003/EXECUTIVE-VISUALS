@@ -13,6 +13,8 @@ declare
   v_original_start timestamptz;
   v_original_end timestamptz;
   v_original_grace timestamptz;
+  v_paddle_provider_subscription_id text;
+  v_lifecycle jsonb;
 begin
   select id into v_subscription_id
     from executive_visuals.customer_subscriptions
@@ -30,6 +32,26 @@ begin
      and status='successful'
    order by created_at asc limit 1;
   if v_payment_id is null then raise exception 'Batch 146 could not locate the verified initial subscription payment'; end if;
+
+  -- A verified Paddle past-due event must create a fixed 72-hour grace deadline.
+  select provider_subscription_id into v_paddle_provider_subscription_id
+    from executive_visuals.customer_subscriptions
+   where provider='paddle' and provider_subscription_id is not null
+   order by created_at desc limit 1;
+  if v_paddle_provider_subscription_id is null then
+    raise exception 'Batch 146 requires the Paddle lifecycle fixture from the provider integration suite';
+  end if;
+  v_lifecycle:=executive_visuals.apply_paddle_subscription_lifecycle(
+    v_paddle_provider_subscription_id,'subscription.past_due',null,null,false,
+    jsonb_build_object('source','batch146-integration','occurred_at',clock_timestamp()::text)
+  );
+  if v_lifecycle->>'status'<>'past_due' or (v_lifecycle->>'graceUntil') is null
+     or not exists(select 1 from executive_visuals.customer_subscriptions
+       where provider='paddle' and provider_subscription_id=v_paddle_provider_subscription_id
+         and status='past_due' and grace_until between clock_timestamp()+interval '71 hours'
+           and clock_timestamp()+interval '73 hours') then
+    raise exception 'Paddle past-due event did not establish the expected fixed grace deadline: %',v_lifecycle;
+  end if;
 
   -- Healthy baseline must be clean: the payment, allowance grant and wallet source agree.
   v_report:=executive_visuals.run_subscription_financial_reconciliation(100);
