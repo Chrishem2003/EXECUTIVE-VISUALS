@@ -549,7 +549,7 @@ test("Batch 145 rejects a validly signed replay with the same event ID but diffe
   const replay=await billing.handlePaddleWebhook(signedPaddleDelivery(changed));
   assert.equal(replay.status,409);
   assert.equal(replay.body.error.code,"PROVIDER_EVENT_ID_PAYLOAD_CONFLICT");
-  assert.equal(calls.some(call=>call.path.endsWith("/rpc/claim_payment_webhook_event")),false);
+  assert.equal(calls.filter(call=>call.path.endsWith("/rpc/claim_payment_webhook_event")).length,1,"only the first, unchanged event may be claimed");
 });
 
 
@@ -704,4 +704,5 @@ test("Batch 145 end-to-end: Pesapal IPN is verified against provider status and 
   assert.equal(persistedEvent.signature_verified,true);
   assert.equal(persistedEvent.payload.currency,"UGX");
   assert.equal(persistedEvent.payload.amountMinor,50000);
+  assert.equal(persistedEvent.payload.amount,50000);
 });
