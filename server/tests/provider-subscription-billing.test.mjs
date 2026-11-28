@@ -540,3 +540,84 @@ test("Batch 145 rejects a validly signed replay with the same event ID but diffe
   assert.equal(replay.body.error.code,"PROVIDER_EVENT_ID_PAYLOAD_CONFLICT");
   assert.equal(calls.some(call=>call.path.endsWith("/rpc/claim_payment_webhook_event")),false);
 });
+
+
+test("Batch 145 defers an early Paddle subscription event and reconciles it after verified checkout settlement",async()=>{
+  const fixedNow=Date.parse("2026-11-28T10:00:00.000Z");
+  const calls=[],events=new Map(),claims=new Set();
+  let lifecycleCalls=0,settlements=0;
+  const providerSubscriptionId="sub_01abcdefghijklmnopqrstuvwxyz";
+  const paddle=createPaddleSubscriptionProvider({
+    apiKey:"sandbox-api-key",webhookSecret:"paddle-secret",
+    baseUrl:"https://sandbox-api.paddle.com",priceIds:{creator:"pri_01creator123"},
+    now:()=>fixedNow,fetchImpl:async()=>{throw new Error("Paddle API must not be called by webhook acceptance");}
+  });
+  const providers={paddle,pesapal:{createCheckout:async()=>({}),handleNotification:async()=>({})}};
+  const fetchImpl=async(url,options)=>{
+    const target=new URL(url),body=options.body?JSON.parse(options.body):null;
+    calls.push({method:options.method,path:target.pathname,search:target.search,body});
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST"){
+      if(events.has(body.event_key))return empty(409);
+      events.set(body.event_key,{event_key:body.event_key,event_type:body.event_type,
+        payload_hash:body.payload_hash,processing_status:"received",payload:body.payload});
+      return empty(201);
+    }
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="GET"){
+      if(target.search.includes("processing_status=eq.needs_review"))
+        return json([...events.values()].filter(row=>row.processing_status==="needs_review"));
+      const key=target.search.match(/event_key=eq\.([a-f0-9]+)/)?.[1];
+      const row=key?events.get(key):null;
+      return json(row?[{payload_hash:row.payload_hash,processing_status:row.processing_status}]:[]);
+    }
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH"){
+      const key=target.search.match(/event_key=eq\.([a-f0-9]+)/)?.[1];
+      const row=key?events.get(key):null;
+      if(row)row.processing_status=body.processing_status||row.processing_status;
+      return empty();
+    }
+    if(target.pathname.endsWith("/rpc/claim_payment_webhook_event")){
+      if(claims.has(body.p_event_key))return json({claimed:false,duplicate:true,processingStatus:"processed"});
+      claims.add(body.p_event_key);
+      return json({claimed:true,processingStatus:"processing",attempt:1});
+    }
+    if(target.pathname.endsWith("/rpc/apply_paddle_subscription_lifecycle")){
+      lifecycleCalls++;
+      return lifecycleCalls===1?json({applied:false,needsReview:true,reason:"subscription_not_mapped"}):
+        json({applied:true,subscriptionId,status:"active"});
+    }
+    if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([payment]);
+    if(target.pathname.endsWith("/rpc/finalize_subscription_purchase_for_provider")){
+      settlements++;
+      return json({status:"active",subscriptionId});
+    }
+    throw new Error("Unexpected lifecycle acceptance request "+options.method+" "+target.pathname+target.search);
+  };
+  const billing=createProviderSubscriptionBilling({
+    supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+    paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,
+    pesapalNotificationId:env.PESAPAL_IPN_ID,providers,fetchImpl,now:()=>fixedNow
+  });
+
+  const earlyLifecycle={
+    event_id:"evt_01batch145lifecycleabcdefgh",
+    event_type:"subscription.created",
+    occurred_at:"2026-11-28T09:58:00.000Z",
+    data:{id:providerSubscriptionId,status:"active",customer_id:"ctm_01abcdefghijklmnopqrstuvwxyz",
+      current_billing_period:{starts_at:"2026-11-28T09:58:00.000Z",ends_at:"2026-12-28T09:58:00.000Z"},
+      custom_data:{owner_id:owner,plan_code:"creator",payment_id:paymentId,reference:"EVP-order-1"}}
+  };
+  const early=await billing.handlePaddleWebhook(signedPaddleDelivery(earlyLifecycle));
+  assert.equal(early.status,200);
+  assert.equal(early.body.needsReview,true);
+  assert.equal(settlements,0);
+  const deferred=[...events.values()].find(row=>row.event_type==="subscription.created");
+  assert.equal(deferred.processing_status,"needs_review");
+
+  const completed=await billing.handlePaddleWebhook(signedPaddleDelivery(paddleCompletedEvent()));
+  assert.equal(completed.status,200);
+  assert.equal(completed.body.applied,true);
+  assert.equal(settlements,1);
+  assert.equal(lifecycleCalls,2,"deferred lifecycle event must be replayed after the internal subscription exists");
+  assert.equal(deferred.processing_status,"processed");
+  assert.ok(calls.some(call=>call.path.endsWith("/rpc/finalize_subscription_purchase_for_provider")));
+});
