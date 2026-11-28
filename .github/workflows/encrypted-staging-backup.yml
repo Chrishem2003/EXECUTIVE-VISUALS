@@ -24,6 +24,20 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: staging
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: restore_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d restore_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -45,10 +59,15 @@ jobs:
         env:
           STAGING_BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.STAGING_BACKUP_ENCRYPTION_PASSPHRASE }}
           STORAGE_BACKUP_BUCKET: executive-visuals-media
+          RESTORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/restore_test
+          RESTORE_OBJECTS_DIR: ${{ runner.temp }}/ev-restored-objects
         run: |
           BACKUP_INPUT_FILE="$(find artifacts -maxdepth 1 -type f -name '*.evb' -print -quit)"
           test -n "$BACKUP_INPUT_FILE"
           BACKUP_INPUT_FILE="$BACKUP_INPUT_FILE" node scripts/verify-encrypted-staging-backup.mjs
+      - name: Remove restored plaintext staging data from runner
+        if: always()
+        run: rm -rf "${{ runner.temp }}/ev-restored-objects"
       - name: Store encrypted artifact temporarily
         uses: actions/upload-artifact@v4
         with:
