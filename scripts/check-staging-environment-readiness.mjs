@@ -28,6 +28,13 @@ function isHttpsUrl(value) {
   try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password && !url.hash; } catch { return false; }
 }
 
+function isPesapalCallbackUrl(value) {
+  try {
+    const url = new URL(value);
+    return isHttpsUrl(value) && url.pathname === "/api/webhooks/pesapal" && !url.search;
+  } catch { return false; }
+}
+
 function databaseMatchesApprovedProject(value) {
   try {
     const url = new URL(value);
@@ -74,10 +81,13 @@ export function assessStagingConfig(env = process.env) {
   const passphrase = String(env.STAGING_BACKUP_ENCRYPTION_PASSPHRASE || "");
   if (passphrase && passphrase.length < 24) invalid.push("STAGING_BACKUP_ENCRYPTION_PASSPHRASE");
 
-  for (const name of ["OPS_ALERT_WEBHOOK_URL", "EXECUTIVE_VISUALS_HEALTH_URL", "PESAPAL_CALLBACK_URL"]) {
+  for (const name of ["OPS_ALERT_WEBHOOK_URL", "EXECUTIVE_VISUALS_HEALTH_URL"]) {
     const value = String(env[name] || "").trim();
     if (value && !isHttpsUrl(value)) invalid.push(name);
   }
+
+  const pesapalCallbackUrl = String(env.PESAPAL_CALLBACK_URL || "").trim();
+  if (pesapalCallbackUrl && !isPesapalCallbackUrl(pesapalCallbackUrl)) invalid.push("PESAPAL_CALLBACK_URL");
 
   const ownerId = String(env.STORAGE_TEST_OWNER_ID || "");
   if (ownerId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerId)) {
