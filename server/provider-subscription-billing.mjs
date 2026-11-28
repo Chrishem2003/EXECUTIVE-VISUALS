@@ -191,7 +191,7 @@ export function createProviderSubscriptionBilling({
         paymentId:event.paymentId||paymentId||null,reference:event.reference||event.merchantReference||null,
         providerTransactionId:event.providerTransactionId||event.trackingId||null,
         providerSubscriptionId:event.providerSubscriptionId||null,
-        currency:event.currency||null,amountMinor:event.amountMinor??null,totalPaidMinor:event.totalPaidMinor??null,
+        currency:event.currency||null,amountMinor:event.amountMinor??(provider==="pesapal"&&String(event.currency||"").toUpperCase()==="UGX"&&Number.isSafeInteger(Number(event.amount))?Number(event.amount):null),amount:event.amount??null,totalPaidMinor:event.totalPaidMinor??null,
         status:event.status||null,periodStart:event.periodStart||null,periodEnd:event.periodEnd||null,
         cancelAtPeriodEnd:event.cancelAtPeriodEnd===true,origin:event.origin||null,providerPriceId:event.providerPriceId||null,
         occurredAt:event.occurredAt||null,adjustmentId:event.adjustmentId||null,
