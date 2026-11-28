@@ -14,6 +14,9 @@ on:
     paths:
       - "scripts/check-staging-environment-readiness.mjs"
       - "scripts/check-staging-environment-readiness.test.mjs"
+      - "scripts/verify-staging-runtime-readiness.mjs"
+      - "scripts/verify-staging-runtime-readiness.test.mjs"
+      - ".github/workflows/staging-runtime-readiness.yml"
       - ".github/workflows/staging-environment-preflight.yml"
   workflow_dispatch:
 permissions:
