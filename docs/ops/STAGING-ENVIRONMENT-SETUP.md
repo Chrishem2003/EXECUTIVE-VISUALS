@@ -40,6 +40,17 @@ The storage acceptance scripts authenticate these two test accounts at runtime u
 
 The private storage bucket is `executive-visuals-media`; this is the default and does not need a variable unless the bucket name changes.
 
+## Optional runtime acceptance switch
+
+Add the GitHub environment variable `STAGING_RUNTIME_TESTS_ENABLED` with value `true` only after the strict preflight reports READY and you have reviewed the test identities and staging target. Leave it unset or `false` during setup.
+
+When enabled, same-repository pull requests authored by `Chrishem2003` can automatically run the safe staging-only checks:
+- Private storage: upload one random object, verify owner access and cross-tenant denial, then delete it.
+- Worker restart: write synthetic heartbeat records and test child-process recovery.
+- Payment provider: Paddle Sandbox read-only credential check and Pesapal Sandbox token/IPN verification.
+
+This switch does **not** enable the encrypted backup export or synthetic monitoring alert. Those remain manual because they create an encrypted artifact or send an external notification. Fork pull requests never receive staging secrets. The strict preflight remains a separate required gate.
+
 ## Paddle Sandbox notification destination
 
 Create this in the **Paddle Sandbox** account, not the Live account:
