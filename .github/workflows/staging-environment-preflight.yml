@@ -53,4 +53,4 @@ jobs:
           PESAPAL_CALLBACK_URL: ${{ vars.PESAPAL_CALLBACK_URL }}
           OPS_ALERT_WEBHOOK_URL: ${{ secrets.OPS_ALERT_WEBHOOK_URL }}
           EXECUTIVE_VISUALS_HEALTH_URL: ${{ vars.EXECUTIVE_VISUALS_HEALTH_URL }}
-        run: node scripts/check-staging-environment-readiness.mjs
+        run: node scripts/check-staging-environment-readiness.mjs --require-ready
