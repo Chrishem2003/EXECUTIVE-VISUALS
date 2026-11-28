@@ -39,8 +39,9 @@ test("compiles four independent campaign canvases with correct dimensions and li
     assert.equal(item.timeline.tracks[0].clips[0].id, "clip-opening");
     assert.equal(item.reviewRequired, true);
     assert.equal(item.renderReady, false);
-    assert.equal(item.timeline.metadata?.campaignDelivery?.review?.status, "pending");
-    assert.equal(item.timeline.metadata?.campaignDelivery?.export?.renderReady, false);
+    const delivery = item.timeline.metadata?.campaignDelivery as { review: { status: string }; export: { renderReady: boolean } };
+    assert.equal(delivery.review.status, "pending");
+    assert.equal(delivery.export.renderReady, false);
   }
   assert.equal(original.width, 1920);
   assert.equal(original.height, 1080);
@@ -63,7 +64,7 @@ test("records conservative safe-area guidance as review metadata", () => {
     formats: ["vertical_9_16"],
     idFactory: () => "vertical-review"
   });
-  const delivery = result.variants[0].timeline.metadata?.campaignDelivery;
+  const delivery = result.variants[0].timeline.metadata?.campaignDelivery as { safeAreaPercent: object; reframe: { status: string; reason: string } };
   assert.deepEqual(delivery.safeAreaPercent, CAMPAIGN_FORMATS.vertical_9_16.safeArea);
   assert.equal(delivery.reframe.status, "required");
   assert.match(delivery.reframe.reason, /require review/);
@@ -73,7 +74,7 @@ test("rejects invalid format selections, duplicate IDs, invalid dates and invali
   const timeline = source();
   assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, formats: [] }), /between one and four/);
   assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, formats: ["vertical_9_16", "vertical_9_16"] }), /unique/);
-  assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, formats: ["unknown"] }), /Unsupported/);
+  assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, formats: ["unknown" as keyof typeof import("./campaign-format-compiler.ts").CAMPAIGN_FORMATS] }), /Unsupported/);
   assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, createdAt: "not-a-date" }), /valid timestamp/);
   assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: timeline, idFactory: () => "timeline-master" }), /unique/);
   assert.throws(() => compileCampaignFormatVariants({ sourceTimeline: { ...timeline, width: 0 } }), /invalid timeline/);
