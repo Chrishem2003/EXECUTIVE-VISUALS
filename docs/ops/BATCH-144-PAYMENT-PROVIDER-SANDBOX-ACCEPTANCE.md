@@ -27,3 +27,30 @@ The runner pins Paddle to `https://sandbox-api.paddle.com` and Pesapal to `https
 
 ## Limits
 A pass verifies sandbox API access, price mappings and IPN registration. It does not prove the merchant has completed a real sandbox payment, that provider dashboard webhook destinations are correctly configured, or that production settlement is approved. The provider webhook secret is checked for presence only; signed webhook acceptance remains covered by local signature tests and the webhook event integration suite.
+
+## Exact Pesapal callback route
+
+The Render staging service is `https://executive-visuals-cloud-staging.onrender.com`. The application registers Pesapal IPNs at:
+
+`https://executive-visuals-cloud-staging.onrender.com/api/webhooks/pesapal`
+
+This is the implemented HTTPS GET handler in `server/index.mjs`. Do not register the homepage or the obsolete `/api/billing/pesapal/ipn` path. The acceptance scripts reject callback URLs that do not use `/api/webhooks/pesapal`.
+
+## Separate GitHub acceptance credentials from Render runtime configuration
+
+The GitHub staging workflow intentionally uses sandbox-specific names for its read-only credential checks. The running application uses these server-only Render environment names:
+
+- `PADDLE_PESAPAL_BILLING_ENABLED=false` until isolated schema and end-to-end acceptance are approved
+- `PADDLE_API_BASE_URL=https://sandbox-api.paddle.com`
+- `PADDLE_API_KEY` (same sandbox API key stored in GitHub as `PADDLE_SANDBOX_API_KEY`)
+- `PADDLE_WEBHOOK_SECRET` (the secret for this exact Paddle destination)
+- `PADDLE_ALLOW_LIVE=false`
+- `PADDLE_RETURN_URL` (verified HTTPS application return route; do not guess)
+- `PESAPAL_API_BASE_URL=https://cybqa.pesapal.com/pesapalv3`
+- `PESAPAL_CONSUMER_KEY` (same sandbox key stored in GitHub as `PESAPAL_SANDBOX_CONSUMER_KEY`)
+- `PESAPAL_CONSUMER_SECRET` (same sandbox secret stored in GitHub as `PESAPAL_SANDBOX_CONSUMER_SECRET`)
+- `PESAPAL_IPN_ID` and `PESAPAL_CALLBACK_URL`
+- `PESAPAL_ALLOW_LIVE=false`
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for the server-side subscription ledger
+
+The application currently checks `SUPABASE_SERVICE_ROLE_KEY` for this billing integration. Do not assume that setting only `SUPABASE_SECRET_KEY` is sufficient. Keep all runtime values server-side in the staging service environment; never add them to Vite/browser variables or source control. Keep billing disabled until the isolated staging migration and all provider acceptance tests pass.
