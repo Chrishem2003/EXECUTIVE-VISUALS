@@ -4,7 +4,7 @@
 
 The staging environment preflight correctly returned `state: "BLOCKED"` when required GitHub Actions environment secrets and variables were absent, but the command exited with status 0. This allowed GitHub Actions to display a successful `staging-preflight` check even though staging acceptance could not run.
 
-A captured run on 28 November 2026 confirmed the false-green state: the report listed 16 missing configuration names and no invalid values, while the job was marked successful. No secret values were printed.
+A captured run on 28 November 2026 confirmed the false-green state: the report listed 17 missing configuration names and no invalid values, while the job was marked successful. No secret values were printed.
 
 ## Change
 
@@ -38,8 +38,9 @@ Variables:
 - `EXECUTIVE_VISUALS_HEALTH_URL`
 - `PESAPAL_IPN_ID`
 - `PESAPAL_CALLBACK_URL`
+- `PADDLE_RETURN_URL`
 
-The script validates that the Supabase URL and database URL point to the approved staging project, Paddle uses a sandbox key, the Pesapal callback targets the staging Render route, and all operational URLs use HTTPS. It reports names and states only, never values.
+The script validates Supabase API-key privilege classes, project URL and database URL, distinct unexpired Supabase Auth test-user JWT identities, a sandbox Paddle API key and Paddle notification secret, the Pesapal callback, Paddle return and staging health URLs, and HTTPS operational endpoints. It reports names and states only, never values. See `docs/ops/STAGING-CREDENTIAL-SETUP-GUIDE.md` for the verified source and setup steps for every value.
 
 ## Safety
 
