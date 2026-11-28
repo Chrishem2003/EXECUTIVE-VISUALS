@@ -8,6 +8,7 @@ insert into executive_visuals.platform_admins(user_id,role,granted_by,reason) va
 on conflict(user_id) do update set role=excluded.role,reason=excluded.reason;
 
 set role service_role;
+set search_path=executive_visuals,public;
 do $batch147$
 declare
   v_owner constant uuid:='33333333-3333-4333-8333-333333333333';
