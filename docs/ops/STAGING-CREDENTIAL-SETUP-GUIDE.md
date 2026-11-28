@@ -153,6 +153,10 @@ Keep `PADDLE_ALLOW_LIVE=false` and `PESAPAL_ALLOW_LIVE=false`. Do not enable `PA
 
 The following values are CI-only and should not be copied into the public web service: database connection string, storage test JWTs, backup encryption passphrase, and the storage test owner ID. The backup passphrase belongs only in the backup/restore job that needs it.
 
+## Run the read-only deployed runtime probe
+
+After the values are configured in GitHub's `staging` environment and the Render staging service is intentionally switched to the approved staging branch, open Actions → **Executive Visuals staging runtime readiness** → Run workflow. Set `confirm_staging_runtime_probe` to true. The probe is read-only and will block if the app still reports SQLite, private cloud storage is unverified, provider readiness is incomplete, or no fresh worker heartbeat exists.
+
 ## Current blockers and approval boundary
 
 - The staging preflight currently reports missing environment configuration; it does not create credentials.
