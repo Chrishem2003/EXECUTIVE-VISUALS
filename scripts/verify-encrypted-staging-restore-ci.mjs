@@ -27,7 +27,7 @@ async function main(){
  try{
   const dumpVersion=run("pg_dump",["--version"]);
   const restoreVersion=run("pg_restore",["--version"]);
-  if(!/\\b17\\./.test(dumpVersion)||! /\\b17\\./.test(restoreVersion))
+  if(!/\b17\./.test(dumpVersion)||!/\b17\./.test(restoreVersion))
    throw new Error("Synthetic restore must use PostgreSQL 17 clients to match the approved staging database engine.");
   run("createdb",["--host","localhost","--port","5432","--username","postgres","source_test"]);
   const bootstrap=[
