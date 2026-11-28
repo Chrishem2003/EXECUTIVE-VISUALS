@@ -16,8 +16,7 @@ const complete = () => ({
   PESAPAL_SANDBOX_CONSUMER_KEY: "test-pesapal-key",
   PESAPAL_SANDBOX_CONSUMER_SECRET: "test-pesapal-secret",
   PESAPAL_IPN_ID: "223e4567-e89b-42d3-a456-426614174000",
-  PESAPAL_CALLBACK_URL: "https://staging.example.test/api/billing/pesapal/ipn",
-  PESAPAL_IPN_ID: "223e4567-e89b-42d3-a456-426614174000",
+  PESAPAL_CALLBACK_URL: "https://executive-visuals-cloud-staging.onrender.com/api/webhooks/pesapal",
   OPS_ALERT_WEBHOOK_URL: "https://alerts.example.test/webhook",
   EXECUTIVE_VISUALS_HEALTH_URL: "https://staging.example.test/api/health",
 });
@@ -80,4 +79,13 @@ test("requires a valid Paddle webhook secret and Pesapal IPN identity", () => {
   const report = assessStagingConfig(env);
   assert.ok(report.invalid.includes("PADDLE_WEBHOOK_SECRET"));
   assert.ok(report.invalid.includes("PESAPAL_IPN_ID"));
+});
+
+test("requires the actual GET Pesapal IPN route on the staging callback URL", () => {
+  const env = complete();
+  assert.equal(assessStagingConfig(env).state, "READY");
+  env.PESAPAL_CALLBACK_URL = "https://executive-visuals-cloud-staging.onrender.com/api/billing/pesapal/ipn";
+  assert.ok(assessStagingConfig(env).invalid.includes("PESAPAL_CALLBACK_URL"));
+  env.PESAPAL_CALLBACK_URL = "http://executive-visuals-cloud-staging.onrender.com/api/webhooks/pesapal";
+  assert.ok(assessStagingConfig(env).invalid.includes("PESAPAL_CALLBACK_URL"));
 });
