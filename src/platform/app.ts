@@ -1633,6 +1633,28 @@ if(t.closest("[data-finance-governance-export]")){
 if(t.closest("[data-finance-governance-audit-refresh]")){void(async()=>{try{financeState.auditEvents=await apiRequest<FinanceDashboard>("/api/admin/finance/audit/events");financeState.error="Audit evidence refreshed.";}catch(error){financeState.error=error instanceof Error?error.message:"Audit evidence could not be refreshed.";}render();})();return;}
 if(t.closest("[data-finance-governance-audit-verify]")){void(async()=>{try{const result=await apiRequest<{verification:FinanceDashboard}>("/api/admin/finance/audit/verify");financeState.auditVerification=result.verification;financeState.error=result.verification.valid?"Audit chain verified.":"Audit chain verification failed; review the first broken sequence."; }catch(error){financeState.error=error instanceof Error?error.message:"Audit chain verification failed.";}render();})();return;}
 
+const subscriptionReconcileRun=t.closest<HTMLElement>("[data-finance-subscription-reconciliation-run]");
+if(subscriptionReconcileRun){subscriptionReconcileRun.setAttribute("disabled","true");void apiRequest<{run:Record<string,any>}>("/api/admin/finance/subscription-reconciliation/run",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({limit:100})}).then(async result=>{financeState.error="Subscription reconciliation completed: "+Number(result.run?.findingCount||0)+" finding(s). No financial records were modified.";await loadFinanceWorkspace();}).catch(error=>{financeState.error=error instanceof Error?error.message:"Subscription reconciliation could not be completed.";render();}).finally(()=>subscriptionReconcileRun.removeAttribute("disabled"));return;}
+if(t.closest("[data-finance-subscription-reconciliation-refresh]")){void loadFinanceWorkspace();return;}
+const remediationCreate=t.closest<HTMLElement>("[data-finance-subscription-remediation-create]");
+if(remediationCreate){
+ const runId=remediationCreate.dataset.financeSubscriptionRun||"",findingIndex=Number(remediationCreate.dataset.financeSubscriptionRemediationCreate);
+ const run=financeState.subscriptionReconciliation.runs.find((x:any)=>x.id===runId),finding=run?.findings?.[findingIndex];
+ if(!finding){financeState.error="The selected reconciliation finding is no longer available. Refresh the report.";render();return;}
+ const actionByCategory:Record<string,string>={successful_payment_not_applied:"review_payment_application",applied_payment_not_successful:"review_payment_status",subscription_record_missing:"review_subscription_mapping",subscription_provider_mismatch:"review_provider_mapping",subscription_allowance_grant_missing:"review_credit_grant",subscription_allowance_wallet_mirror_missing:"review_credit_wallet_mirror",active_subscription_period_elapsed:"review_subscription_expiry",past_due_grace_deadline_missing:"review_grace_deadline",multiple_current_subscriptions:"review_duplicate_subscriptions",stale_pending_subscription_without_pending_payment:"review_stale_pending_subscription"};
+ const proposedAction=actionByCategory[String(finding.category)]||"manual_investigation";
+ const reason=prompt("Explain the evidence and why this subscription issue needs an independent manual review (8–1000 characters):");
+ if(!reason||reason.trim().length<8){financeState.error="A review reason of at least eight characters is required.";render();return;}
+ void apiRequest("/api/admin/finance/subscription-remediations",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({runId,findingIndex,proposedAction,reason:reason.trim(),idempotencyKey:"batch147:"+uid()})}).then(async()=>{financeState.error="Controlled review request recorded. A different platform owner must approve or reject it.";await loadFinanceWorkspace();}).catch(error=>{financeState.error=error instanceof Error?error.message:"The controlled review request could not be recorded.";render();});return;
+}
+const remediationDecision=t.closest<HTMLElement>("[data-finance-subscription-remediation-decision]");
+if(remediationDecision){
+ const decision=remediationDecision.dataset.financeSubscriptionRemediationDecision||"",requestId=remediationDecision.dataset.requestId||"";
+ if(!["approve","reject"].includes(decision)||!confirm(decision==="approve"?"Approve this request for manual investigation only? No payment, subscription or credit change will be executed.":"Reject this subscription remediation request?"))return;
+ const reason=prompt("Record the independent decision rationale (8–1000 characters):");
+ if(!reason||reason.trim().length<8){financeState.error="A decision reason of at least eight characters is required.";render();return;}
+ void apiRequest("/api/admin/finance/subscription-remediations/"+encodeURIComponent(requestId)+"/decision",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({decision,reason:reason.trim()})}).then(async()=>{financeState.error=decision==="approve"?"Approved for manual review only. No automatic remediation was executed.":"Remediation request rejected and recorded.";await loadFinanceWorkspace();}).catch(error=>{financeState.error=error instanceof Error?error.message:"The independent remediation decision could not be recorded.";render();});return;
+}
 if(t.closest("[data-finance-refresh]")){void loadFinanceWorkspace();return;}
 
 if(t.closest("[data-finance-executive-generate]")){
