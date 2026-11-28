@@ -20,7 +20,7 @@ const run=(command,args)=>{
 };
 
 function validObjectPath(value){
- if(typeof value!=="string"||value.length>1024||value.startsWith("/")||value.includes("\\\\")||value.includes("\\0"))return false;
+ if(typeof value!=="string"||value.length>1024||value.startsWith("/")||value.includes("\\")||value.includes("\0"))return false;
  const parts=value.split("/");
  return parts.length>=3&&parts.length<=12&&UUID.test(parts[0])&&UUID.test(parts[1])&&
   parts.every(part=>part&&part!=="."&&part!==".."&&/^[A-Za-z0-9._-]{1,180}$/.test(part));
@@ -30,7 +30,7 @@ function validateRestoreTarget(value){
  let url;
  try{url=new URL(value);}catch{throw Object.assign(new Error("Restore rehearsal requires a valid local PostgreSQL URL."),{code:"STAGING_BACKUP_RESTORE_TARGET_INVALID"});}
  const host=url.hostname.toLowerCase();
- const database=url.pathname.replace(/^\\//,"");
+ const database=url.pathname.replace(/^\//,"");
  if(!["postgres:","postgresql:"].includes(url.protocol)||!["localhost","127.0.0.1","::1"].includes(host)||
     database!=="restore_test"||url.search||url.hash)
   throw Object.assign(new Error("Backup restore is restricted to the disposable local restore_test database."),{code:"STAGING_BACKUP_RESTORE_TARGET_INVALID"});
@@ -45,7 +45,7 @@ function quoteIdentifier(value){
 
 export function parseAuthUserForeignKeys(schemaSql){
  if(typeof schemaSql!=="string")throw Object.assign(new Error("Backup schema SQL is missing."),{code:"STAGING_BACKUP_RESTORE_SCHEMA_INVALID"});
- const pattern=/ALTER TABLE ONLY\\s+"?executive_visuals"?\\."?([A-Za-z_][A-Za-z0-9_]*)"?\\s+ADD CONSTRAINT\\s+"?[A-Za-z_][A-Za-z0-9_]*"?\\s+FOREIGN KEY\\s*\\(([^)]+)\\)\\s+REFERENCES\\s+"?auth"?\\."?users"?\\s*\\(\\s*"?id"?\\s*\\)/gim;
+ const pattern=/ALTER TABLE ONLY\s+"?executive_visuals"?\."?([A-Za-z_][A-Za-z0-9_]*)"?\s+ADD CONSTRAINT\s+"?[A-Za-z_][A-Za-z0-9_]*"?\s+FOREIGN KEY\s*\(([^)]+)\)\s+REFERENCES\s+"?auth"?\."?users"?\s*\(\s*"?id"?\s*\)/gim;
  const found=new Map();
  for(const match of schemaSql.matchAll(pattern)){
   const table=match[1];
@@ -66,26 +66,17 @@ async function restoreDatabaseAndObjects({databaseFile,extracted,manifest,restor
  const schemaSql=await readFile(schemaFile,"utf8");
  const references=parseAuthUserForeignKeys(schemaSql);
 
- const bootstrapSql=`
-create extension if not exists pgcrypto;
-create schema if not exists auth;
-create table if not exists auth.users(
- id uuid primary key,
- email text,
- role text,
- raw_app_meta_data jsonb not null default '{}'::jsonb,
- raw_user_meta_data jsonb not null default '{}'::jsonb,
- created_at timestamptz,
- updated_at timestamptz
-);
-create or replace function auth.uid()
-returns uuid language sql stable
-as 'select nullif(current_setting(''request.jwt.claim.sub'',true),'''')::uuid';
-do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;
-do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;
-do $$ begin create role service_role nologin bypassrls; exception when duplicate_object then null; end $$;
-`;
+ const bootstrapSql=[
+  "create extension if not exists pgcrypto;",
+  "create schema if not exists auth;",
+  "create table if not exists auth.users(id uuid primary key,email text,role text,raw_app_meta_data jsonb not null default '{}'::jsonb,raw_user_meta_data jsonb not null default '{}'::jsonb,created_at timestamptz,updated_at timestamptz);",
+  "create or replace function auth.uid() returns uuid language sql stable as 'select nullif(current_setting(''request.jwt.claim.sub'',true),'''')::uuid';",
+  "do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;",
+  "do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;",
+  "do $$ begin create role service_role nologin bypassrls; exception when duplicate_object then null; end $$;"
+ ].join("\n");
  runCommand("psql",["-X","-v","ON_ERROR_STOP=1","--dbname",target,"--command",bootstrapSql]);
+
  for(const section of ["pre-data","data"]){
   runCommand("pg_restore",["--no-owner","--no-acl","--exit-on-error","--section="+section,"--dbname",target,databaseFile]);
  }
@@ -93,26 +84,23 @@ do $$ begin create role service_role nologin bypassrls; exception when duplicate
   "insert into auth.users (id) select distinct "+quoteIdentifier(column)+
   " from executive_visuals."+quoteIdentifier(table)+" where "+quoteIdentifier(column)+
   " is not null on conflict (id) do nothing;"
- ).join("\\n");
+ ).join("\n");
  runCommand("psql",["-X","-v","ON_ERROR_STOP=1","--dbname",target,"--command",placeholderSql]);
  runCommand("pg_restore",["--no-owner","--no-acl","--exit-on-error","--section=post-data","--dbname",target,databaseFile]);
- const verifySql=`
-do $restore_verify$
-declare v_tables integer; v_foreign_keys integer; v_unvalidated integer;
-begin
- select count(*)::integer into v_tables from information_schema.tables
-  where table_schema='executive_visuals' and table_type='BASE TABLE';
- select count(*)::integer into v_foreign_keys from pg_constraint
-  where contype='f' and confrelid='auth.users'::regclass
-    and connamespace='executive_visuals'::regnamespace;
- select count(*)::integer into v_unvalidated from pg_constraint
-  where contype='f' and connamespace='executive_visuals'::regnamespace and not convalidated;
- if v_tables<1 then raise exception 'Restore rehearsal did not restore application tables'; end if;
- if v_foreign_keys<1 then raise exception 'Restore rehearsal did not restore auth identity relationships'; end if;
- if v_unvalidated>0 then raise exception 'Restore rehearsal left unvalidated foreign keys: %',v_unvalidated; end if;
-end;
-$restore_verify$;
-`;
+
+ const verifySql=[
+  "do $restore_verify$",
+  "declare v_tables integer; v_foreign_keys integer; v_unvalidated integer;",
+  "begin",
+  " select count(*)::integer into v_tables from information_schema.tables where table_schema='executive_visuals' and table_type='BASE TABLE';",
+  " select count(*)::integer into v_foreign_keys from pg_constraint where contype='f' and confrelid='auth.users'::regclass and connamespace='executive_visuals'::regnamespace;",
+  " select count(*)::integer into v_unvalidated from pg_constraint where contype='f' and connamespace='executive_visuals'::regnamespace and not convalidated;",
+  " if v_tables<1 then raise exception 'Restore rehearsal did not restore application tables'; end if;",
+  " if v_foreign_keys<1 then raise exception 'Restore rehearsal did not restore auth identity relationships'; end if;",
+  " if v_unvalidated>0 then raise exception 'Restore rehearsal left unvalidated foreign keys: %',v_unvalidated; end if;",
+  "end;",
+  "$restore_verify$;"
+ ].join("\n");
  runCommand("psql",["-X","-v","ON_ERROR_STOP=1","--dbname",target,"--command",verifySql]);
 
  const root=resolve(restoreObjectsDir);
@@ -187,7 +175,7 @@ export async function verifyEncryptedStagingBackup({
 
   const seenNames=new Set(),seenFiles=new Set();
   for(const entry of manifest.objects){
-   if(!validObjectPath(entry?.name)||!/^[0-9]{8}\\.bin$/.test(String(entry?.file||""))||
+   if(!validObjectPath(entry?.name)||!/^[0-9]{8}\.bin$/.test(String(entry?.file||""))||
       !Number.isSafeInteger(entry.bytes)||entry.bytes<0||!/^[a-f0-9]{64}$/.test(String(entry.sha256||""))||
       seenNames.has(entry.name)||seenFiles.has(entry.file))
     throw Object.assign(new Error("Backup object manifest contains an invalid or duplicate entry."),{code:"STAGING_BACKUP_OBJECT_MANIFEST_INVALID"});
