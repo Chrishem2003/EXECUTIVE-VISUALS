@@ -39,7 +39,7 @@ The workflow reads secrets and variables from the environment named `staging`. R
 | `STORAGE_TEST_OTHER_JWT` | Sign in a separate staging user account | Must belong to a different Auth user; used to prove cross-tenant access is denied |
 | `STAGING_BACKUP_ENCRYPTION_PASSPHRASE` | Generate with a password manager or `openssl rand -base64 32` | At least 24 characters; retain a recovery copy in a secure password manager |
 | `PADDLE_SANDBOX_API_KEY` | Paddle developer dashboard, with the account in **Sandbox** mode → Developer Tools / Authentication → API keys | Use a sandbox key only; never a live key |
-| `PADDLE_WEBHOOK_SECRET` | Paddle sandbox → Events → Notifications → open the destination created below; copy its endpoint secret key at creation time | Secret begins `pdl_ntfset_`; Paddle only shows it once when the destination is created |
+| `PADDLE_WEBHOOK_SECRET` | Paddle sandbox → Events → Notifications → open the destination created below; copy its endpoint secret key at creation time | Must match Paddle's `pdl_ntfset_<26-character-id>_<32-character-secret>` format. Copy it when creating the destination; if needed, Paddle also lets an authorized operator retrieve it from the destination's edit view or the Get Notification Setting API. |
 | `PESAPAL_SANDBOX_CONSUMER_KEY` | Pesapal developer/merchant sandbox credentials | Sandbox credentials only |
 | `PESAPAL_SANDBOX_CONSUMER_SECRET` | Pesapal developer/merchant sandbox credentials | Sandbox credentials only |
 | `OPS_ALERT_WEBHOOK_URL` | Create an incoming webhook in the chosen monitoring/alert destination (for example, a dedicated private channel) | HTTPS only; do not use a public channel |
@@ -89,7 +89,7 @@ In Paddle Sandbox:
    - `adjustment.created`
    - `adjustment.updated`
 
-9. Save the destination. Copy the returned `endpoint_secret_key` immediately into GitHub environment secret `PADDLE_WEBHOOK_SECRET`. Do not copy it into source files or a PR.
+9. Save the destination. Copy the returned `endpoint_secret_key` into GitHub environment secret `PADDLE_WEBHOOK_SECRET`. If you miss it during creation, retrieve it from the destination's edit view or the Get Notification Setting API with appropriate permission. Do not copy it into source files or a PR.
 
 The application verifies the `Paddle-Signature` header and only applies the supported transaction-completed and subscription lifecycle events. Adjustment events are retained for financial review; they do not automatically issue refunds or mutate entitlements.
 
