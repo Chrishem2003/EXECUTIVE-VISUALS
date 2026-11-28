@@ -1,7 +1,7 @@
 import {createDecipheriv,createHash,scryptSync,randomUUID} from "node:crypto";
 import {spawnSync} from "node:child_process";
 import {copyFile,mkdir,open,readdir,rm,stat,readFile} from "node:fs/promises";
-import {constants as fsConstants,createReadStream} from "node:fs";
+import {constants as fsConstants,createReadStream,createWriteStream} from "node:fs";
 import {tmpdir} from "node:os";
 import {dirname,join,resolve,sep} from "node:path";
 import {pathToFileURL} from "node:url";
