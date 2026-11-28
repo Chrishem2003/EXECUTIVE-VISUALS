@@ -205,6 +205,12 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/owner-subscription-finance-command-centre-postgres-integration-batch-147.sql
       - name: Test Batch 147 owner subscription finance API
         run: node --test server/tests/subscription-finance-command-centre-batch-147.test.mjs
+      - name: Apply Batch 150 subscription billing runtime schema gate
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261128160000_subscription_billing_runtime_schema_gate_batch_150.sql
+      - name: Verify Batch 150 subscription billing schema gate privileges and readiness
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/subscription-billing-runtime-schema-gate-postgres-integration-batch-150.sql
+      - name: Test Batch 150 provider billing runtime schema gate
+        run: node --test server/tests/provider-subscription-billing.test.mjs
       - name: Verify resource economics and shadow model routing
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/ai-resource-economics-postgres-integration.sql
       - name: Verify Batch 25 invoice-to-ledger reconciliation and profitability trends
