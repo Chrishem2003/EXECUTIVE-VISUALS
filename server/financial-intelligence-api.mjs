@@ -336,7 +336,10 @@ export function createFinancialIntelligenceApi({
 
   async function handle({method,path,ownerId,body={},query={},idempotencyKey=""}={}){
     const customerSuccessRoute=String(path||"").startsWith("/api/customer-success/")||String(path||"").startsWith("/api/admin/customer-success/");
-    const platformFinanceControlRoute=path==="/api/admin/finance/platform-video-margin-policy"||path==="/api/admin/finance/provider-cost-reconciliation";
+    const platformFinanceControlRoute=path==="/api/admin/finance/platform-video-margin-policy"||path==="/api/admin/finance/provider-cost-reconciliation"||
+      path==="/api/admin/finance/subscription-reconciliation"||path==="/api/admin/finance/subscription-reconciliation/run"||
+      path==="/api/admin/finance/subscription-liabilities"||path==="/api/admin/finance/subscription-remediations"||
+      /^\/api\/admin\/finance\/subscription-remediations\/[0-9a-f-]{36}\/decision$/i.test(String(path||""));
     if(!billingEnabled&&!customerSuccessRoute&&!platformFinanceControlRoute)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
     if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified Supabase account is required.");
     try{
@@ -747,6 +750,60 @@ export function createFinancialIntelligenceApi({
           reviewRequired:true
         }));
         return response(200,{events,limit,automatedEntitlementChanges:false});
+      }
+      if(path==="/api/admin/finance/subscription-reconciliation"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const limit=Math.max(1,Math.min(50,Number(query.limit)||20));
+        const runs=await dbRequest("subscription_financial_reconciliation_runs?select=id,started_at,completed_at,status,scanned_payment_count,scanned_subscription_count,finding_count,returned_finding_count,findings,report&order=started_at.desc&limit="+limit);
+        return response(200,{runs:Array.isArray(runs.data)?runs.data:[],limit,mode:"read_only"});
+      }
+      if(path==="/api/admin/finance/subscription-reconciliation/run"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const limit=Number(body.limit??100);
+        if(!Number.isInteger(limit)||limit<1||limit>500)return error(400,"SUBSCRIPTION_RECONCILIATION_LIMIT_INVALID","The reconciliation limit must be an integer from 1 to 500.");
+        const result=await rpc("run_subscription_financial_reconciliation",{p_limit:limit});
+        return response(200,{run:result,scheduled:false,mutationsApplied:false});
+      }
+      if(path==="/api/admin/finance/subscription-liabilities"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const result=await rpc("get_subscription_financial_liability_summary",{});
+        return response(200,{summary:result||{byCurrency:[],creditUnits:{monetaryLiabilityCalculated:false}}});
+      }
+      if(path==="/api/admin/finance/subscription-remediations"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const limit=Math.max(1,Math.min(100,Number(query.limit)||50));
+        const requests=await dbRequest("subscription_financial_remediation_requests?select=id,run_id,finding_index,finding_category,entity_id,customer_owner_id,finding_snapshot,proposed_action,reason,idempotency_key,status,requested_by,decided_by,decision_reason,created_at,decided_at&order=created_at.desc&limit="+limit);
+        const rows=Array.isArray(requests.data)?requests.data:[];
+        const ids=rows.map(row=>String(row.id||"")).filter(id=>UUID.test(id));
+        const events=ids.length?await dbRequest("subscription_financial_remediation_events?select=id,request_id,actor_id,event_type,from_status,to_status,note,created_at&request_id=in.("+ids.join(",")+")&order=created_at.asc"): {data:[]};
+        const eventRows=Array.isArray(events.data)?events.data:[];
+        return response(200,{requests:rows.map(row=>({...row,events:eventRows.filter(event=>event.request_id===row.id)})),limit,automaticExecution:false});
+      }
+      if(path==="/api/admin/finance/subscription-remediations"&&method==="POST"){
+        if(!await requirePlatformOwner(ownerId))return error(403,"PLATFORM_OWNER_REQUIRED","Only the platform owner or platform administrator can request financial remediation.");
+        const runId=String(body.runId||""),findingIndex=Number(body.findingIndex);
+        const proposedAction=String(body.proposedAction||""),reason=String(body.reason||"").trim();
+        const key=String(body.idempotencyKey||idempotencyKey||"").trim();
+        const actions=["review_payment_application","review_payment_status","review_subscription_mapping","review_provider_mapping","review_credit_grant","review_credit_wallet_mirror","review_subscription_expiry","review_grace_deadline","review_duplicate_subscriptions","review_stale_pending_subscription","manual_investigation"];
+        if(!UUID.test(runId)||!Number.isInteger(findingIndex)||findingIndex<0||findingIndex>499||!actions.includes(proposedAction)||
+          reason.length<8||reason.length>1000||key.length<8||key.length>180)
+          return error(400,"SUBSCRIPTION_REMEDIATION_INPUT_INVALID","Provide a reconciliation run, finding index, supported review action, reason and idempotency key.");
+        const result=await rpc("request_subscription_financial_remediation",{
+          p_actor_id:ownerId,p_run_id:runId,p_finding_index:findingIndex,
+          p_proposed_action:proposedAction,p_reason:reason,p_idempotency_key:key
+        });
+        return response(201,{request:result,automaticExecution:false});
+      }
+      const remediationDecision=String(path||"").match(/^\/api\/admin\/finance\/subscription-remediations\/([0-9a-f-]{36})\/decision$/i);
+      if(remediationDecision&&method==="POST"){
+        if(!await requirePlatformOwner(ownerId))return error(403,"PLATFORM_OWNER_REQUIRED","Only a different platform owner or platform administrator can approve or reject a remediation request.");
+        const decision=String(body.decision||""),reason=String(body.reason||"").trim();
+        if(!["approve","reject"].includes(decision)||reason.length<8||reason.length>1000)
+          return error(400,"SUBSCRIPTION_REMEDIATION_DECISION_INVALID","Choose approve or reject and provide a decision reason of 8–1000 characters.");
+        const result=await rpc("decide_subscription_financial_remediation",{
+          p_actor_id:ownerId,p_request_id:remediationDecision[1],p_decision:decision,p_reason:reason
+        });
+        return response(200,{decision:result,automaticExecution:false,mutationsApplied:false});
       }
       if(path==="/api/admin/billing/recovery"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"BILLING_ADMIN_REQUIRED","A billing administrator role is required.");
