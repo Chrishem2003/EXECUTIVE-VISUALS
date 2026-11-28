@@ -5,6 +5,7 @@ import { createFalVideoProviderAdapter } from "./fal-video-provider-registration
 import { createRunwayModelRouterVideoAdapter } from "./runway-model-router-video-adapter.mjs";
 import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
 import { createNeonObjectStorage } from "./neon-object-storage.mjs";
+import { resolveNeonStagingIdentity } from "./neon-staging-identity.mjs";
 
 /**
  * Build the production-shaped Neon staging provider registry.
@@ -25,10 +26,10 @@ export function createNeonStagingProviderAdapters({
   maxTotalBytes = 500 * 1024 * 1024,
   timeoutMs = 30000
 } = {}) {
-  if (env.NEON_STAGING_RUNTIME_ENABLED !== "true" ||
-      env.NEON_STAGING_BRANCH_NAME !== "executive-visuals-staging") {
-    throw new Error("Neon staging provider adapters require the explicitly enabled executive-visuals-staging runtime.");
+  if (env.NEON_STAGING_RUNTIME_ENABLED !== "true") {
+    throw new Error("Neon staging provider adapters require the explicitly enabled staging runtime.");
   }
+  resolveNeonStagingIdentity({ env });
   if (env.CLOUD_VIDEO_WORKER_ENABLED !== "true" ||
       env.VIDEO_GATEWAY_ENABLED !== "true" ||
       env.VIDEO_GATEWAY_ALLOW_REMOTE !== "true") {
