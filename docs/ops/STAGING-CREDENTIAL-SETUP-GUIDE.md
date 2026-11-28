@@ -116,6 +116,10 @@ The application expects a GET notification at the same staging webhook route.
 
 Do not use the live Pesapal API host or live credentials for this staging destination.
 
+## Bootstrap the first staging platform owner
+
+The finance APIs require an explicit row in `executive_visuals.platform_admins`. The staging project currently has no rows in this allowlist. Open Supabase Dashboard → Authentication → Users, copy the verified owner's Auth UUID, then use the safe first-owner bootstrap SQL in `docs/ops/STAGING-ENVIRONMENT-VERIFICATION-2026-11-28.md`. Do not use an email or password in SQL, source code or CI logs. This owner bootstrap is a deliberate manual authorization step and is not performed by CI.
+
 ## Create the two storage test users
 
 Create two dedicated test accounts in the **staging** Supabase Auth project only. Do not use your personal owner account or any production customer.
