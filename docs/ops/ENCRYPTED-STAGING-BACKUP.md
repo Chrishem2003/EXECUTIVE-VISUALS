@@ -19,7 +19,7 @@ Run `Encrypted staging backup export` manually against the protected GitHub `sta
 
 ## Full restore rehearsal performed before artifact retention
 
-After export, the manual workflow decrypts and verifies the artifact, then performs a real restore into an ephemeral PostgreSQL 16 service container on the GitHub Actions runner:
+After export, the manual workflow decrypts and verifies the artifact, then performs a real restore into an ephemeral PostgreSQL 17 service container on the GitHub Actions runner:
 
 1. Verify the AES-GCM authentication tag, manifest, database checksum, every object checksum and object inventory.
 2. Ask `pg_restore` to inspect the custom-format dump.
@@ -33,7 +33,7 @@ After export, the manual workflow decrypts and verifies the artifact, then perfo
 
 The restore script rejects every remote database target. It only accepts a local `restore_test` PostgreSQL database on `localhost`, `127.0.0.1` or `::1`.
 
-Pull-request CI also creates a synthetic encrypted snapshot and restores it into a real PostgreSQL 16 service container. It verifies two application rows, UUID-only auth placeholders, validated foreign keys and a restored object checksum without accessing staging secrets or real customer data.
+Pull-request CI also creates a synthetic encrypted snapshot and restores it into a real PostgreSQL 17 service container. It verifies two application rows, UUID-only auth placeholders, validated foreign keys and a restored object checksum without accessing staging secrets or real customer data.
 
 The workflow's success therefore means the actual exported staging database dump and private object files were decrypted, restored into disposable local targets, and verified. It does not mean a production database has been restored or that a live Supabase project was changed.
 
