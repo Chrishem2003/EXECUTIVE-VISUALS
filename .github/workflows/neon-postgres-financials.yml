@@ -123,9 +123,13 @@ concurrency:
 jobs:
   neon-financials:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres-version: ["17", "18"]
     services:
       postgres:
-        image: postgres:17
+        image: postgres:${{ matrix.postgres-version }}
         env:
           POSTGRES_USER: neon_ci
           POSTGRES_PASSWORD: neon_ci_only

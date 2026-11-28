@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createNeonStagingRuntime } from "./neon-staging-runtime.mjs";
+import { resolveNeonStagingIdentity } from "./neon-staging-identity.mjs";
 import { createNeonCustomerCreditQuotePolicy } from "./neon-customer-credit-policy.mjs";
 import { createNeonStagingProviderAdapters } from "./neon-staging-provider-adapters.mjs";
 
@@ -31,10 +32,10 @@ export async function startNeonStagingWorkerProcess({
   if (env.NEON_STAGING_WORKER_PROCESS_ENABLED !== "true") {
     throw new Error("Neon staging background worker is disabled; set NEON_STAGING_WORKER_PROCESS_ENABLED=true only on the isolated staging worker service.");
   }
-  if (env.NEON_STAGING_RUNTIME_ENABLED !== "true" ||
-      env.NEON_STAGING_BRANCH_NAME !== "executive-visuals-staging") {
-    throw new Error("Neon staging worker requires the explicitly enabled executive-visuals-staging runtime.");
+  if (env.NEON_STAGING_RUNTIME_ENABLED !== "true") {
+    throw new Error("Neon staging worker requires the explicitly enabled staging runtime.");
   }
+  resolveNeonStagingIdentity({ env });
 
   const provider = createProviderAdapters({ env, fetchImpl });
   if (!provider || !Array.isArray(provider.adapters) || provider.adapters.length < 1 ||

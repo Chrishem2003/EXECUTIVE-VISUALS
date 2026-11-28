@@ -1,4 +1,5 @@
 import { createProviderAwareCloudVideoWorker } from "./cloud-video-provider-worker.mjs";
+import { resolveNeonStagingIdentity } from "./neon-staging-identity.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const fail = (message, code) => Object.assign(new Error(message), { code });
@@ -153,10 +154,10 @@ export function createNeonCloudVideoWorker({
   deferSeconds = 30,
   quoteCustomerCredits
 } = {}) {
-  if (env.NEON_STAGING_RUNTIME_ENABLED !== "true" ||
-      env.NEON_STAGING_BRANCH_NAME !== "executive-visuals-staging") {
+  if (env.NEON_STAGING_RUNTIME_ENABLED !== "true") {
     throw new Error("Neon video worker requires the explicitly enabled staging runtime and approved staging branch.");
   }
+  resolveNeonStagingIdentity({ env });
   if (env.CLOUD_VIDEO_WORKER_ENABLED !== "true" ||
       env.VIDEO_GATEWAY_ENABLED !== "true" ||
       env.VIDEO_GATEWAY_ALLOW_REMOTE !== "true") {

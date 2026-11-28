@@ -1,5 +1,24 @@
 # Neon staging integration — guarded bootstrap
 
+## Current isolated staging project (28 November 2026)
+
+The active isolated project is **Executive-Visuals-Staging-Isolated**:
+
+- Neon project ID: `hidden-boat-85273783`
+- Organization ID: `org-bold-silence-63832606`
+- Region: `aws-us-east-2`
+- PostgreSQL: 18.7
+- Default branch: `staging` (`br-rapid-cherry-bemy096c`)
+- Database: `executive_visuals`
+- Read-write endpoint: `ep-floral-bird-bew4kq75`
+- Compute: fixed 0.25 CU
+- Free-plan scale-to-zero: account returned `suspend_timeout_seconds=0`, which selects the plan default; Neon documents five minutes of inactivity for Free.
+
+The branch was created in a new project with no parent branch. A read-only query confirmed PostgreSQL 18.7, the expected database and owner role; the database currently has no application tables. No production data was copied.
+
+**Important:** Older sections below describe the earlier Neon branch bootstrap and the legacy `executive-visuals-staging` name. Do not run the legacy bootstrap workflow against this new project. The current runtime now accepts the actual `staging` branch and binds a real pooled connection URL to the exact approved endpoint ID and database name. Runtime activation remains disabled until migrations, role grants and private storage are separately reviewed and completed.
+
+
 **Status:** repository-side preparation only. No Neon project, branch, database, Data API, bucket, credential, or Render setting is created or changed by adding this document or workflow.
 
 ## Why this is manual-only

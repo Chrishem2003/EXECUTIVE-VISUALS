@@ -15,7 +15,7 @@ const local={
   request_hash:"a".repeat(64),snapshot_json:JSON.stringify(snapshot),currency:"USD",
   quoted_amount_micros:2000000,budget_ceiling_micros:2500000,status:"approved_pending_submission"
 };
-function fixture({status=local.status,allowed=true,registerError=null,jobs=null,cancelReceipt={cancelled:true,status:"cancelled",balance:900,creditAdjustment:100,replayed:false,reason:"cancelled_before_submission"},jobStatus="queued"}={}){
+function fixture({status=local.status,allowed=true,registerError=null,jobs=null,branch="executive-visuals-staging",cancelReceipt={cancelled:true,status:"cancelled",balance:900,creditAdjustment:100,replayed:false,reason:"cancelled_before_submission"},jobStatus="queued"}={}){
   const calls=[];
   const row={...local,status};
   const db={prepare(sql){return{
@@ -26,7 +26,7 @@ function fixture({status=local.status,allowed=true,registerError=null,jobs=null,
     {jobId:job,shotIndex:0,status:"queued"},
     {jobId:"523e4567-e89b-42d3-a456-426614174000",shotIndex:1,status:"queued"}
   ];
-  const runtime={backend:"neon-postgres",branch:"executive-visuals-staging",
+  const runtime={backend:"neon-postgres",branch,
    queue:{
     async getOwnedJob(id,ownerId){calls.push(["getOwnedJob",id,ownerId]);return id===job&&ownerId===owner?{id,ownerId,projectId:project,jobType:"video.generate",status:jobStatus}:null;},
     async cancelQueuedVideoJob(id,ownerId){calls.push(["cancelQueuedVideoJob",id,ownerId]);return cancelReceipt;}
@@ -93,6 +93,13 @@ test("does not consume a local approval unless every approved shot has a durable
 
 test("fails closed on invalid Neon runtime composition",()=>{
  assert.throws(()=>createNeonStagingApplicationDispatch({db:{prepare(){}},runtime:{backend:"supabase"}}),/Neon staging dispatch requires/);
+});
+
+test("accepts the actual isolated Neon staging branch name",async()=>{
+ const f=fixture({branch:"staging"});
+ const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
+ assert.equal(result.status,202);
+ assert.equal(result.body.backend,"neon-postgres");
 });
 
 test("cancels only an owned project-authorized Neon job after the database proves no provider submission",async()=>{

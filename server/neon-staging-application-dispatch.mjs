@@ -45,7 +45,7 @@ export function createNeonStagingApplicationDispatch({
   db,runtime,canWriteProject,audit=()=>{}
 }={}){
   if(typeof db?.prepare!=="function")throw new Error("Neon staging dispatch requires the application's approval database.");
-  if(runtime?.backend!=="neon-postgres"||runtime?.branch!=="executive-visuals-staging"||
+  if(runtime?.backend!=="neon-postgres"||!["staging","executive-visuals-staging"].includes(runtime?.branch)||
      typeof runtime?.videoApprovals?.approvals?.register!=="function"||
      typeof runtime?.videoApprovals?.approvals?.enqueue!=="function"){
     throw new Error("Neon staging dispatch requires a ready, approval-enabled executive-visuals-staging runtime.");

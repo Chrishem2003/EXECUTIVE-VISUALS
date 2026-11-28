@@ -1,4 +1,5 @@
 import { createNeonPostgresPool } from "./neon-postgres-pool.mjs";
+import { resolveNeonStagingIdentity } from "./neon-staging-identity.mjs";
 import { createNeonPostgresQueue } from "./neon-postgres-queue.mjs";
 import { createNeonVideoSubmissionLedger } from "./neon-postgres-video-submissions.mjs";
 import { createNeonVideoFinancials } from "./neon-postgres-video-financials.mjs";
@@ -30,9 +31,8 @@ export async function createNeonStagingRuntime({
   if (env.NEON_STAGING_RUNTIME_ENABLED !== "true") {
     throw new Error("Neon staging runtime is disabled; set NEON_STAGING_RUNTIME_ENABLED=true only for the isolated staging worker.");
   }
-  if (env.NEON_STAGING_BRANCH_NAME !== "executive-visuals-staging") {
-    throw new Error("Neon runtime requires the explicitly named executive-visuals-staging branch.");
-  }
+  const stagingIdentity = resolveNeonStagingIdentity({ env, requireEndpointBinding: !suppliedPool });
+  const stagingBranchName = stagingIdentity.branchName;
   if (env.SUPABASE_URL && env.NEON_DATABASE_URL && env.NEON_DATABASE_URL === env.SUPABASE_URL) {
     throw new Error("Neon staging database URL must not reuse the Supabase API URL.");
   }
@@ -71,7 +71,7 @@ export async function createNeonStagingRuntime({
     if (workerRequested && (!includeStorage || typeof storage?.checkReadiness !== "function")) {
       throw new Error("Neon video worker composition requires explicitly configured private object storage with a readiness probe.");
     }
-    const workerRuntime = { backend: "neon-postgres", branch: "executive-visuals-staging",
+    const workerRuntime = { backend: "neon-postgres", branch: stagingBranchName,
       queue, submissions, financials, customerCredits: financials };
     const videoWorker = workerRequested
       ? createNeonCloudVideoWorker({ runtime: workerRuntime, workerId, adapters: workerAdapters,
@@ -92,7 +92,11 @@ export async function createNeonStagingRuntime({
       ]);
       return Object.freeze({
         backend: "neon-postgres",
-        branch: "executive-visuals-staging",
+        branch: stagingBranchName,
+        projectId: stagingIdentity.projectId || null,
+        branchId: stagingIdentity.branchId || null,
+        endpointId: stagingIdentity.endpointId || null,
+        databaseName: stagingIdentity.databaseName || null,
         ready: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
           (!storage || storageStatus?.ready === true),
         applicationDispatchReady: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
@@ -114,7 +118,8 @@ export async function createNeonStagingRuntime({
 
     return Object.freeze({
       backend: "neon-postgres",
-      branch: "executive-visuals-staging",
+      branch: stagingBranchName,
+      identity: stagingIdentity,
       queue,
       submissions,
       financials,
