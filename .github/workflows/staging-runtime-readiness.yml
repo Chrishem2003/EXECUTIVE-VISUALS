@@ -1,0 +1,33 @@
+name: Executive Visuals staging runtime readiness
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_staging_runtime_probe:
+        description: "Confirm a read-only probe of the staging health endpoint and worker heartbeat"
+        required: true
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: executive-visuals-staging-runtime-readiness
+  cancel-in-progress: false
+jobs:
+  runtime-readiness:
+    if: inputs.confirm_staging_runtime_probe == true
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - name: Test runtime readiness verifier
+        run: node --test scripts/verify-staging-runtime-readiness.test.mjs
+      - name: Probe deployed staging PostgreSQL, private storage, sandbox billing and worker liveness
+        env:
+          EXECUTIVE_VISUALS_HEALTH_URL: ${{ vars.EXECUTIVE_VISUALS_HEALTH_URL }}
+          SUPABASE_STAGING_URL: ${{ secrets.SUPABASE_STAGING_URL }}
+          SUPABASE_STAGING_SECRET_KEY: ${{ secrets.SUPABASE_STAGING_SECRET_KEY }}
+        run: node scripts/verify-staging-runtime-readiness.mjs
