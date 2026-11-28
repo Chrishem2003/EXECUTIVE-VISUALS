@@ -90,10 +90,15 @@ export async function verifyProviderSubscriptionBillingDatabase({
       signal:controller.signal,
       redirect:"error"
     });
-    if(!response.ok)
+    if(!response.ok){
+      await response.body?.cancel?.().catch(()=>{});
       return {ready:false,state:"BLOCKED",reason:"schema_probe_unavailable",httpStatus:response.status,missing:[]};
+    }
     let result;
-    try{result=await response.json();}catch{
+    try{
+      const raw=await readBoundedDatabaseResponseText(response,16*1024);
+      result=raw?JSON.parse(raw):null;
+    }catch{
       return {ready:false,state:"BLOCKED",reason:"schema_probe_invalid_response",missing:[]};
     }
     const missing=Array.isArray(result?.missing)
