@@ -95,6 +95,7 @@ A separate manual workflow, `.github/workflows/staging-runtime-readiness.yml`, n
 - Private asset egress accounting and verified actor context are enabled.
 - Paddle and Pesapal are both configured for sandbox.
 - Cloud video worker is enabled as a separate process.
+- At least one owner/platform-admin row exists in the finance allowlist (only a count is returned; user IDs are never logged).
 - At least one healthy worker heartbeat is no older than 120 seconds.
 
 The workflow reads the health endpoint and the staging heartbeat table only. It does not mutate customer records, create provider charges, deploy services or apply migrations. It is expected to remain blocked until the actual runtime is corrected.
