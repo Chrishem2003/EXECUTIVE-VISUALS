@@ -26,7 +26,7 @@ function config(env){
   throw fail("PESAPAL_IPN_ID_INVALID","Pesapal sandbox IPN ID must be a UUID.");
  const callback=new URL(env.PESAPAL_CALLBACK_URL);
  if(callback.protocol!=="https:"||callback.username||callback.password||callback.hash||
-    callback.pathname!=="/api/webhooks/pesapal"||callback.search)
+    callback.hostname!=="executive-visuals-cloud-staging.onrender.com"||callback.pathname!=="/api/webhooks/pesapal"||callback.search)
   throw fail("PESAPAL_CALLBACK_URL_INVALID","Pesapal sandbox callback must use the application's HTTPS GET IPN route /api/webhooks/pesapal.");
  return{origin:url.origin,supabaseKey:env.SUPABASE_STAGING_SECRET_KEY,paddleKey,
   paddleWebhookSecret:env.PADDLE_WEBHOOK_SECRET,pesapalKey:env.PESAPAL_SANDBOX_CONSUMER_KEY,
