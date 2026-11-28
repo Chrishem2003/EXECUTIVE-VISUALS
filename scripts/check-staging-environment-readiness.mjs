@@ -117,7 +117,7 @@ export function assessStagingConfig(env = process.env) {
   }
 
   const webhookSecret = String(env.PADDLE_WEBHOOK_SECRET || "");
-  if (webhookSecret && (!webhookSecret.startsWith("pdl_ntfset_") || webhookSecret.length < 24)) invalid.push("PADDLE_WEBHOOK_SECRET");
+  if (webhookSecret && !/^pdl_ntfset_[A-Za-z0-9]{26}_[A-Za-z0-9]{32}$/.test(webhookSecret)) invalid.push("PADDLE_WEBHOOK_SECRET");
 
   const pesapalIpnId = String(env.PESAPAL_IPN_ID || "");
   if (pesapalIpnId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pesapalIpnId)) invalid.push("PESAPAL_IPN_ID");
