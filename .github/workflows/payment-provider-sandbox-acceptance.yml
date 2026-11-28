@@ -25,7 +25,7 @@ jobs:
       - name: Verify signed Paddle and provider-status-verified Pesapal end-to-end acceptance
         run: node --test --test-force-exit server/tests/provider-subscription-billing.test.mjs
   sandbox-acceptance:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'Chrishem2003' && vars.STAGING_RUNTIME_TESTS_ENABLED == 'true')
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 5
