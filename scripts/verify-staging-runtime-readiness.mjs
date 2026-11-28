@@ -46,7 +46,7 @@ export async function verifyStagingRuntime({
     if (!text(env[name])) missing.push(name);
   }
   if (missing.length) return {
-    state: "BLOCKED", missing, blockers: [], checks: [], workerHeartbeatCount: 0,
+    state: "BLOCKED", missing, blockers: [], checks: [], workerHeartbeatCount: 0, ownerAdminCount: 0,
     secretValuesExposed: false
   };
 
@@ -63,12 +63,12 @@ export async function verifyStagingRuntime({
   add("HEALTH_URL_NOT_APPROVED_STAGING", approvedHealthUrl(healthUrl), "Health URL must be the approved staging service /api/health endpoint.");
   add("SUPABASE_URL_NOT_APPROVED_STAGING", approvedSupabaseUrl(supabaseUrl), "Supabase URL must match the approved staging project.");
   if (!approvedHealthUrl(healthUrl) || !approvedSupabaseUrl(supabaseUrl)) return {
-    state: "BLOCKED", missing: [], blockers, checks, workerHeartbeatCount: 0,
+    state: "BLOCKED", missing: [], blockers, checks, workerHeartbeatCount: 0, ownerAdminCount: 0,
     secretValuesExposed: false
   };
   if (typeof fetchImpl !== "function") {
     add("FETCH_UNAVAILABLE", false, "Runtime verification requires fetch.");
-    return { state: "BLOCKED", missing: [], blockers, checks, workerHeartbeatCount: 0, secretValuesExposed: false };
+    return { state: "BLOCKED", missing: [], blockers, checks, workerHeartbeatCount: 0, ownerAdminCount: 0, secretValuesExposed: false };
   }
 
   let health = null;
@@ -100,6 +100,27 @@ export async function verifyStagingRuntime({
     add("CLOUD_VIDEO_WORKER_SEPARATE_PROCESS", health.cloudVideoWorker?.runtimeMode === "separate-process" &&
       health.cloudVideoWorker?.inProcessSupervisorActive !== true,
       "The cloud worker must run outside the web process.");
+  }
+
+  let ownerAdminCount = 0;
+  try {
+    const headers = {
+      ...supabaseServerAuthHeaders(serverKey),
+      "accept-profile": "executive_visuals",
+      accept: "application/json"
+    };
+    const adminsUrl = new URL("/rest/v1/platform_admins", supabaseUrl);
+    adminsUrl.searchParams.set("select", "role");
+    adminsUrl.searchParams.set("role", "in.(owner,platform_admin)");
+    adminsUrl.searchParams.set("limit", "1");
+    const response = await request(fetchImpl, adminsUrl, { headers });
+    if (!response.ok) throw new Error("PLATFORM_ADMIN_QUERY_FAILED");
+    const rows = await boundedJson(response);
+    ownerAdminCount = Array.isArray(rows) ? rows.length : 0;
+    add("PLATFORM_FINANCE_OWNER_CONFIGURED", ownerAdminCount > 0,
+      "At least one owner/platform administrator must be allowlisted for the owner finance command centre.");
+  } catch {
+    add("PLATFORM_FINANCE_OWNER_CONFIGURED", false, "Platform owner authorization could not be verified.");
   }
 
   let workerHeartbeatCount = 0;
@@ -135,6 +156,7 @@ export async function verifyStagingRuntime({
     blockers: [...new Set(blockers)],
     checks,
     workerHeartbeatCount,
+    ownerAdminCount,
     newestHeartbeatAgeSeconds,
     secretValuesExposed: false
   };
