@@ -195,6 +195,10 @@ jobs:
         run: npm run verify:verified-credit-revenue-allocation
       - name: Verify Paddle and Pesapal reservation, activation, renewal and lifecycle settlement
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/paddle-pesapal-subscription-postgres-integration.sql
+      - name: Apply Batch 146 durable subscription financial reconciliation
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261128130000_subscription_financial_reconciliation_batch_146.sql
+      - name: Verify Batch 146 subscription entitlement and financial drift reporting
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/subscription-financial-reconciliation-postgres-integration-batch-146.sql
       - name: Verify resource economics and shadow model routing
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/ai-resource-economics-postgres-integration.sql
       - name: Verify Batch 25 invoice-to-ledger reconciliation and profitability trends
