@@ -520,12 +520,23 @@ test("Batch 145 rejects a validly signed replay with the same event ID but diffe
     calls.push({method:options.method,path:target.pathname,search:target.search,body});
     if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST"){
       if(persistedEvent)return empty(409);
-      persistedEvent={payload_hash:body.payload_hash,processing_status:"processed"};
+      persistedEvent={payload_hash:body.payload_hash,processing_status:"received"};
       return empty(201);
     }
-    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="GET")
-      return json([{payload_hash:persistedEvent.payload_hash,processing_status:persistedEvent.processing_status}]);
-    throw new Error("Changed replay must be rejected before claim: "+target.pathname);
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="GET"){
+      if(target.search.includes("processing_status=eq.needs_review"))return json([]);
+      return json(persistedEvent?[{payload_hash:persistedEvent.payload_hash,processing_status:persistedEvent.processing_status}]:[]);
+    }
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH"){
+      persistedEvent.processing_status=body.processing_status||persistedEvent.processing_status;
+      return empty();
+    }
+    if(target.pathname.endsWith("/rpc/claim_payment_webhook_event"))
+      return json({claimed:true,processingStatus:"processing",attempt:1});
+    if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([payment]);
+    if(target.pathname.endsWith("/rpc/finalize_subscription_purchase_for_provider"))
+      return json({status:"active",subscriptionId});
+    throw new Error("Unexpected changed-replay acceptance request: "+target.pathname);
   };
   const billing=createProviderSubscriptionBilling({
     supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
@@ -690,7 +701,7 @@ test("Batch 145 end-to-end: Pesapal IPN is verified against provider status and 
   assert.equal(settlements,1);
   assert.equal(providerCalls.length,2,"Pesapal must authenticate and fetch authoritative transaction status");
   assert.ok(providerCalls[1].url.includes("/api/Transactions/GetTransactionStatus"));
-  assert.equal(persistedEvent.payload.signature_verified,true);
+  assert.equal(persistedEvent.signature_verified,true);
   assert.equal(persistedEvent.payload.currency,"UGX");
   assert.equal(persistedEvent.payload.amountMinor,50000);
 });
