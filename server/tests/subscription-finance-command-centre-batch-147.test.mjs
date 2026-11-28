@@ -4,6 +4,7 @@ import { createFinancialIntelligenceApi } from "../financial-intelligence-api.mj
 
 const owner="123e4567-e89b-42d3-a456-426614174000";
 const billingAdmin="223e4567-e89b-42d3-a456-426614174000";
+const approver="523e4567-e89b-42d3-a456-426614174000";
 const requestId="323e4567-e89b-42d3-a456-426614174000";
 function setup(role="owner"){
  const calls=[];
@@ -14,7 +15,7 @@ function setup(role="owner"){
   fetchImpl:async(url,options={})=>{
    const target=new URL(url),method=options.method||"GET";
    calls.push({path:target.pathname,method,body:options.body?JSON.parse(options.body):null});
-   if(target.pathname.endsWith("/platform_admins")){const requested=target.searchParams.get("user_id")||"";const selectedRole=requested.endsWith(billingAdmin)?"platform_admin":role;return new Response(JSON.stringify([{role:selectedRole}]),{status:200});}
+   if(target.pathname.endsWith("/platform_admins")){const requested=target.searchParams.get("user_id")||"";const selectedRole=requested.endsWith(billingAdmin)?"billing_admin":requested.endsWith(approver)?"platform_admin":role;return new Response(JSON.stringify([{role:selectedRole}]),{status:200});}
    if(target.pathname.endsWith("/subscription_financial_reconciliation_runs"))return new Response(JSON.stringify([{id:"423e4567-e89b-42d3-a456-426614174000",finding_count:1}]),{status:200});
    if(target.pathname.endsWith("/subscription_financial_remediation_requests"))return new Response(JSON.stringify([{id:requestId,status:"pending_approval"}]),{status:200});
    if(target.pathname.endsWith("/subscription_financial_remediation_events"))return new Response(JSON.stringify([]),{status:200});
@@ -61,7 +62,7 @@ test("platform owner can request review and a different owner decision endpoint 
   idempotencyKey:"batch147-test-request"
  }});
  assert.equal(created.status,201);assert.equal(created.body.automaticExecution,false);
- const decision=await f.api.handle({method:"POST",path:"/api/admin/finance/subscription-remediations/"+requestId+"/decision",ownerId:billingAdmin,body:{
+ const decision=await f.api.handle({method:"POST",path:"/api/admin/finance/subscription-remediations/"+requestId+"/decision",ownerId:approver,body:{
   decision:"approve",reason:"Approve only an independent manual review of this finding."
  }});
  assert.equal(decision.status,200);assert.equal(decision.body.automaticExecution,false);
