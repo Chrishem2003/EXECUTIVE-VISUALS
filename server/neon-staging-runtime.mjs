@@ -93,6 +93,10 @@ export async function createNeonStagingRuntime({
       return Object.freeze({
         backend: "neon-postgres",
         branch: stagingBranchName,
+        projectId: stagingIdentity.projectId || null,
+        branchId: stagingIdentity.branchId || null,
+        endpointId: stagingIdentity.endpointId || null,
+        databaseName: stagingIdentity.databaseName || null,
         ready: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
           (!storage || storageStatus?.ready === true),
         applicationDispatchReady: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
@@ -115,6 +119,7 @@ export async function createNeonStagingRuntime({
     return Object.freeze({
       backend: "neon-postgres",
       branch: stagingBranchName,
+      identity: stagingIdentity,
       queue,
       submissions,
       financials,
