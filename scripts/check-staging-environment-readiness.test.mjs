@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assessStagingConfig, APPROVED_STAGING_PROJECT_REF, stagingReadinessExitCode } from "./check-staging-environment-readiness.mjs";
+import { assessStagingConfig, PROHIBITED_SHARED_PROJECT_REFS, stagingReadinessExitCode } from "./check-staging-environment-readiness.mjs";
 
+const TEST_PROJECT_REF = "abcdefghijklmnopqrst";
 const complete = () => ({
-  SUPABASE_STAGING_URL: `https://${APPROVED_STAGING_PROJECT_REF}.supabase.co`,
+  EXECUTIVE_VISUALS_STAGING_PROJECT_REF: TEST_PROJECT_REF,
+  SUPABASE_STAGING_URL: "https://" + TEST_PROJECT_REF + ".supabase.co",
   SUPABASE_STAGING_ANON_KEY: "test-anon-placeholder",
   SUPABASE_STAGING_SECRET_KEY: "test-server-placeholder",
-  SUPABASE_STAGING_DB_URL: `postgresql://postgres:placeholder@db.${APPROVED_STAGING_PROJECT_REF}.supabase.co:5432/postgres`,
+  SUPABASE_STAGING_DB_URL: "postgresql://postgres:placeholder@db." + TEST_PROJECT_REF + ".supabase.co:5432/postgres",
   STORAGE_TEST_OWNER_EMAIL: "owner@example.test",
   STORAGE_TEST_OWNER_PASSWORD: "owner-test-password",
   STORAGE_TEST_OTHER_EMAIL: "other@example.test",
@@ -23,10 +25,11 @@ const complete = () => ({
   EXECUTIVE_VISUALS_HEALTH_URL: "https://staging.example.test/api/health",
 });
 
-test("missing secrets are BLOCKED, and the strict launch gate fails closed without exposing values", () => {
+test("missing secrets and isolated project ref are BLOCKED, strict gate fails closed without exposing values", () => {
   const report = assessStagingConfig({});
   assert.equal(report.state, "BLOCKED");
   assert.ok(report.missing.includes("SUPABASE_STAGING_URL"));
+  assert.ok(report.missing.includes("EXECUTIVE_VISUALS_STAGING_PROJECT_REF"));
   assert.ok(report.missing.includes("STORAGE_TEST_OWNER_PASSWORD"));
   assert.ok(report.missing.includes("STORAGE_TEST_OTHER_PASSWORD"));
   assert.equal(report.credentialValuesExposed, false);
@@ -36,22 +39,42 @@ test("missing secrets are BLOCKED, and the strict launch gate fails closed witho
   assert.equal(stagingReadinessExitCode(report, { requireReady: true }), 1, "launch gate must fail closed");
 });
 
-test("complete approved staging configuration is READY", () => {
+test("complete isolated staging configuration is READY", () => {
   const report = assessStagingConfig(complete());
   assert.equal(report.state, "READY");
+  assert.equal(report.configuredProjectRef, TEST_PROJECT_REF);
   assert.deepEqual(report.missing, []);
   assert.deepEqual(report.invalid, []);
 });
 
-test("rejects a production or unrelated Supabase project URL", () => {
+test("rejects both known shared NEMA/platform Supabase projects", () => {
+  for (const projectRef of PROHIBITED_SHARED_PROJECT_REFS) {
+    const env = complete();
+    env.EXECUTIVE_VISUALS_STAGING_PROJECT_REF = projectRef;
+    env.SUPABASE_STAGING_URL = "https://" + projectRef + ".supabase.co";
+    env.SUPABASE_STAGING_DB_URL = "postgresql://postgres:placeholder@db." + projectRef + ".supabase.co:5432/postgres";
+    const report = assessStagingConfig(env);
+    assert.equal(report.state, "INVALID");
+    assert.ok(report.invalid.includes("EXECUTIVE_VISUALS_STAGING_PROJECT_REF"));
+    assert.ok(report.invalid.includes("SUPABASE_STAGING_URL"));
+  }
+});
+
+test("rejects a Supabase URL that does not match the designated isolated project ref", () => {
   const env = complete();
-  env.SUPABASE_STAGING_URL = "https://production-project.supabase.co";
+  env.SUPABASE_STAGING_URL = "https://other-project-ref.supabase.co";
   assert.ok(assessStagingConfig(env).invalid.includes("SUPABASE_STAGING_URL"));
 });
 
-test("rejects a database URL that does not identify the approved staging project", () => {
+test("rejects a database URL that does not identify the designated isolated project", () => {
   const env = complete();
-  env.SUPABASE_STAGING_DB_URL = "postgresql://postgres:placeholder@db.other-project.supabase.co:5432/postgres";
+  env.SUPABASE_STAGING_DB_URL = "postgresql://postgres:placeholder@db.otherproject.supabase.co:5432/postgres";
+  assert.ok(assessStagingConfig(env).invalid.includes("SUPABASE_STAGING_DB_URL"));
+});
+
+test("rejects a forged project-scoped username on an unrelated pooler host", () => {
+  const env = complete();
+  env.SUPABASE_STAGING_DB_URL = "postgresql://postgres." + TEST_PROJECT_REF + ":placeholder@attacker.example:5432/postgres";
   assert.ok(assessStagingConfig(env).invalid.includes("SUPABASE_STAGING_DB_URL"));
 });
 
@@ -73,12 +96,6 @@ test("rejects non-HTTPS operational endpoints and malformed owner identity", () 
   assert.ok(report.invalid.includes("STORAGE_TEST_OWNER_ID"));
 });
 
-test("rejects a database URL with a forged project-scoped username on an unrelated host", () => {
-  const env = complete();
-  env.SUPABASE_STAGING_DB_URL = "postgresql://postgres.bokxljngydmqrmktofwm:placeholder@attacker.example:5432/postgres";
-  assert.ok(assessStagingConfig(env).invalid.includes("SUPABASE_STAGING_DB_URL"));
-});
-
 test("requires a valid Paddle webhook secret and Pesapal IPN identity", () => {
   const env = complete();
   env.PADDLE_WEBHOOK_SECRET = "short";
@@ -97,7 +114,7 @@ test("requires the actual GET Pesapal IPN route on the staging callback URL", ()
   assert.ok(assessStagingConfig(env).invalid.includes("PESAPAL_CALLBACK_URL"));
 });
 
-test("rejects a Pesapal IPN callback hosted outside the approved Render staging service", () => {
+test("rejects a Pesapal IPN callback hosted outside the staging Render service", () => {
   const env = complete();
   env.PESAPAL_CALLBACK_URL = "https://attacker.example/api/webhooks/pesapal";
   assert.ok(assessStagingConfig(env).invalid.includes("PESAPAL_CALLBACK_URL"));
