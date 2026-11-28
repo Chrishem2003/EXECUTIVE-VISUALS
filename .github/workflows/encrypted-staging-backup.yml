@@ -50,7 +50,8 @@ jobs:
           sudo apt-get install -y ca-certificates curl
           sudo install -d /usr/share/postgresql-common/pgdg
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
-          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo \"\$VERSION_CODENAME\")-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
       - name: Exercise real PostgreSQL restore using synthetic encrypted snapshot
@@ -84,7 +85,8 @@ jobs:
           sudo apt-get install -y ca-certificates curl
           sudo install -d /usr/share/postgresql-common/pgdg
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
-          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo \"\$VERSION_CODENAME\")-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
       - name: Export and encrypt staging database and private objects
