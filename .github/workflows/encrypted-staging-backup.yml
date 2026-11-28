@@ -4,6 +4,7 @@ on:
     paths:
       - "scripts/create-encrypted-staging-backup.mjs"
       - "scripts/verify-encrypted-staging-backup.mjs"
+      - "scripts/verify-encrypted-staging-restore-ci.mjs"
       - "server/tests/encrypted-staging-backup.test.mjs"
       - ".github/workflows/encrypted-staging-backup.yml"
   workflow_dispatch:
@@ -20,10 +21,24 @@ jobs:
           node-version: "22.23.4"
       - run: node --check scripts/create-encrypted-staging-backup.mjs
       - run: node --check scripts/verify-encrypted-staging-backup.mjs
-  encrypted-staging-export:
-    if: github.event_name == 'workflow_dispatch'
+      - run: node --test server/tests/encrypted-staging-backup.test.mjs
+  synthetic-restore-rehearsal:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    environment: staging
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: restore_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d restore_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -32,7 +47,50 @@ jobs:
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y ca-certificates curl
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+      - name: Exercise real PostgreSQL restore using synthetic encrypted snapshot
+        run: node scripts/verify-encrypted-staging-restore-ci.mjs
+  encrypted-staging-export:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: staging
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: restore_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d restore_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
       - name: Export and encrypt staging database and private objects
         env:
           SUPABASE_STAGING_URL: ${{ secrets.SUPABASE_STAGING_URL }}
@@ -45,10 +103,15 @@ jobs:
         env:
           STAGING_BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.STAGING_BACKUP_ENCRYPTION_PASSPHRASE }}
           STORAGE_BACKUP_BUCKET: executive-visuals-media
+          RESTORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/restore_test
+          RESTORE_OBJECTS_DIR: ${{ runner.temp }}/ev-restored-objects
         run: |
           BACKUP_INPUT_FILE="$(find artifacts -maxdepth 1 -type f -name '*.evb' -print -quit)"
           test -n "$BACKUP_INPUT_FILE"
           BACKUP_INPUT_FILE="$BACKUP_INPUT_FILE" node scripts/verify-encrypted-staging-backup.mjs
+      - name: Remove restored plaintext staging data from runner
+        if: always()
+        run: rm -rf "${{ runner.temp }}/ev-restored-objects"
       - name: Store encrypted artifact temporarily
         uses: actions/upload-artifact@v4
         with:

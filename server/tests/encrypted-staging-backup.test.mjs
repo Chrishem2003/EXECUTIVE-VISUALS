@@ -5,7 +5,7 @@ import {spawnSync} from "node:child_process";
 import {mkdtemp,mkdir,rm,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {verifyEncryptedStagingBackup} from "../../scripts/verify-encrypted-staging-backup.mjs";
+import {verifyEncryptedStagingBackup,parseAuthUserForeignKeys} from "../../scripts/verify-encrypted-staging-backup.mjs";
 import {createEncryptedStagingBackup,APPROVED_STAGING_PROJECT_REF} from "../../scripts/create-encrypted-staging-backup.mjs";
 
 const passphrase="unit-test-only-backup-passphrase-32";
@@ -53,6 +53,75 @@ test("decrypts and validates database and private-object checksums before pg_res
   assert.equal(result.databaseDumpReadable,true);
   assert.equal(result.databaseRestored,false);
   assert.equal(result.credentialValuesExposed,false);
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test("parses only single-column foreign keys to auth.users from the app schema",()=>{
+ const sql=`ALTER TABLE ONLY executive_visuals.jobs
+ ADD CONSTRAINT jobs_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id);
+ ALTER TABLE ONLY executive_visuals.platform_admins
+ ADD CONSTRAINT platform_admins_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id);`;
+ assert.deepEqual(parseAuthUserForeignKeys(sql),[
+  {table:"jobs",column:"owner_id"},
+  {table:"platform_admins",column:"user_id"}
+ ]);
+ assert.throws(()=>parseAuthUserForeignKeys("CREATE TABLE executive_visuals.jobs(id uuid);"),{code:"STAGING_BACKUP_AUTH_FK_MANIFEST_MISSING"});
+});
+
+test("restores database sections and private objects into a disposable local PostgreSQL target",async()=>{
+ const f=await fixture();
+ const restoreObjects=join(f.root,"restored-objects");
+ const calls=[];
+ const schemaSql=`ALTER TABLE ONLY executive_visuals.jobs
+ ADD CONSTRAINT jobs_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id);
+ ALTER TABLE ONLY executive_visuals.platform_admins
+ ADD CONSTRAINT platform_admins_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id);`;
+ const runRestore=async(command,args)=>{
+  calls.push({command,args});
+  if(command==="tar"){
+   const r=spawnSync(command,args,{encoding:"utf8"});assert.equal(r.status,0,r.stderr);return;
+  }
+  if(command==="pg_restore"){
+   if(args[0]==="--list")return;
+   if(args.includes("--schema-only")){
+    const file=args[args.indexOf("--file")+1];await writeFile(file,schemaSql);return;
+   }
+   assert.ok(args.some(x=>x==="--section=pre-data"||x==="--section=data"||x==="--section=post-data"));
+   return;
+  }
+  if(command==="psql")return;
+  throw new Error("unexpected command "+command);
+ };
+ try{
+  const result=await verifyEncryptedStagingBackup({
+   inputFile:f.file,passphrase,restoreDatabaseUrl:"postgresql://postgres:postgres@localhost:5432/restore_test",
+   restoreObjectsDir:restoreObjects,runCommand:runRestore
+  });
+  assert.equal(result.result,"encrypted_backup_full_restore_verified");
+  assert.equal(result.databaseRestored,true);
+  assert.equal(result.restoredObjectFiles,1);
+  assert.equal(result.authUserReferenceColumns,2);
+  const restored=await import("node:fs/promises").then(m=>m.readFile(join(restoreObjects,owner,asset,"original.txt")));
+  assert.equal(restored.toString(),"synthetic private object bytes");
+  const sections=calls.filter(x=>x.command==="pg_restore"&&x.args.some(a=>a.startsWith("--section="))).map(x=>x.args.find(a=>a.startsWith("--section=")));
+  assert.deepEqual(sections,["--section=pre-data","--section=data","--section=post-data"]);
+  const placeholder=calls.find(x=>x.command==="psql"&&String(x.args.at(-1)).includes("insert into auth.users"));
+  assert.ok(placeholder);
+  assert.ok(String(placeholder.args.at(-1)).includes('from executive_visuals."jobs"'));
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test("refuses remote restore targets and incomplete restore configuration",async()=>{
+ const f=await fixture();
+ try{
+  await assert.rejects(()=>verifyEncryptedStagingBackup({
+   inputFile:f.file,passphrase,restoreDatabaseUrl:"postgresql://user:secret@db.example.com:5432/restore_test",
+   restoreObjectsDir:join(f.root,"objects"),runCommand:command
+  }),{code:"STAGING_BACKUP_RESTORE_TARGET_INVALID"});
+  await assert.rejects(()=>verifyEncryptedStagingBackup({
+   inputFile:f.file,passphrase,restoreDatabaseUrl:"postgresql://postgres:postgres@localhost:5432/restore_test",
+   runCommand:command
+  }),{code:"STAGING_BACKUP_RESTORE_CONFIG_INCOMPLETE"});
  }finally{await rm(f.root,{recursive:true,force:true});}
 });
 

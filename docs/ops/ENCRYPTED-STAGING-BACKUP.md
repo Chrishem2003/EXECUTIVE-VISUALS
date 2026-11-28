@@ -1,6 +1,6 @@
-# Encrypted staging backup and integrity rehearsal
+# Encrypted staging backup and full restore rehearsal
 
-Run `Encrypted staging backup export` manually against the protected GitHub `staging` environment.
+Run `Encrypted staging backup export` manually against the protected GitHub `staging` environment. The workflow does not run automatically on pull requests because it exports staging data and retains an encrypted artifact.
 
 ## Required secrets
 - `SUPABASE_STAGING_URL`
@@ -15,14 +15,28 @@ Run `Encrypted staging backup export` manually against the protected GitHub `sta
 - Supabase modern secret keys are sent only in the `apikey` header; legacy service-role JWTs retain Bearer compatibility.
 - The object inventory walks nested folder prefixes recursively and validates every object path against the owner/asset namespace.
 - Database and object files are hashed as streams. Object bytes and database dump bytes are not loaded wholesale into memory.
-- The archive uses AES-256-GCM with an scrypt-derived key. Plaintext temporary work files are removed in a finally block.
+- The archive uses AES-256-GCM with an scrypt-derived key. Plaintext temporary work files are removed in a `finally` block.
 
-## Automatic artifact integrity rehearsal
-Before artifact retention, the workflow decrypts the new archive into a disposable temporary directory, verifies the GCM authentication tag, checks every database/object byte count and SHA-256 hash against the manifest, and runs `pg_restore --list` against the custom-format database dump. The temporary plaintext extraction is removed after verification.
+## Full restore rehearsal performed before artifact retention
 
-The encrypted artifact is retained for seven days only.
+After export, the manual workflow decrypts and verifies the artifact, then performs a real restore into an ephemeral PostgreSQL 17 service container on the GitHub Actions runner:
 
-## Important limitation
-This is **not yet a full database restore drill**. It proves authenticated decryption, archive extraction, manifest integrity, object-file recovery and that PostgreSQL recognizes the custom dump format. It does not restore the dump into a disposable Supabase-compatible database or prove application-level recovery. A full restore into an isolated Supabase-compatible environment remains mandatory before paid production launch.
+1. Verify the AES-GCM authentication tag, manifest, database checksum, every object checksum and object inventory.
+2. Ask `pg_restore` to inspect the custom-format dump.
+3. Create a minimal local-only Supabase Auth compatibility schema and disposable roles. No real `auth.users` rows or personal identity fields are exported.
+4. Restore the Executive Visuals schema's pre-data and data sections into the disposable database.
+5. Parse the dump's foreign-key DDL and insert placeholder `auth.users.id` rows for the referenced UUIDs only. These are synthetic restore identities, not usable accounts.
+6. Restore post-data indexes, constraints, policies and triggers. Verify that application tables and auth foreign keys exist and that no foreign key remains unvalidated.
+7. Restore private object files to a temporary local directory using their original owner/asset paths and verify their checksums again.
+8. Remove the restored plaintext object directory even when the job fails.
+9. Retain only the encrypted `.evb` artifact for seven days.
 
-GitHub Actions artifacts are temporary and are not a separately controlled off-site backup destination. Do not run this workflow against production until a separately approved production backup destination, encryption-key custody, retention policy and full restore procedure exist.
+The restore script rejects every remote database target. It only accepts a local `restore_test` PostgreSQL database on `localhost`, `127.0.0.1` or `::1`.
+
+Pull-request CI also creates a synthetic encrypted snapshot and restores it into a real PostgreSQL 17 service container. It verifies two application rows, UUID-only auth placeholders, validated foreign keys and a restored object checksum without accessing staging secrets or real customer data.
+
+The workflow's success therefore means the actual exported staging database dump and private object files were decrypted, restored into disposable local targets, and verified. It does not mean a production database has been restored or that a live Supabase project was changed.
+
+## Remaining operational limitation
+
+GitHub Actions artifacts are temporary and are not a separately controlled off-site backup destination. Before paid production launch, establish an approved independent backup destination, encryption-key custody, retention policy, restore ownership and a scheduled restore exercise. Do not run this workflow against production until that separate production backup plan is reviewed and approved.
