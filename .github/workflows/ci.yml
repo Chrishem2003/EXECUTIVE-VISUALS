@@ -42,6 +42,8 @@ jobs:
           node --input-type=module -e "import('@contentauth/c2pa-node').then(({ Reader }) => { if (typeof Reader?.fromAsset !== 'function') process.exit(1); console.log('Official CAI Node SDK and native binary are installed.'); })"
       - run: npm run typecheck
       - run: npm run build
+      - name: Verify isolated Neon storage round-trip acceptance contract
+        run: npm run test:neon-storage-roundtrip
 
   asset-publication-postgres:
     runs-on: ubuntu-latest
