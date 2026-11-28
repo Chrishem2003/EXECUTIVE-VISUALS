@@ -62,9 +62,13 @@ function hasLegacyKeyRole(value, role) {
   return jwtPayload(value)?.role === role;
 }
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
 function isSupabaseAuthAccessToken(value, expectedSubject) {
   const payload = jwtPayload(value);
-  return Boolean(payload && payload.sub === expectedSubject && payload.role === "authenticated" &&
+  return Boolean(isUuid(expectedSubject) && payload && payload.sub === expectedSubject && payload.role === "authenticated" &&
     payload.aud === "authenticated" && payload.iss === `https://${APPROVED_STAGING_PROJECT_REF}.supabase.co/auth/v1` &&
     Number.isFinite(Number(payload.exp)) && Number(payload.exp) * 1000 > Date.now());
 }
