@@ -31,7 +31,7 @@ function isHttpsUrl(value) {
 function isPesapalCallbackUrl(value) {
   try {
     const url = new URL(value);
-    return isHttpsUrl(value) && url.pathname === "/api/webhooks/pesapal" && !url.search;
+    return isHttpsUrl(value) && url.hostname === "executive-visuals-cloud-staging.onrender.com" && url.pathname === "/api/webhooks/pesapal" && !url.search;
   } catch { return false; }
 }
 
