@@ -28,7 +28,7 @@ export function resolveNeonStagingIdentity({ env = process.env, requireEndpointB
   let url;
   try { url = new URL(String(env.NEON_DATABASE_URL || "")); }
   catch { throw new Error("NEON_DATABASE_URL must be a valid pooled Neon connection URL."); }
-  if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname || !url.hostname.split(".")[0].endsWith("-pooler")) {
+  if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname || !url.hostname.endsWith(".us-east-2.aws.neon.tech") || !url.hostname.split(".")[0].endsWith("-pooler") || url.searchParams.get("sslmode") === "disable") {
     throw new Error("Neon staging application traffic must use the pooled endpoint.");
   }
   const hostnameEndpointId = url.hostname.split(".")[0].replace(/-pooler$/, "");
