@@ -104,8 +104,16 @@ export function assessStagingConfig(env = process.env) {
   };
 }
 
+export function stagingReadinessExitCode(report, { requireReady = false } = {}) {
+  if (report?.state === "INVALID") return 1;
+  if (requireReady && report?.state !== "READY") return 1;
+  return 0;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const report = assessStagingConfig();
   console.log(JSON.stringify(report));
-  if (report.state === "INVALID") process.exitCode = 1;
+  process.exitCode = stagingReadinessExitCode(report, {
+    requireReady: process.argv.includes("--require-ready"),
+  });
 }
