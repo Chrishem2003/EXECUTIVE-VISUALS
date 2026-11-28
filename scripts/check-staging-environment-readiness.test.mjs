@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assessStagingConfig, APPROVED_STAGING_PROJECT_REF } from "./check-staging-environment-readiness.mjs";
+import { assessStagingConfig, APPROVED_STAGING_PROJECT_REF, stagingReadinessExitCode } from "./check-staging-environment-readiness.mjs";
 
 const complete = () => ({
   SUPABASE_STAGING_URL: `https://${APPROVED_STAGING_PROJECT_REF}.supabase.co`,
@@ -21,12 +21,14 @@ const complete = () => ({
   EXECUTIVE_VISUALS_HEALTH_URL: "https://staging.example.test/api/health",
 });
 
-test("missing secrets are reported as BLOCKED without failing or exposing values", () => {
+test("missing secrets are BLOCKED, and the strict launch gate fails closed without exposing values", () => {
   const report = assessStagingConfig({});
   assert.equal(report.state, "BLOCKED");
   assert.ok(report.missing.includes("SUPABASE_STAGING_URL"));
   assert.equal(report.credentialValuesExposed, false);
   assert.equal(JSON.stringify(report).includes("placeholder"), false);
+  assert.equal(stagingReadinessExitCode(report), 0, "report-only mode remains usable during setup");
+  assert.equal(stagingReadinessExitCode(report, { requireReady: true }), 1, "launch gate must fail closed");
 });
 
 test("complete approved staging configuration is READY", () => {
@@ -94,4 +96,15 @@ test("rejects a Pesapal IPN callback hosted outside the approved Render staging 
   const env = complete();
   env.PESAPAL_CALLBACK_URL = "https://attacker.example/api/webhooks/pesapal";
   assert.ok(assessStagingConfig(env).invalid.includes("PESAPAL_CALLBACK_URL"));
+});
+
+test("strict launch gate passes only for READY and always rejects INVALID", () => {
+  const ready = assessStagingConfig(complete());
+  assert.equal(stagingReadinessExitCode(ready, { requireReady: true }), 0);
+  const invalidEnv = complete();
+  invalidEnv.PADDLE_SANDBOX_API_KEY = "pdl_live_not-a-sandbox-key";
+  const invalid = assessStagingConfig(invalidEnv);
+  assert.equal(invalid.state, "INVALID");
+  assert.equal(stagingReadinessExitCode(invalid), 1);
+  assert.equal(stagingReadinessExitCode(invalid, { requireReady: true }), 1);
 });
