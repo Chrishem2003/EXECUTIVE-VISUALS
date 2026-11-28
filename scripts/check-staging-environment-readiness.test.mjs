@@ -89,3 +89,9 @@ test("requires the actual GET Pesapal IPN route on the staging callback URL", ()
   env.PESAPAL_CALLBACK_URL = "http://executive-visuals-cloud-staging.onrender.com/api/webhooks/pesapal";
   assert.ok(assessStagingConfig(env).invalid.includes("PESAPAL_CALLBACK_URL"));
 });
+
+test("rejects a Pesapal IPN callback hosted outside the approved Render staging service", () => {
+  const env = complete();
+  env.PESAPAL_CALLBACK_URL = "https://attacker.example/api/webhooks/pesapal";
+  assert.ok(assessStagingConfig(env).invalid.includes("PESAPAL_CALLBACK_URL"));
+});
