@@ -154,7 +154,8 @@ export async function verifyEncryptedStagingBackup({
   try{
    await pipeline(createReadStream(file,{start:48}),decipher,createWriteStream(archive,{flags:"wx",mode:0o600}));
   }catch(error){
-   throw Object.assign(new Error("Encrypted staging backup authentication failed; the artifact or passphrase is incorrect (crypto: "+String(error?.code||"unknown")+")."),{code:"STAGING_BACKUP_DECRYPT_FAILED"});
+   const cause=error instanceof Error?(error.name+": "+error.message).slice(0,160):String(typeof error);
+   throw Object.assign(new Error("Encrypted staging backup authentication failed; the artifact or passphrase is incorrect ("+cause+")."),{code:"STAGING_BACKUP_DECRYPT_FAILED"});
   }
   runCommand("tar",["-xzf",archive,"-C",extracted]);
   const manifestPath=join(extracted,"manifest.json");
